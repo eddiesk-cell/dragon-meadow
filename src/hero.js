@@ -172,15 +172,42 @@ export async function createHero(ctx) {
     ray.set(from, seg.divideScalar(len)); ray.far = len + pad
     return ray.intersectObjects(list, false)[0]?.distance
   }
-  let scanT = 0, pulled = 0, frames = 0, behind = 0, inStone = 0
+  let scanT = 0, pulled = 0, frames = 0, behind = 0, inside = 0
+  // Grove trunks (ctx.flora.trees: x, z, r = 27 m × the tree's scale) block like flagged meshes: per tree, one surface of
+  // revolution round vinetree.py's own trunk radius at its buttress crests (+13 % for the bark ripple and the 16-sided lathe;
+  // the formula is convex, so the lathe's straight segments stay outside it), from 3 m under the base to the first boughs
+  // at 16 m. ~320 triangles each; only trees whose trunk is within 30 m of the hero join the ray test (picked in the 1 s scan).
+  const crest = h => ((3.4 - 1.2 * h / 17) * (1 + 2.3 * Math.exp(-h / 5.5)) + 0.8 * Math.exp(-h / 1.5)) * 1.13
+  const trunkGeo = new THREE.LatheGeometry([-3, 0, 0.75, 1.5, 2.5, 3.5, 5, 7, 9.5, 12.5, 16].map(h => new THREE.Vector2(crest(Math.max(h, 0)), h)).concat(new THREE.Vector2(0, 16.5)), 16)
+  const trunks = (ctx.flora?.trees || []).map(t => {
+    const m = new THREE.Mesh(trunkGeo, hullMat)
+    m.position.set(t.x, ctx.heightAt(t.x, t.z), t.z); m.scale.setScalar(t.r / 27); m.updateMatrixWorld()
+    return m
+  })
+  const treeBlock = params.get('treeblock') !== '0' // ?treeblock=0 leaves them out, so camtest=tree can show it sees trunks
   // The ring's stone meshes, found from ctx.ring.stones[].pos (not from the flag): they block the camera even unflagged, and
   // ?camtest=1 swings the orbit behind the nearest of them (in ?auto=fight, the barrow-door stones) and checks the real meshes.
-  const camtest = params.get('camtest')
-  let rocks = []
+  // ?camtest=tree walks him round the grove trunk nearest the start, 1.5 m outside its blocker, the camera swung behind it.
+  const camtest = params.get('camtest'), aimAt = new THREE.Vector3()
+  const tt = camtest === 'tree' && trunks.reduce((a, m) => !a || Math.hypot(m.position.x, m.position.z) < Math.hypot(a.position.x, a.position.z) ? m : a, null)
+  const rc = tt && crest(0) * tt.scale.x + 1.5
+  if (tt) { pos.set(tt.position.x + rc, 0, tt.position.z); pos.y = ctx.heightAt(pos.x, pos.z) }
+  let rocks = [], real = null // real: what the independent check rays hit — ring stones, or the trees' own trunk triangles
   const findRocks = () => { // the mesh standing at the first ring stone, then every mesh in its group with the same stone material
     const p = ctx.ring?.stones?.[0]?.pos
     if (p) scene.traverse(o => { if (!rocks.length && o.isMesh && o.getWorldPosition(corner).setY(p.y).distanceTo(p) < 0.01) rocks = o.parent.children.filter(m => m.material === o.material) })
   }
+  // The vinetree model's own bark below 16.5 m (vine strands, mask 1, left out), placed by flora's live instance matrices: the
+  // trees flora draws, never the blocker shape under test. shortcut: flora's tree mesh found as the tall InstancedMesh with
+  // aBend; read it from ctx.flora if flora publishes it.
+  const findTrunks = () => scene.traverse(o => {
+    if (real || !o.isInstancedMesh || !o.geometry.attributes.aBend || !(o.geometry.boundingBox?.max.y > 20)) return
+    const p = o.geometry.attributes.position, a = o.geometry.attributes.color, ix = o.geometry.index.array, keep = []
+    for (let i = 0; i < ix.length; i += 3) if ([0, 1, 2].every(j => p.getY(ix[i + j]) < 16.5 && a.getW(ix[i + j]) < 0.5)) keep.push(ix[i], ix[i + 1], ix[i + 2])
+    real = new THREE.InstancedMesh(new THREE.BufferGeometry().setAttribute('position', p).setIndex(keep), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), 1)
+    real.instanceMatrix = o.instanceMatrix; real.matrixWorld = o.matrixWorld; real.src = o
+    real.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity) // instances move and re-order every frame
+  })
 
   const dirOf = () => {
     const f = (keys.has('w') || keys.has('arrowup')) - (keys.has('s') || keys.has('arrowdown'))
@@ -190,12 +217,14 @@ export async function createHero(ctx) {
   }
 
   window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), strapSkin: strap?.skin.length ?? 0, strapLift: strap?.lift.map(x => +x.toFixed(3)),
-    cam: { blocks: blocks.length, pulled, frames, ...(camtest && { rocks: rocks.length, behind, inStone }) }, // frames: pulled in front of a block, goal behind one, camera inside one
+    cam: { blocks: blocks.length, trunks: blocks.filter(b => b.geometry === trunkGeo).length, pulled, frames, // frames: pulled in front of a block, goal behind one, camera inside one
+      ...(camtest && (tt ? { tree: [tt.position.x, tt.position.z, rc].map(Math.round), trunkTris: real?.geometry.index.count / 3, behind, inTrunk: inside } : { rocks: rocks.length, behind, inStone: inside })) },
     hold: held && { secs: +(ctx.time - held.t).toFixed(2), drift: +Math.max(...snap().map((q, i) => Math.abs(q - held.pose[i]))).toFixed(5) } })
 
   return {
     update(dt) {
-      const [dx, dz] = act?.lockMove ? [0, 0] : dirOf()
+      let [dx, dz] = act?.lockMove ? [0, 0] : dirOf()
+      if (tt) { const ox = pos.x - tt.position.x, oz = pos.z - tt.position.z, d = Math.hypot(ox, oz); dx = (-oz + (rc - d) * ox) / d; dz = (ox + (rc - d) * oz) / d } // round the trunk, steered back onto the circle
       const len = Math.hypot(dx, dz), moving = len > 0.01
       const speed = keys.has('shift') ? 5 : 1.6
       if (moving) {
@@ -224,18 +253,25 @@ export async function createHero(ctx) {
       if ((scanT -= dt) <= 0) {
         scanT = 1; solids.length = 0
         scene.traverse(o => o.userData.cameraBlock && o.traverse(m => m.isMesh && solids.push(m)))
-        if (!rocks.length) findRocks()
+        if (tt) real || findTrunks(); else if (!rocks.length) findRocks()
         blocks.length = 0; blocks.push(...solids.map(hullOf))
+        if (treeBlock) blocks.push(...trunks.filter(m => Math.hypot(m.position.x - pos.x, m.position.z - pos.z) < 30 + crest(0) * m.scale.x))
       }
+      const checks = tt ? (real ? [real] : []) : rocks
+      if (real) real.count = real.src.count
+      // Swing ±30° across the nearest stone (2.5 m beyond it) or the test trunk (16 m in, past its axis), low: the goal keeps landing behind it.
       let R = DIST, near = Infinity
-      if (camtest) for (const o of rocks) { // swing ±30° across the nearest stone, 2.5 m beyond it, low: its goal keeps landing behind stone
+      if (tt) { near = 0; R = Math.min(Math.hypot(tt.position.x - pos.x, tt.position.z - pos.z), 16); aimAt.copy(tt.position) }
+      else if (camtest) for (const o of rocks) {
         const p = o.getWorldPosition(corner), d = Math.hypot(p.x - pos.x, p.z - pos.z)
-        if (d < near) { near = d; R = Math.min(d + 2.5, 16); yaw = Math.atan2(p.x - pos.x, p.z - pos.z) + 0.5 * Math.sin(ctx.time * 0.9); pitch = 0.05 + 0.1 * Math.abs(Math.sin(ctx.time * 0.6)) }
+        if (d < near) { near = d; R = Math.min(d + 2.5, 16); aimAt.copy(p) }
       }
+      if (near < Infinity) { yaw = Math.atan2(aimAt.x - pos.x, aimAt.z - pos.z) + 0.5 * Math.sin(ctx.time * 0.9); pitch = 0.05 + 0.1 * Math.abs(Math.sin(ctx.time * 0.6)) }
       const cp = Math.cos(pitch)
       camGoal.set(camTarget.x + Math.sin(yaw) * cp * R, camTarget.y + Math.sin(pitch) * R, camTarget.z + Math.cos(yaw) * cp * R)
       camGoal.y = Math.max(camGoal.y, ctx.heightAt(camGoal.x, camGoal.z) + 0.4)
-      if (camtest) behind += hitAt(rocks, camTarget, camGoal, 0) !== undefined
+      if (camtest) behind += hitAt(checks, camTarget, camGoal, 0) !== undefined
+      if (!frames) camera.position.copy(camGoal) // start where it belongs, not lerping in from main's default
       camera.position.lerp(camGoal, 1 - Math.exp(-dt * 12))
       // After the lerp, so a lagging camera never trails through stone.
       const cl = camera.position.distanceTo(camTarget)
@@ -249,11 +285,11 @@ export async function createHero(ctx) {
       if (k < cl) { camera.position.lerp(camTarget, 1 - Math.max(k, 0.2) / cl); pulled++ }
       camera.lookAt(camTarget.x, camTarget.y + 0.3, camTarget.z)
       frames++
-      if (camtest) { // independent check: the camera and its near-plane corners all on his side of every stone
+      if (camtest) { // independent check: the camera and its near-plane corners all on his side of every stone / trunk
         camera.updateMatrixWorld()
-        let inside = hitAt(rocks, camTarget, camera.position, 0) !== undefined // against the real stone meshes, not the hulls
-        for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) inside ||= hitAt(rocks, camTarget, corner.set(x, y, -1).unproject(camera), 0) !== undefined
-        inStone += inside
+        let hit = hitAt(checks, camTarget, camera.position, 0) !== undefined // against the real meshes, not the hulls or lathes
+        for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) hit ||= hitAt(checks, camTarget, corner.set(x, y, -1).unproject(camera), 0) !== undefined
+        inside += hit
       }
     },
   }
