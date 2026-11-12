@@ -30,7 +30,7 @@ export async function createCombat(ctx) {
     return q.setFromRotationMatrix(mT.makeBasis(X, Y, Z))
   }
   const pose = (g, b, n) => ({ g: V(...g), q: swordQ(Q(), V(...b), V(...n)) })
-  const READY = pose([-0.04, 1.08, 0.3], [0.06, 0.55, 0.83], [1, 0, 0])
+  const READY = pose([-0.2, 1.36, 0.24], [-0.15, 0.55, -0.82], [1, 0, 0]) // carried on the right shoulder: reads from behind
   const GUARD = pose([0, 1.3, 0.3], [0.75, 0.62, 0.2], [0, 0, 1])
   // Swings: the blade turns through a plane, dir(θ) = A cos θ + B sin θ, flats facing A × B. Keys [u (0..1 of the
   // clip), θ°, grip x, y, z]; before the first key it eases in from wherever the sword was, after the last back to READY.
@@ -342,7 +342,7 @@ export async function createCombat(ctx) {
     const LANDS = { smash: 1.38, slam: 1.38, kick: 0.82, punch: 0.63 }
     let placed = false, rest = null, won = null, atkN = 0, atkT = 0, lands = 0.8, plan = null, prev = ''
     const walkKeys = new Set()
-    const steer = keys => { for (const k of ['w', 'a', 's', 'd']) if (keys.includes(k) !== walkKeys.has(k)) { key(k, keys.includes(k)); keys.includes(k) ? walkKeys.add(k) : walkKeys.delete(k) } }
+    const steer = (on = []) => { for (const k of ['w', 'a', 's', 'd', 'shift']) if (on.includes(k) !== walkKeys.has(k)) { key(k, on.includes(k)); on.includes(k) ? walkKeys.add(k) : walkKeys.delete(k) } }
     const fire = k => { key(k, true); key(k, false) }
     return dt => {
       const m = ctx.monster
@@ -355,7 +355,7 @@ export async function createCombat(ctx) {
       if (m.state === 'asleep') return // let it wake on camera
       if (!drawn && !move && m.alive) fire('r') // draw as it stands up
       if (!m.alive || dead) {
-        steer(''); if (held.has('k')) key('k', false)
+        steer(); if (held.has('k')) key('k', false)
         if (!m.alive && drawn && !move && ctx.time - (won ??= ctx.time) > 2.5) fire('r') // the troll is down: sword home
         return
       }
@@ -369,21 +369,24 @@ export async function createCombat(ctx) {
       if (m.state === 'attack') {
         atkT += dt
         if (plan === 'roll' && atkT >= lands - 0.45 && d < 7) { // sideways and past it, alternating sides
-          plan = null; steer('')
+          plan = null; steer()
           const s = atkN % 4 === 1 ? 1 : -1
           startRoll(dx / d * 0.6 + dz / d * s, dz / d * 0.6 - dx / d * s)
         }
-        if (plan === 'guard' && d < 7 && !swing) { plan = 'guarding'; steer(''); key('k', true) }
+        if (plan === 'guard' && d < 7 && !swing) { plan = 'guarding'; steer(); key('k', true) }
         if (plan === 'guarding' || roll) return
       } else if (plan === 'guarding') { key('k', false); plan = null }
       if (roll || hurt) return
-      if (d > m.radius + 1.5) { // walk in: W/A/S/D picked from the camera-relative direction to the troll
+      // Stand on the camera's side of it (+Z: the camera looks -Z) so the fight stays framed ahead. W/A/S/D picked
+      // from the camera-relative direction to that spot, Shift when it is far.
+      const sx = m.pos.x - hero.x, sz = m.pos.z + m.radius + 1.3 - hero.z, sd = Math.hypot(sx, sz)
+      if (sd > 0.6) {
         camera.getWorldDirection(W); W.y = 0; W.normalize()
-        const fwd = (W.x * dx + W.z * dz) / d, right = (-W.z * dx + W.x * dz) / d
-        steer((fwd > 0.38 ? 'w' : fwd < -0.38 ? 's' : '') + (right > 0.38 ? 'd' : right < -0.38 ? 'a' : ''))
+        const fwd = (W.x * sx + W.z * sz) / sd, right = (-W.z * sx + W.x * sz) / sd
+        steer([fwd > 0.38 && 'w', fwd < -0.38 && 's', right > 0.38 && 'd', right < -0.38 && 'a', sd > 4 && 'shift'])
         return
       }
-      steer('')
+      steer()
       if (m.state === 'asleep' || m.state === 'waking' || m.state === 'roar' || want || press) return
       if (swing?.a.heavy) rest = { n: atkN, t: ctx.time } // after a full combo, give it room to swing back
       if (swing && (swing.a.heavy || swing.t / swing.a.dur < swing.a.chain)) return // chain the combo at its cut-in point
