@@ -37,10 +37,11 @@ async function load(name, fn) {
     if (sys) systems.push(sys)
   } catch (e) { fail(name, e) }
 }
-// Order matters: field publishes heightAt, sky sets lights + fog, hero stands on heightAt, dragon last.
+// Order matters: field publishes heightAt, sky sets lights + fog, hero stands on heightAt, pet follows heroPos, dragon last.
 await load('field', 'createField')
 await load('sky', 'createSky')
 await load('hero', 'createHero')
+await load('pet', 'createPet')
 await load('dragon', 'createDragon')
 let post = null
 try { post = await (await import('./post.js')).createPost(ctx) } catch (e) { fail('post', e) }

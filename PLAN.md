@@ -111,6 +111,23 @@ head at +Z).
   error, `clip: "fly"`, `alt ≥ 15`, `speed > 4`. Picture: the dragon large in frame, wings spread,
   textured (not grey/black), facing along its travel direction.
 
+### Lane pet — `src/pet.js` (Opus)
+Eddie: *"he should have a little helper, like a fluffy pet that follow him around"*. Original design,
+made in code (no model, no credits).
+- A small round fluffy companion (~0.4 m body): cream fur with a soft peach blush, two long floppy
+  leaf-shaped ears, a puff of a tail, big dark glossy eyes with a highlight, tiny paws. Real fluff:
+  TSL shell fur (≥16 shells) with strands that sway with motion and wind — never a smooth ball.
+- The grass is waist-high, so it **floats**: hovers 0.9–1.5 m above `heightAt`, bobbing gently, near
+  the hero's right shoulder, 1–2.5 m away. Follows `ctx.heroPos` with a soft spring lag; faces where
+  it is going; when the hero stops it turns to look at him, ears twitch; now and then it drifts off to
+  sniff a flower and comes back. Squash-and-stretch on quick moves. Hops up when the hero jumps.
+- `?pet=close` points the camera at it from ~1.2 m for proof.
+- Probe: `window.__probes.pet = () => ({ dist, hover, speed })` — dist to the hero, height above ground.
+- **CHECK:** `node tools/shot.mjs shots/pet-walk.png "auto=walk" 5000` → no `pet:` error,
+  `0.8 ≤ dist ≤ 3`, `0.8 ≤ hover ≤ 1.8`. Picture: the pet visible beside the hero above the grass.
+  `"pet=close"` picture: fluffy silhouette with visible fur strands, ears, eyes — cute, soft, lit like
+  the meadow. `node tools/controls-check.mjs` still 7/7 ok.
+
 ## Review (Opus, never the builder)
 
 Mechanical first: the lane's commit exists and touches only its files; the reviewer re-runs the
@@ -141,7 +158,8 @@ review the orchestrator takes the lane over.
    Owner: orchestrator (paid credits). Spend so far: 2.75 + 2.75.
 2. **World design:** *"We should design the world now, how each land is connected to each other."*
    Draft `WORLD.md` + `art/world-map.svg` for Eddie's taste call. Owner: Opus design lane.
-3. **Monster + fight:** *"a monster so we could do a fight scene, where our hero can pull out his sword
+3. **Pet:** see Lane pet.
+4. **Monster + fight:** *"a monster so we could do a fight scene, where our hero can pull out his sword
    and fight (full special effects)."* Needs a monster model (paid — needs the cap raised past 40),
    then lanes by file: `src/combat.js` (draw, combo, block, roll), `src/monster.js` (AI, hits, death),
    `src/vfx.js` (sword trails, sparks, slash arcs, hit flash, shake, dust). Bipedal monster so our
