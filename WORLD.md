@@ -1,6 +1,6 @@
 # Asterholm — the world around Dragon Meadow
 
-Map: `art/world-map.svg`. North = −Z (the hero starts at world (0, 0) facing north, toward the cliff). 1 map px = 5 m. Positions below are world metres (X east, Z south).
+Map: `art/world-map.svg`. North = −Z (the hero starts at world (0, 0) facing north, toward the cliff). 1 map px = 5 m. Positions below are world metres (X east, Z south). The map predates Phase 6: it does not yet show Castle Crestwatch or Asterhaven, and it draws the Spill straight west to the sea, where this file has a shingle spit turn its mouth north to Asterhaven. Where the two differ, this file wins.
 
 ## The world in one paragraph
 
