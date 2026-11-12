@@ -43,6 +43,15 @@ export async function createField(ctx) {
 
   const uTime = uniform(0), uCam = uniform(new THREE.Vector2()), uHero = uniform(new THREE.Vector3()), uSun = uniform(ctx.sunDir)
   const WIND = vec2(0.94, 0.34) // blowing across the view, left → right
+  // CPU twin of the grass gust below (front / ripple / gust): wind velocity on the ground plane in m/s, ~1 calm → 7 in a gust.
+  // Cloth (src/springs.js) reads it so it moves with the grass. Keep in lockstep with the TSL lines.
+  ctx.windAt = (x, z, t) => {
+    const along = x * 0.94 + z * 0.34, across = -0.34 * x + 0.94 * z
+    const front = Math.sin(along * 0.21 - t * 1.5 + Math.sin(across * 0.05 + t * 0.2) * 2.2)
+    const ripple = Math.sin(along * 0.55 - t * 3.4 + across * 0.13)
+    const v = 1 + 6 * ss(0.1, 1.0, front * 0.7 + ripple * 0.3)
+    return new THREE.Vector2(0.94 * v, 0.34 * v)
+  }
 
   // One grass layer: `side`² blades on a `cell` lattice round the camera, alive between fadeIn and fadeOut metres.
   function layer({ side, cell, segs, width, fadeIn, fadeOut, flowers, head, salt }) {
