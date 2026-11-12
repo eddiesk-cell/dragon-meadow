@@ -57,22 +57,33 @@ export async function createField(ctx) {
     return g
   }
 
-  // Ground patches: four HalfFloat textures, each over a rect (x0, z0, size in m), texel = (metres added to the ground,
+  // Walkable ground, as [x0, x1, z0, z1] rects: the terrain square below, plus whatever a module that lays ground beyond
+  // it pushes at its create (settlements' far tile), so flora and flyers read one list instead of copying extents by hand.
+  const SIDE = 800
+  ctx.ground = { rects: [[-SIDE / 2, SIDE / 2, -SIDE / 2, SIDE / 2]] }
+
+  // Ground patches: six HalfFloat textures, each over a rect (x0, z0, size in m), texel = (metres added to the ground,
   // grass height ×, bare chalk 0..1, light ×). Slot 0 is ctx.groundPatch (src/ring.js fills it); ctx.addGroundPatch hands
   // out the rest, callable any time after create (water loads later). Overlaps combine: metres add, grass and light
   // multiply, bare takes the max. Outside its rect a patch changes nothing (a road cut to the border does not run on forever).
   const PN = 256, one = THREE.DataUtils.toHalfFloat(1), fromHalf = THREE.DataUtils.fromHalfFloat
-  const patches = Array.from({ length: 4 }, () => {
+  const makePatch = () => {
     const tex = new THREE.DataTexture(new Uint16Array(PN * PN * 4).map((_, i) => i % 2 ? one : 0), PN, PN, THREE.RGBAFormat, THREE.HalfFloatType)
     tex.magFilter = tex.minFilter = THREE.LinearFilter
     tex.needsUpdate = true
     return { tex, rect: new THREE.Vector3(0, 0, 1), size: PN }
-  })
+  }
+  const patches = Array.from({ length: 6 }, makePatch) // every slot costs a texture fetch per grass vertex
   let used = 1
   ctx.groundPatch = patches[0]
   ctx.addGroundPatch = (x0, z0, sizeM) => {
-    if (used === patches.length) throw new Error(`field: only ${patches.length} ground patches`)
-    const p = patches[used++]
+    // Table full: one clear error naming the caller, and a patch nobody samples, so the caller's create still finishes.
+    const full = used === patches.length, p = full ? makePatch() : patches[used++]
+    if (full) {
+      const who = new Error().stack.split('\n')[2]?.match(/\/(\w+)\.js/)?.[1] ?? 'a module'
+      const msg = `field: ground patch table full (${patches.length} slots) — ${who}.js's patch at (${x0}, ${z0}, ${sizeM} m) is not drawn`
+      window.__errors.push(msg); console.warn(msg)
+    }
     p.rect.set(x0, z0, sizeM)
     return p // { tex, size, rect }: write tex.image.data as ring does, then tex.needsUpdate = true
   }
@@ -96,8 +107,9 @@ export async function createField(ctx) {
   }
   ctx.heightAt = (x, z) => heightAt(x, z) + patchHeight(x, z)
   // ?carvetest=1: field carves a test dip through its own public hook — 20 m patch at (0, −30), −2 m, bare, no grass inside r 6.
-  if (ctx.params.get('carvetest')) {
-    const p = ctx.addGroundPatch(-10, -40, 20), d = p.tex.image.data, put = THREE.DataUtils.toHalfFloat
+  // ?carvetest=N adds N of them, 25 m apart going left, to fill the patch table (N = 6 overflows it: proves the error path).
+  for (let n = 0; n < (+ctx.params.get('carvetest') || 0); n++) {
+    const p = ctx.addGroundPatch(-10 - 25 * n, -40, 20), d = p.tex.image.data, put = THREE.DataUtils.toHalfFloat
     for (let j = 0; j < PN; j++) for (let i = 0; i < PN; i++) {
       const r = Math.hypot((i + 0.5) / PN * 20 - 10, (j + 0.5) / PN * 20 - 10), k = ss(6, 9.5, r), o = (j * PN + i) * 4
       d[o] = put(-2 * (1 - k)); d[o + 1] = put(k); d[o + 2] = put(1 - ss(5, 8, r))
@@ -232,7 +244,7 @@ export async function createField(ctx) {
   scene.add(ctx.grass.blades, ctx.grass.flowers)
 
   // --- terrain: one mesh from heightAt; meadow green, rock on the cliff, darker under the near grass
-  const tg = new THREE.PlaneGeometry(800, 800, 400, 400).rotateX(-Math.PI / 2)
+  const tg = new THREE.PlaneGeometry(SIDE, SIDE, SIDE / 2, SIDE / 2).rotateX(-Math.PI / 2)
   const p = tg.attributes.position
   for (let i = 0; i < p.count; i++) p.setY(i, heightAt(p.getX(i), p.getZ(i)))
   tg.computeVertexNormals()
@@ -268,7 +280,7 @@ export async function createField(ctx) {
   const r2 = v => Math.round(v * 100) / 100
   const flowerCells = flowerLayers.reduce((a, l) => a + l.geometry.instanceCount, 0)
   window.__probes.field = () => ({ blades, flowerCells, h0: r2(heightAt(0, 0)), crest: r2(heightAt(0, -200)), sea: r2(heightAt(0, -320)),
-    patches: used, carve: r2(ctx.heightAt(0, -30)),
+    patches: used, ground: ctx.ground.rects, carve: r2(ctx.heightAt(0, -30)),
     night: r2(uNight.value), rings: ringSlots.filter(s => uTime.value - s.z < 2).length, stepRings })
 
   // A ring for every ~0.8 m walked (a footfall), a brighter one on landing, and at night a slow pulse while standing.
