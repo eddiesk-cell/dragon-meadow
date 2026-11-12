@@ -130,11 +130,11 @@ export async function createCombat(ctx) {
   // Attacks: the clip carries the body, PATH the sword. `hit` = the part of the clip (fraction) the blade can connect;
   // `chain` = from when the next combo step may cut in; `lunge` = metres stepped in over the hit window (clips are in place).
   const COMBO = [
-    { clip: 'Slash (Diagonal)', path: PATH.diag, dur: 1.417, speed: 1.35, hit: [0.29, 0.47], chain: 0.55, dmg: 18, lunge: 0.6 },
-    { clip: 'Slash (Horizontal)', path: PATH.horiz, dur: 1.208, speed: 1.3, hit: [0.27, 0.45], chain: 0.55, dmg: 20, lunge: 0.5 },
-    { clip: 'Stab', path: PATH.stab, dur: 0.917, speed: 1.0, hit: [0.2, 0.36], chain: 0.6, dmg: 26, lunge: 0.9 },
+    { clip: 'Slash (Diagonal)', path: PATH.diag, dur: 1.417, speed: 1.5, hit: [0.29, 0.47], chain: 0.55, dmg: 22, lunge: 0.6 },
+    { clip: 'Slash (Horizontal)', path: PATH.horiz, dur: 1.208, speed: 1.45, hit: [0.27, 0.45], chain: 0.55, dmg: 24, lunge: 0.5 },
+    { clip: 'Stab', path: PATH.stab, dur: 0.917, speed: 1.1, hit: [0.2, 0.36], chain: 0.6, dmg: 30, lunge: 0.9 },
   ]
-  const HEAVY = { clip: 'Greatsword Swing', path: PATH.heavy, dur: 3.25, speed: 1.45, hit: [0.42, 0.53], chain: 0.8, dmg: 45, lunge: 0.8, heavy: true }
+  const HEAVY = { clip: 'Greatsword Swing', path: PATH.heavy, dur: 3.25, speed: 1.7, hit: [0.42, 0.53], chain: 0.8, dmg: 50, lunge: 0.8, heavy: true }
   const BLADE = [0.3, 0.5, 0.75, 1.0, 1.12].map(y => new THREE.Vector3(0, y, 0)) // sword-local sample points
   let swing = null, combo = -1, comboUntil = 0, want = null, hits = 0
   const tip = V(), tipPrev = V(), P = V(), dir = V()
@@ -182,7 +182,7 @@ export async function createCombat(ctx) {
 
   // ── Block and roll ────────────────────────────────────────────────────────────────────────────────────────
   let guard = false, roll = null // roll: { t, dur, x, z }
-  const ROLL = { speed: 1.6, dist: 4.2, iframes: [0.2, 0.95] } // i-frames in game seconds from the roll's start (the clip tumbles at 35–65 %)
+  const ROLL = { speed: 1.8, dist: 4.2, iframes: [0.2, 0.95] } // i-frames in game seconds from the roll's start (the clip tumbles at 35–65 %)
   function setGuard(on) {
     if (dead || !drawn || move || on === guard) return
     guard = on
@@ -340,7 +340,7 @@ export async function createCombat(ctx) {
     // When each troll attack lands, game seconds after it starts (monster.js ATTACKS: windT + (h0 - wind) / fast).
     // shortcut: reads the attack's name from the monster's probe; ask the monster lane for ctx.monster.attack.name if it moves.
     const LANDS = { smash: 1.38, slam: 1.38, kick: 0.82, punch: 0.63 }
-    let placed = false, swings = 0, atkN = 0, atkT = 0, lands = 0.8, plan = null, prev = ''
+    let placed = false, rest = null, won = null, atkN = 0, atkT = 0, lands = 0.8, plan = null, prev = ''
     const walkKeys = new Set()
     const steer = keys => { for (const k of ['w', 'a', 's', 'd']) if (keys.includes(k) !== walkKeys.has(k)) { key(k, keys.includes(k)); keys.includes(k) ? walkKeys.add(k) : walkKeys.delete(k) } }
     const fire = k => { key(k, true); key(k, false) }
@@ -354,11 +354,15 @@ export async function createCombat(ctx) {
       }
       if (m.state === 'asleep') return // let it wake on camera
       if (!drawn && !move && m.alive) fire('r') // draw as it stands up
-      if (!m.alive || dead) { steer(''); if (held.has('k')) key('k', false); return }
+      if (!m.alive || dead) {
+        steer(''); if (held.has('k')) key('k', false)
+        if (!m.alive && drawn && !move && ctx.time - (won ??= ctx.time) > 2.5) fire('r') // the troll is down: sword home
+        return
+      }
       const dx = m.pos.x - hero.x, dz = m.pos.z - hero.z, d = Math.hypot(dx, dz)
       // Each troll attack: every other one rolled through just before it lands, the rest blocked.
       if (m.state === 'attack' && prev !== 'attack') {
-        atkN++; atkT = 0; plan = atkN % 2 ? 'roll' : 'guard'
+        atkN++; atkT = 0; plan = atkN === 2 ? 'guard' : 'roll' // one block for the sparks; rolls are quicker
         lands = LANDS[window.__probes.monster?.().attack] ?? 0.8
       }
       prev = m.state
@@ -381,9 +385,10 @@ export async function createCombat(ctx) {
       }
       steer('')
       if (m.state === 'asleep' || m.state === 'waking' || m.state === 'roar' || want || press) return
+      if (swing?.a.heavy) rest = { n: atkN, t: ctx.time } // after a full combo, give it room to swing back
       if (swing && (swing.a.heavy || swing.t / swing.a.dur < swing.a.chain)) return // chain the combo at its cut-in point
-      swings++
-      if (swings % 4 === 0) { key('j', true); setTimeout(() => key('j', false), 400) } // held: the heavy swing
+      if (rest && rest.n === atkN && ctx.time - rest.t < 3.5) return
+      if (swing?.a === COMBO[2]) { key('j', true); setTimeout(() => key('j', false), 400) } // after the stab, held: the heavy swing
       else fire('j')
     }
   }
