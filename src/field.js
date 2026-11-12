@@ -2,7 +2,7 @@
 // Grass pattern borrowed from wanderlight/src/life/grass.js: blades on lattices that follow the camera,
 // identity hashed from the integer world cell, so the field stays nailed down as the tile slides.
 import {
-  Fn, If, uniform, uniformArray, attribute, varying, vec2, vec3, vec4, float, int, uint,
+  Fn, uniform, uniformArray, attribute, varying, vec2, vec3, vec4, float, int, uint,
   floor, sin, cos, mix, smoothstep, step, saturate, length, normalize, dot, pow, min, exp,
   cameraPosition, cameraViewMatrix, positionWorld, positionLocal, vertexColor, texture,
 } from 'three/tsl'
@@ -77,14 +77,11 @@ export async function createField(ctx) {
     return p // { tex, size, rect }: write tex.image.data as ring does, then tex.needsUpdate = true
   }
   const uRects = patches.map(p => uniform(p.rect))
-  const patchOne = (k, xz) => texture(patches[k].tex, xz.sub(uRects[k].xy).div(uRects[k].z)).level(0)
-  const inRect = (k, xz) => { const uv = xz.sub(uRects[k].xy).div(uRects[k].z); return uv.x.greaterThanEqual(0).and(uv.y.greaterThanEqual(0)).and(uv.x.lessThanEqual(1)).and(uv.y.lessThanEqual(1)) }
-  // Each slot is sampled only inside its own rect: most of the ~3M grass vertices sit in none, so they skip all four fetches.
-  const patchAt = Fn(([xz]) => {
-    const a = vec4(0, 1, 0, 1).toVar()
-    patches.forEach((_, k) => If(inRect(k, xz), () => { const s = patchOne(k, xz); a.assign(vec4(a.x.add(s.x), a.y.mul(s.y), a.z.max(s.z), a.w.mul(s.w))) }))
-    return a
-  })
+  const patchOne = (k, xz) => { // outside its own rect a patch reads neutral (a mask, not a branch: no If in the grass shader)
+    const uv = xz.sub(uRects[k].xy).div(uRects[k].z)
+    return mix(vec4(0, 1, 0, 1), texture(patches[k].tex, uv).level(0), step(0, uv.x).mul(step(0, uv.y)).mul(step(uv.x, 1)).mul(step(uv.y, 1)))
+  }
+  const patchAt = xz => patches.reduce((a, _, k) => { const s = patchOne(k, xz); return vec4(a.x.add(s.x), a.y.mul(s.y), a.z.max(s.z), a.w.mul(s.w)) }, vec4(0, 1, 0, 1))
   // CPU twin of the metres in the added patches, bilinear like the GPU. Slot 0 is left out: ring wraps ctx.heightAt with its own.
   const patchHeight = (x, z) => {
     let h = 0
@@ -250,14 +247,10 @@ export async function createField(ctx) {
   const tm = new THREE.MeshLambertNodeMaterial() // colour comes in colorNode as vc² (vertexColors: true squared it before; look kept)
   const near = mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz)))) // shade under the near grass
   const tp = patchAt(positionWorld.xz)
-  const dh = Fn(() => { // slope of the patch metres, each patch at its own texel step, sampled only inside its rect
-    const a = vec2(0, 0).toVar()
-    patches.forEach((_, k) => {
-      const e = uRects[k].z.div(PN), ph = o => patchOne(k, positionWorld.xz.add(o)).x
-      If(inRect(k, positionWorld.xz), () => a.addAssign(vec2(ph(vec2(e, 0)).sub(ph(vec2(e.negate(), 0))), ph(vec2(0, e)).sub(ph(vec2(0, e.negate())))).div(e.mul(2))))
-    })
-    return a
-  })()
+  const dh = patches.reduce((a, _, k) => { // slope of the patch metres, each patch at its own texel step
+    const e = uRects[k].z.div(PN), ph = o => patchOne(k, positionWorld.xz.add(o)).x
+    return a.add(vec2(ph(vec2(e, 0)).sub(ph(vec2(e.negate(), 0))), ph(vec2(0, e)).sub(ph(vec2(0, e.negate())))).div(e.mul(2)))
+  }, vec2(0, 0))
   const n0 = attribute('normal', 'vec3') // terrain sits at the origin: local = world
   tm.positionNode = positionLocal.add(vec3(0, patchAt(positionLocal.xz).x, 0))
   tm.normalNode = normalize(cameraViewMatrix.mul(vec4(normalize(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y))), 0)).xyz)
