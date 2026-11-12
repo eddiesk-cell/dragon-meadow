@@ -46,7 +46,8 @@ export async function createSkyisles(ctx) {
   const u = uv().x.sub(0.5).mul(2)
   const sY = positionWorld.y.mul(0.05).add(uTime.mul(FALL_SPEED * 0.05)), seed = positionWorld.x.add(positionWorld.z).mul(0.002)
   const n1 = mx_noise_float(vec3(u.mul(4), sY, seed)), n2 = mx_noise_float(vec3(u.mul(11), sY.mul(2.4), seed.add(3.1)))
-  const sheet = n1.mul(0.6).add(n2.mul(0.4)).mul(0.5).add(0.5)
+  const n3 = mx_noise_float(vec3(u.mul(3), sY.mul(3.5), seed.add(5.3))) // short clumps of water: they read as falling
+  const sheet = n1.mul(0.45).add(n2.mul(0.25)).add(n3.mul(0.45)).mul(0.5).add(0.5)
   const mist = smoothstep(0.3, 0.9, v)
   const puff = mx_noise_float(vec3(u.mul(1.8), positionWorld.y.mul(0.018).add(uTime.mul(0.12)), seed.add(7))).mul(0.5).add(0.5)
   const edge = smoothstep(1, mix(float(0.5), float(0.05), mist), abs(u).add(n2.mul(0.12)))
