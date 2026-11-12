@@ -60,6 +60,7 @@ await load('pet', 'createPet')
 await load('dragon', 'createDragon')
 await load('birds', 'createBirds')
 await load('motes', 'createMotes')
+await load('bestiary', 'createBestiary') // ?bestiary=1 gallery; last, so its camera wins over the hero's
 let post = null
 try { post = await (await import('./post.js')).createPost(ctx) } catch (e) { fail('post', e) }
 

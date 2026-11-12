@@ -571,3 +571,47 @@ geography, connections, the travel loop and every creature's home. Add Castle Cr
 stands there.
 - **CHECK:** every land keeps its position, landmark and connection; every BESTIARY creature's land still exists;
   each Look names its day and night palette and what glows.
+
+## Phase 4 follow-ups (2026-11-13, from the ten rig reviews)
+
+All ten creatures are rigged and passed review (`public/models/bestiary/*.glb`), but none has been seen inside the
+game yet. The reviewers flagged the same gaps, and these lanes close them. Later, once `springs` passes: creature
+spring chains (Gapshrike wings, bell clapper, cloaks), the props (Tolling Warden's anchor, Stiltstalker's reed
+spear, built from code), and a Kimodo `ram_charge` for the Scarhorn.
+
+### Lane bestiary — `src/bestiary.js` (Sonnet)
+`?bestiary=1` is a gallery inside the real world (`main.js` already loads it last, so its camera update wins
+over the hero's; without the param `createBestiary` returns null and costs nothing). Load every
+`public/models/bestiary/*.glb` (ten models, all 1.80 m tall as rigged). Scale each one to its size in
+`BESTIARY.md` (e.g. Marrowkeeper 3.5 m, so ×1.94). Stand each on its own low stone plinth at `ctx.heightAt`, in a
+gentle arc on clear meadow (push `ctx.keepClear`). Each creature slowly turns and cycles its clips: Idle, then
+each other clip in turn, back to Idle. Give each a small name + land label. The camera dollies slowly along the
+arc. `&focus=<id>` frames one creature large, facing the camera, which the reviewer uses. Never ground by
+hacking positions per frame: report feet instead (probe below), and the orchestrator fixes any model that floats
+or sinks.
+- **CHECK:** `node tools/shot.mjs shots/bestiary.png "bestiary=1" 12000` → no `bestiary:` error, and
+  `__probes.bestiary()` lists all 10 ids loaded. Each entry has its height in metres (within 10% of `BESTIARY.md`),
+  the clip playing, and `footY` (lowest skinned vertex minus plinth top, in cm, in Idle).
+  Picture: every creature stands on its plinth at its own size, lit like the world, labels legible.
+  `node tools/shot.mjs shots/bestiary-golem.png "bestiary=1&focus=rime-warden" 9000` and `…&focus=gapshrike…`
+  show one creature filling the frame. Two shots of one focus taken 4 s apart show different poses (it animates).
+
+### Lane rig-weights-fix — `art/bestiary/{wreckback,driftwight,stiltstalker}/` (not concept.png, hunyuan.glb) and their three `public/models/bestiary/<id>.glb` (Opus)
+`wreckback/wreck.py:121`, `driftwight/nets.py:33` and `stiltstalker/fix_rig.py:110` each remove vertex groups
+inside `for g in list(v.groups)`. That skips every other group, so old weights survive the rewrite: 32% on the
+Gapshrike, hips on the Rime Warden. First collect `[g.group for g in v.groups]`, then remove. The fixed versions
+are in `gapshrike/wings.py` and `rime-warden/warden.py`.
+For each creature: fix the loop and print how many vertices are still in the groups meant to be cleared (before
+and after the fix). Rebuild its glb through its own build path on the Studio, keeping the same clips and offsets,
+re-render `idle.png`, and run the extremes pose test (`tools/rig/compare.py` rig vs itself, house-autorig skill).
+- **CHECK:** the leftover count after the fix is 0 for all three, printed in the report. `idle.png` for each still
+  passes its rig-lane CHECK (arms clear, head ahead, feet flat). The pose sheet shows no vertices pulled toward a
+  wrong bone (no spikes or ribbons). The glb clip list is unchanged, and each glb is ≤ 8 MB.
+
+### Lane rig-bell-damp — `art/bestiary/tolling-warden/` (not concept.png, hunyuan.glb) and `public/models/bestiary/tolling-warden.glb` (Opus)
+In Hit (Front) and Stagger the chest throws back about 62° at the peak, so the bell tips behind the shoulders and
+the creature looks headless for a few frames. Damp the spine, chest and upperChest pitch in those two clips the
+way `bell.py` already damps head and neck. The hit should still read as a hit (keep about 40%).
+- **CHECK:** printed worst bell tilt off rest per clip: Hit and Stagger ≤ 35°, every other clip unchanged ±2°.
+  A render of the Hit and Stagger peak frames (front and side) shows the bell above the shoulders. The glb holds
+  the same 9 clips and is ≤ 8 MB.
