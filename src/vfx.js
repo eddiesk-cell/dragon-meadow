@@ -97,7 +97,7 @@ export async function createVfx(ctx) {
   }
 
   // ── Sword trails: a ribbon between the blade's base and tip over the last TL seconds ─────────────────────────
-  const TL = 0.2, MAXS = 24, SUB = 4, MAXC = (MAXS - 1) * SUB + 1
+  const MAXS = 24, SUB = 4, MAXC = (MAXS - 1) * SUB + 1
   // Normal blending with HDR colour: reads as gold on the white haze (additive would vanish into it) and still blooms.
   const trailMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false })
   trailMat.colorNode = Fn(() => {
@@ -114,17 +114,17 @@ export async function createVfx(ctx) {
     const at = new THREE.BufferAttribute(new Float32Array(MAXC * 4), 2).setUsage(THREE.DynamicDrawUsage)
     geo.setAttribute('position', pos); geo.setAttribute('aT', at); geo.setIndex(trailIdx)
     const mesh = new THREE.Mesh(geo, trailMat)
-    mesh.frustumCulled = false; mesh.renderOrder = 3
+    mesh.frustumCulled = false; mesh.renderOrder = 6 // after the hit flash and the other effects: arcs still read on a hit
     geo.setDrawRange(0, 6) // one zero-area quad until first use: the pipeline compiles during load, not on the first swing (73 ms)
     scene.add(mesh)
-    return { mesh, geo, pos, at, obj: null, live: false, gen: 0, born: 0, n: 0, base: V(), tip: V(), m: new Float32Array(MAXS * 7) }
+    return { mesh, geo, pos, at, obj: null, live: false, gen: 0, born: 0, n: 0, life: 0.2, base: V(), tip: V(), m: new Float32Array(MAXS * 7) }
   })
   const v3 = (out, a) => (a.isVector3 ? out.copy(a) : out.fromArray(a))
-  function trail(obj, { base, tip }) {
+  function trail(obj, { base, tip, life = 0.2 }) {
     fired.trail++
     const tr = trails.find(t => !t.obj) || trails.reduce((a, b) => (a.born < b.born ? a : b)) // all busy: reuse the oldest
     v3(tr.base, base); v3(tr.tip, tip)
-    Object.assign(tr, { obj, live: true, born: clock, n: 0 })
+    Object.assign(tr, { obj, live: true, born: clock, n: 0, life })
     const gen = ++tr.gen
     return { stop() { if (tr.gen === gen) tr.live = false } }
   }
@@ -138,15 +138,15 @@ export async function createVfx(ctx) {
       if (tr.n === 0 || clock - m[6] >= 1 / 120) { m.copyWithin(7, 0, (MAXS - 1) * 7); tr.n = Math.min(tr.n + 1, MAXS) } // else refresh the newest (hitstop: no pile of duplicates)
       m[0] = wB.x; m[1] = wB.y; m[2] = wB.z; m[3] = wT.x; m[4] = wT.y; m[5] = wT.z; m[6] = clock
     }
-    while (tr.n > 2 && clock - m[(tr.n - 2) * 7 + 6] >= TL) tr.n-- // keep one sample past TL for the tail to fade into
-    if (!tr.live && (tr.n < 2 || clock - m[6] >= TL)) { tr.obj = null; tr.mesh.visible = false; return }
+    while (tr.n > 2 && clock - m[(tr.n - 2) * 7 + 6] >= tr.life) tr.n-- // keep one sample past TL for the tail to fade into
+    if (!tr.live && (tr.n < 2 || clock - m[6] >= tr.life)) { tr.obj = null; tr.mesh.visible = false; return }
     if (tr.n < 2) { tr.mesh.visible = false; return }
     const p = tr.pos.array, a = tr.at.array, cols = (tr.n - 1) * SUB + 1
     for (let c = 0; c < cols; c++) {
       const j = Math.min(Math.floor(c / SUB), tr.n - 2), f = c / SUB - j
       const i0 = Math.max(j - 1, 0) * 7, i1 = j * 7, i2 = i1 + 7, i3 = Math.min(j + 2, tr.n - 1) * 7
       for (let k = 0; k < 6; k++) cr[k] = catmull(m[i0 + k], m[i1 + k], m[i2 + k], m[i3 + k], f)
-      const age = Math.min(1, (clock - (m[i1 + 6] + (m[i2 + 6] - m[i1 + 6]) * f)) / TL)
+      const age = Math.min(1, (clock - (m[i1 + 6] + (m[i2 + 6] - m[i1 + 6]) * f)) / tr.life)
       const w = (1 - age) ** 0.7 // taper: the inner edge closes onto the tip edge as the ribbon ages
       for (let k = 0; k < 3; k++) { p[c * 6 + k] = cr[k + 3] + (cr[k] - cr[k + 3]) * w; p[c * 6 + 3 + k] = cr[k + 3] }
       a[c * 4] = a[c * 4 + 2] = age; a[c * 4 + 1] = 0; a[c * 4 + 3] = 1
@@ -242,7 +242,7 @@ export async function createVfx(ctx) {
   }
 
   // ── Hit flash: the struck meshes' emissive goes white and decays (colour only, so nothing recompiles) ─────────
-  const FLASH_T = 0.16, WHITE = new THREE.Color(1.9, 1.9, 1.8), tc = new THREE.Color(), flashing = new Map()
+  const FLASH_T = 0.12, WARM = new THREE.Color(1.0, 0.6, 0.25), tc = new THREE.Color(), flashing = new Map()
   function flash(obj) {
     fired.flash++
     obj.traverse(o => {
@@ -257,7 +257,7 @@ export async function createVfx(ctx) {
     for (const [m, t] of flashing) {
       const left = t - dt, orig = m.userData.vfxEmissive
       if (left <= 0) { m.emissive.copy(orig); flashing.delete(m); continue }
-      m.emissive.copy(orig).lerp(tc.copy(WHITE).multiplyScalar(1 / Math.max(m.emissiveIntensity, 1e-3)), Math.min(1, 1.7 * left / FLASH_T) ** 2) // a few frames of full white, then a quick fade
+      m.emissive.copy(orig).add(tc.copy(WARM).multiplyScalar(0.35 * (left / FLASH_T) / Math.max(m.emissiveIntensity, 1e-3))) // additive warm glow, 35% at most: the texture stays
       flashing.set(m, left)
     }
   }
