@@ -92,17 +92,17 @@ def sphere(name, r, loc, material, scale=(1, 1, 1)):
 
 # ---- weapon (built Y-up in these coords; see export())
 W = []
-# haft: oval loft 0.030 x 0.022 half-widths, butt -0.18 to eye top +0.62
+# haft: oval loft 0.030 x 0.022 m full widths (half-widths 0.015 x 0.011), butt -0.18 to eye top +0.62
 ys = [-0.18 + 0.05 * i for i in range(17)] + [0.62]
-W.append(loft("haft", [oval(y, 0.030 if y > -0.17 else 0.024, 0.022 if y > -0.17 else 0.018) for y in ys], ASH))
+W.append(loft("haft", [oval(y, 0.015 if y > -0.17 else 0.012, 0.011 if y > -0.17 else 0.009) for y in ys], ASH))
 W.append(sphere("butt", 0.022, (S(-0.18), -0.18, 0), BRASS))
 # tar-twine wrap -0.10..+0.10, ridged
-tw = [oval(-0.10 + 0.02 * i, 0.034 if i % 2 else 0.031, 0.026 if i % 2 else 0.023) for i in range(11)]
+tw = [oval(-0.10 + 0.02 * i, 0.019 if i % 2 else 0.017, 0.014 if i % 2 else 0.012) for i in range(11)]
 W.append(loft("twine", tw, TAR))
 # brass ring at +0.40 (a 0.02 m tall band; the frog hides it when seated)
-W.append(loft("ring", [oval(0.39, 0.036, 0.028, 12), oval(0.41, 0.036, 0.028, 12)], BRASS))
+W.append(loft("ring", [oval(0.39, 0.020, 0.016, 12), oval(0.41, 0.020, 0.016, 12)], BRASS))
 # head eye (wraps haft 0.48..0.62)
-W.append(loft("eye", [oval(y, 0.038, 0.030, 12) for y in (0.48, 0.50, 0.60, 0.62)], SLATE))
+W.append(loft("eye", [oval(y, 0.030, 0.016, 12) for y in (0.48, 0.50, 0.60, 0.62)], SLATE))
 
 
 def head_ring(xu, yu, xl, yl, t):
