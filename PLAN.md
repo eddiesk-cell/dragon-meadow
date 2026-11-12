@@ -427,11 +427,39 @@ the hero's feet, drifting seed lights, stars and aurora.
 
 **Contract change (main.js, orchestrator):** `ctx.tod` 0..1 time of day and `ctx.night` 0..1 glow amount (writer: sky;
 `?tod=day|dusk|night` pins it, default a 6-minute day); `ctx.sunDir` and `ctx.fogColor` become live (writer: sky).
-main loads `flora`, `skyisles`, `motes` after `ring`.
+main loads `flora`, `landmarks`, `water`, `skyisles`, `motes`, `birds` after `ring`.
 
 **Order:** sky, field, flora models, skyisles, motes and world-doc start together (no shared files). flora-place
 starts when the three flora models pass. ring-glow starts when the monster and combat lanes pass (they read the ring).
 Last: a day→night walk clip (`auto=walk&tod=cycle`), final review, show Eddie.
+
+**From Eddie's two reference videos (watched 2026-11-12; frames in `refs/video/*-sheet.jpg`, local only — someone
+else's footage, kept out of the public repo; posts instagram.com/reel/Dfg82wLNHmw and /DfmTQFqBYRQ):** the grey haze
+in our old spec was one moment of the meadow clip, not the look. Within seconds the fog thins and shows the world:
+- a towering rock island beside the meadow, crowned with round, cloud-puff trees and a house, with a big pale egg stone;
+- mirror-still water at its foot with clean reflections, and small glowing lanterns on the shore;
+- dense yellow-green grass full of orange, red and yellow flowers; flocks of birds; soft depth of field and bloom;
+- a giant carved stone face on a clifftop over the sea;
+- the dragon is ridden: the hero climbs on and flies over the island, coast and houses.
+These join the Phase 6 look: the fog comes and goes, the landmarks are what it reveals.
+
+### Lane landmarks — `tools/world/rockisle.py`, `tools/world/stoneface.py` → `public/models/world/*.glb`, `src/landmarks.js` (Opus)
+One towering rock island 80–120 m tall near the start (round puff trees, a cottage, the egg stone), and the carved
+stone face on the cliff crest (the Crest Stone). Both glow-veined at night like the ring stones.
+- **CHECK:** default view (`tod=day`) shows the rock island the way `refs/video/meadow-walk-sheet.jpg` frames 3–8 do;
+  `tod=night` shows its glow; fps ≥ 50; base sits on `heightAt` (≤ 0.05 m).
+
+### Lane water — `src/water.js` (Opus)
+A still lake at the rock island's foot with real reflections (planar or screen-space), lanterns' light doubled in it.
+- **CHECK:** the reflection of the rock island reads in a `tod=day` shot like the reference frames 6–8; fps ≥ 50.
+
+### Lane birds — `src/birds.js` (Sonnet)
+Two or three flocks (instanced, flapping), wheeling over the meadow by day; at night they roost and the motes take over.
+- **CHECK:** probe flocks ≥ 2 by day; birds visible in a `tod=day` shot; fps ≥ 50.
+
+### Lane dragon-ride — `src/dragon.js`, `src/ride.js` (Opus, after Phase 6 passes)
+Walk to the dragon when it lands, press E to climb on, fly with the same keys, E to land. As in the dragon clip.
+- **CHECK:** `auto=ride` clip: hero mounts, flies a loop over the rock island and lake, lands; controls-check 7/7.
 
 ### Lane sky6 — `src/sky.js`, `src/post.js` (Opus)
 Day–night cycle driving `ctx.tod`, `ctx.night`, `ctx.sunDir`, `ctx.fogColor`, sun and moon light. Sky dome: warm
