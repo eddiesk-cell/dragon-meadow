@@ -5,12 +5,15 @@
   shoulders, so it bent when the arms rose.
 - The clapper (its own loose piece inside the mouth) hangs on one bone, `spring_clapper_0`, parented to `head`.
 - A bell cannot nod like a man's head: each clip keeps HEADKEEP of its neck/head turn (Hit and Stagger threw it 60 deg off
-  the shoulders; the Idle tipped it back).
+  the shoulders; the Idle tipped it back). Hit and Stagger still threw the whole chest back and the bell 62 deg off rest
+  (tilt.py), so there the spine, chest and upperChest keep 40 % of their turn and the neck/head 10 % (hips alone tilt it 15).
 """
 import bpy, sys, numpy as np
 from mathutils import Quaternion
 
 HEADKEEP = 0.3
+HIT = {"spine": 0.4, "chest": 0.4, "upperChest": 0.4, "neck": 0.1, "head": 0.1}
+HITKEEP = {"Hit (Front)": HIT, "Stagger": HIT}
 src, out = sys.argv[sys.argv.index("--") + 1:][:2]
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=src)
@@ -66,11 +69,11 @@ bpy.ops.object.mode_set(mode="OBJECT")
 acts = list(bpy.data.actions)
 for act in acts:
     cs = [cv for layer in act.layers for st in layer.strips for bag in st.channelbags for cv in bag.fcurves]
-    for bone in ("neck", "head"):
+    for bone, kp in ({"neck": HEADKEEP, "head": HEADKEEP} | HITKEEP.get(act.name, {})).items():
         q = {cv.array_index: cv for cv in cs if cv.data_path == f'pose.bones["{bone}"].rotation_quaternion'}
         assert len(q) == 4, f"{act.name}: {bone} has {len(q)} rotation curves"
         for i in range(len(q[0].keyframe_points)):
-            rq = Quaternion().slerp(Quaternion([q[k].keyframe_points[i].co[1] for k in range(4)]), HEADKEEP)
+            rq = Quaternion().slerp(Quaternion([q[k].keyframe_points[i].co[1] for k in range(4)]), kp)
             for k in range(4): q[k].keyframe_points[i].co[1] = rq[k]
         for cv in q.values(): cv.update()
 ad = arm.animation_data or arm.animation_data_create()       # one NLA track per clip, as retarget.py exports them
