@@ -225,7 +225,7 @@ Not in this pass: touch walking on phones (drag-to-look works, walking needs a j
 switch for weak devices, the sea is hidden by haze from the crest (`refs/ref-dragon.png` wants it
 blue), Higgsfield models.
 
-### Phase 3 — the fight (Eddie: *"a monster so we could do a fight scene, where our hero can pull out his sword and fight (full special effects)"*; cap raised to 60 credits: *"yes, raise the cap"*)
+### Phase 3 — the fight (Eddie: *"a monster so we could do a fight scene, where our hero can pull out his sword and fight (full special effects)"*; cap raised to 60 credits: *"yes, raise the cap"*, then to 500: *"if we need to make more assets, please Cap at 500"*)
 
 Design source: `WORLD.md` → "The first monster — the Barrow Troll in the Old Ring". Concept picture:
 `art/troll/troll-front.png`. Every lane below reads both.
