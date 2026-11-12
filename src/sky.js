@@ -18,7 +18,7 @@ const sunAt = (tod, v) => { const a = (tod - 0.5) * TAU; return v.set(-0.8434 * 
 // Linear-light palette keyed by sun height (sunDir.y). Night ← twilight ← sunset ← dusk ← golden ← noon.
 // zenith, horizon (= fog), sun-side glow, key-light colour, hemi sky, hemi ground, cloud lit, cloud shade | key I, hemi I, cloud cover
 const KEYS = [
-  [-0.25, [.008, .012, .060], [.050, .060, .170], [0, 0, 0], [.55, .66, 1], [.30, .42, .85], [.02, .035, .05], [.07, .08, .17], [.012, .015, .045], 0, .9, .1],
+  [-0.25, [.008, .012, .060], [.050, .060, .170], [0, 0, 0], [.55, .66, 1], [.25, .45, .85], [.02, .045, .06], [.07, .08, .17], [.012, .015, .045], 0, 1.15, .1],
   [-0.08, [.020, .030, .130], [.17, .11, .24], [.30, .09, .08], [.55, .66, 1], [.42, .38, .70], [.05, .05, .06], [.32, .13, .20], [.04, .035, .09], 0, .8, -.12],
   [0.03, [.060, .080, .280], [.66, .38, .38], [1.4, .45, .12], [1, .45, .2], [.80, .58, .62], [.12, .10, .08], [1.3, .55, .38], [.22, .14, .26], 1.3, .9, -.2],
   [0.15, [.070, .140, .460], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.6, .95, .66], [.34, .28, .42], 1.9, 1.0, -.26],
@@ -72,11 +72,11 @@ export async function createSky(ctx) {
     const tw = sin(uTime.mul(h.y.mul(3).add(1)).add(h.z.mul(40))).mul(0.3).add(0.7)
     return step(prob.oneMinus(), h.x).mul(smoothstep(size, 0, r)).mul(tw).mul(h.y.mul(h.y).mul(5).add(0.4))
   }
-  const BAND = new THREE.Vector3(0.55, 0.42, 0.72).normalize()
+  const BAND = new THREE.Vector3(0.795, 0.19, 0.58).normalize() // the Milky Way crosses the night view upper right toward the zenith
   const stars = d => {
     const bd = dot(d, vec3(BAND.x, BAND.y, BAND.z)), band = exp(bd.mul(bd).mul(-28))
     const s = starLayer(d, 90, float(0.08), 0.2).mul(2.2).add(starLayer(d, 210, band.mul(0.3).add(0.12), 0.16))
-    const neb = band.mul(mx_fractal_noise_float(d.mul(6), 3, 2, 0.5).mul(0.5).add(0.5)).mul(vec3(0.09, 0.07, 0.17))
+    const neb = band.mul(mx_fractal_noise_float(d.mul(6), 3, 2, 0.5).mul(0.5).add(0.5)).mul(vec3(0.12, 0.09, 0.22))
     return vec3(0.85, 0.9, 1).mul(s).add(neb)
   }
 
@@ -114,14 +114,14 @@ export async function createSky(ctx) {
   })
   scene.backgroundNode = skyColor(normalize(normalWorldGeometry))
 
-  // Aerial perspective, Phase 6: the world shows through. Thin air (scale height 200 m): ~8 % at 100 m, ~45 % at 600 m,
-  // ~65 % at 1 km, ~93 % at 2 km, finished by 2.9 km; plus a ground haze (scale height 25 m) that softens low land — the
-  // 200 m crest ~40 % — while the castle on its headland and the sky islands stay readable. Thicker and bluer at night.
+  // Aerial perspective, Phase 6: the world shows through. Thin air (scale height 200 m): ~40 % at 600 m, ~65 % at 1 km,
+  // ~92 % at 2 km, finished by 2.9 km; plus a low haze (scale height 20 m) that softens the land near the ground — ~20 %
+  // at 100 m, the 200 m crest ~30 % — while the castle on its headland and the sky islands stay readable. Thicker at night.
   const uFogK = uniform(1)
   const toFrag = positionWorld.sub(cameraPosition), dist = length(toFrag), x = max(dist.sub(15), 0)
   const avgY = clamp(positionWorld.y.add(cameraPosition.y).mul(0.5), -40, 600)
   const air = x.mul(0.0008).add(x.mul(0.0005).pow(2)).mul(exp(avgY.mul(-1 / 200)))
-  const ground = x.mul(0.005).mul(exp(max(avgY, 0).mul(-1 / 25)))
+  const ground = x.mul(0.002).mul(exp(max(avgY, 0).mul(-1 / 20)))
   scene.fogNode = fog(haze(normalize(toFrag)), max(float(1).sub(exp(air.add(ground).mul(uFogK).negate())), smoothstep(2300, 2900, dist)))
   scene.fog = scene.background = null
 
