@@ -31,10 +31,10 @@ export async function createPet(ctx) {
   const tuft = sin(pb.x.mul(70).add(sin(pb.y.mul(55)).mul(2))).mul(sin(pb.z.mul(64).add(sin(pb.x.mul(48)).mul(1.7)))).mul(0.18).add(0.82)
   const len = h.mul(0.45).add(0.55).mul(tuft) // per-strand length, clumped into tufts → ragged fluffy outline
   const fill = smoothstep(0.35, 1.2, length(fwidth(q))) // strands thinner than a pixel → fatten them into a soft volume instead of sparkling
-  fur.opacityNode = max(step(length(ft), float(0.56).mul(float(1).sub(pow(kv.div(len), 1.6))).add(fill.mul(0.22))), step(kv, 0.001)) // full strands that taper late; shell 0 is solid skin
+  fur.opacityNode = max(step(length(ft), float(0.56).mul(float(1).sub(pow(kv.div(len), 1.6))).add(fill.mul(0.2).mul(max(float(1).sub(kv.div(len)), 0)))), step(kv, 0.001)) // full strands that taper late; shell 0 is solid skin
   fur.alphaTest = 0.5
   const coat = mix(color(0xfbf2e4), color(0xf9b49c), varying(attribute('aTint', 'float'))) // cream, peach blush
-  fur.colorNode = mix(coat.mul(color(0xc4ab92)), coat, max(max(smoothstep(0, 0.7, kv), float(1).sub(varying(L).mul(25))), fill)).mul(h.mul(0.12).add(0.94)) // warm shaded roots → light tips (short fur stays light)
+  fur.colorNode = mix(coat.mul(color(0xc4ab92)), coat, max(smoothstep(0, 0.7, kv), float(1).sub(varying(L).mul(25)))).mul(h.mul(0.12).add(0.94)) // warm shaded roots → light tips (short fur stays light)
   fur.emissiveNode = coat.mul(pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 3).mul(kv).mul(0.3)) // soft halo where light skims the tips
 
   const aK = new THREE.InstancedBufferAttribute(Float32Array.from({ length: SHELLS }, (_, i) => i / (SHELLS - 1)), 1)
@@ -193,7 +193,7 @@ export async function createPet(ctx) {
       twL = Math.max(0, twL - dt * 2.5); twR = Math.max(0, twR - dt * 2.5)
       ears.forEach((e, i) => {
         const tw = i ? twR : twL, side = i ? 1 : -1
-        e.rotation.z = side * (1.2 + Math.sin(flap + i * 0.3) * (0.16 + Math.min(sp, 3) * 0.05) + Math.sin(t * 30) * 0.3 * tw * tw - sniffDip * 0.3)
+        e.rotation.z = side * (1.3 + Math.sin(flap + i * 0.3) * (0.16 + Math.min(sp, 3) * 0.05) + Math.sin(t * 30) * 0.3 * tw * tw - sniffDip * 0.3)
         e.rotation.x = Math.min(sp * 0.12, 0.5)
       })
       tail.rotation.y = Math.sin(t * 7) * (0.25 + Math.min(sp, 2) * 0.15)
