@@ -173,7 +173,7 @@ export async function createField(ctx) {
   const n0 = attribute('normal', 'vec3') // terrain sits at the origin: local = world
   tm.positionNode = positionLocal.add(vec3(0, patchAt(positionLocal.xz).x, 0))
   tm.normalNode = normalize(cameraViewMatrix.mul(vec4(normalize(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y))), 0)).xyz)
-  tm.colorNode = mix(vertexColor().mul(vertexColor()).mul(mix(float(1), near, tp.y)), vec3(0.55, 0.53, 0.47), tp.z).mul(tp.w)
+  tm.colorNode = mix(vertexColor().mul(vertexColor()).mul(mix(float(1), near, tp.y)), vec3(0.46, 0.45, 0.4), tp.z).mul(tp.w)
   const terrain = new THREE.Mesh(tg, tm)
   terrain.receiveShadow = true
   scene.add(terrain)

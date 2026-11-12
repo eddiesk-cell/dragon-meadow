@@ -31,11 +31,11 @@ const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294
 function stoneGeo(THREE, w, h, t) {
   const g = mergeVertices(new THREE.IcosahedronGeometry(1, 22).deleteAttribute('normal').deleteAttribute('uv'))
   const p = g.attributes.position, col = new Float32Array(p.count * 3), o = rand() * 500
-  const slant = (rand() - 0.5) * 0.6, E = 0.55 + rand() * 0.2, pw = v => Math.sign(v) * Math.abs(v) ** E
+  const slant = (rand() - 0.5) * 0.6, E = 0.45 + rand() * 0.2, pw = v => Math.sign(v) * Math.abs(v) ** E
   const taper = 0.05 + rand() * 0.25, crown = 0.12 + rand() * 0.25, bend = (rand() - 0.5) * 0.5, twist = (rand() - 0.5) * 0.6, ph = rand() * 6
   const cuts = Array.from({ length: 13 }, () => { // random fracture planes: the convex shape left between them is the rock
-    const n = new THREE.Vector3(rand() - 0.5, rand() * 0.9 - 0.3, rand() - 0.5).normalize()
-    return { n, o: (0.6 + rand() * 0.28) * Math.hypot(n.x * w, n.y * h, n.z * t) / 2 }
+    const n = new THREE.Vector3(rand() - 0.5, rand() * 0.8 - 0.3, rand() - 0.5).normalize()
+    return { n, o: (0.62 + rand() * 0.26 + Math.max(0, n.y) * 0.25) * Math.hypot(n.x * w, n.y * h, n.z * t) / 2 } // tops lose less
   })
   const q = new THREE.Vector3()
   for (let i = 0; i < p.count; i++) {
@@ -56,10 +56,10 @@ function stoneGeo(THREE, w, h, t) {
     const lich = ss(0.48, 0.64, fbm(X * 1.3 + o, Y * 1.3, Z * 1.3 + 9, 3)) * ss(0.2, 1.2, Y), gold = ss(0.74, 0.8, noise3(X * 4 + o, Y * 4, Z * 4)) * 0.7
     const m = 0.78 + 0.4 * n2, streak = 0.86 + 0.2 * noise3(X * 6 + o, Y * 0.45, Z * 6)
     const mix3 = (c, to, a) => { c[0] = lerp(c[0], to[0], a); c[1] = lerp(c[1], to[1], a); c[2] = lerp(c[2], to[2], a) }
-    const c = [0.4 * m, 0.39 * m, 0.355 * m]
-    mix3(c, [0.62, 0.63, 0.57], lich * 0.8)
-    mix3(c, [0.58, 0.47, 0.2], gold)
-    mix3(c, [0.62, 0.6, 0.53], ss(0.7, 0.15, Y) * ss(0.45, 0.65, n1) * 0.7)
+    const c = [0.29 * m, 0.285 * m, 0.26 * m]
+    mix3(c, [0.48, 0.49, 0.43], lich * 0.75)
+    mix3(c, [0.5, 0.4, 0.17], gold)
+    mix3(c, [0.52, 0.5, 0.44], ss(0.7, 0.15, Y) * ss(0.45, 0.65, n1) * 0.7)
     mix3(c, [0.08, 0.11, 0.04], ss(0.45, 0.05, Y) * ss(0.35, 0.55, n2) * 0.7)
     const shade = streak * (0.55 + 0.45 * ss(-0.07, 0.04, d))
     col[i * 3] = c[0] * shade; col[i * 3 + 1] = c[1] * shade; col[i * 3 + 2] = c[2] * shade
@@ -114,7 +114,7 @@ export async function createRing(ctx) {
     const x = C.x + r * Math.cos(th), z = C.z + r * Math.sin(th)
     const tangent = new THREE.Vector2(-Math.sin(th), Math.cos(th))
     const fallen = FALLEN.has(k)
-    const h = fallen ? 3 + rand() * 1.3 : 2.5 + rand() * 1.5, w = 1.2 + rand() * 0.9, t = 0.7 + rand() * 0.45
+    const h = fallen ? 3.2 + rand() * 1.2 : 3.0 + rand() * 1.5, w = 1.2 + rand() * 0.8, t = fallen ? 1 + rand() * 0.3 : 0.7 + rand() * 0.4
     const geo = stoneGeo(THREE, w, h, t)
     if (!fallen) {
       // broad face to the centre, leaning a few degrees; sunk 0.45 m below the lowest ground under its foot
@@ -130,7 +130,7 @@ export async function createRing(ctx) {
       const yaw = -th + (rand() - 0.5) * 0.9
       geo.translate(0, -h / 2, 0)
       const m = place(geo, x, z, yaw, { lean: Math.PI / 2 + (rand() - 0.5) * 0.1, tilt: Math.PI / 2 })
-      m.position.y = ctx.heightAt(x, z) - t * 0.05
+      m.position.y = ctx.heightAt(x, z) + t * 0.12 // a little over half its bulk below the turf
       const u = new THREE.Vector2(Math.cos(-yaw), Math.sin(-yaw))
       foot.push({ c: new THREE.Vector2(x, z), u, a: h / 2, b: w / 2 })
       stones.push({ pos: new THREE.Vector3(x, ctx.heightAt(x, z), z), radius: h / 2, height: t * 0.55, fallen: true, mesh: m })
@@ -163,8 +163,6 @@ export async function createRing(ctx) {
 
   // --- ground patch: 80 m square round the centre → field grass + terrain (ctx.groundPatch, src/field.js)
   const gp = ctx.groundPatch, N = gp.size, S = 80, x0 = C.x - S / 2, z0 = C.z - S / 2, cell = S / N
-  const H = new Float32Array(N * N)
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) H[j * N + i] = off(x0 + (i + 0.5) * cell, z0 + (j + 0.5) * cell)
   const sdf = (f, x, z) => {
     const px = x - f.c.x, pz = z - f.c.y, qa = Math.abs(px * f.u.x + pz * f.u.y) - f.a, qb = Math.abs(-px * f.u.y + pz * f.u.x) - f.b
     return Math.hypot(Math.max(qa, 0), Math.max(qb, 0)) + Math.min(Math.max(qa, qb), 0)
@@ -172,28 +170,28 @@ export async function createRing(ctx) {
   const data = gp.tex.image.data, half = THREE.DataUtils.toHalfFloat
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const x = x0 + (i + 0.5) * cell, z = z0 + (j + 0.5) * cell, d = Math.hypot(x - C.x, z - C.z)
-    const sx = (H[j * N + Math.min(i + 1, N - 1)] - H[j * N + Math.max(i - 1, 0)]) / (2 * cell), sz = (H[Math.min(j + 1, N - 1) * N + i] - H[Math.max(j - 1, 0) * N + i]) / (2 * cell)
-    const slope = Math.hypot(sx + (base(x + 0.5, z) - base(x - 0.5, z)), sz + (base(x, z + 0.5) - base(x, z - 0.5)))
     const n = fbm(x * 0.13, 3.7, z * 0.13, 3)
-    // grass: trampled short on the floor (≈0.3), a little longer on the mound, full height up the bank
-    let grass = d < MR ? 0.55 : lerp(0.28 + 0.15 * n, 1, ss(21, 27, d))
-    // bare chalk: scuffs on the floor, streaks where the bank is steep, the path from the door out through the gap
-    let chalk = (d < 21 ? ss(0.6, 0.72, n) * 0.7 : 0) + ss(0.32, 0.55, slope) * ss(0.35, 0.6, fbm(x * 0.4, 1.3, z * 0.4, 2))
+    // grass: trampled short on the floor (≈0.2), longer on the mound, full height up the bank
+    let grass = d < MR ? 0.55 : lerp(0.16 + 0.12 * n, 1, ss(21, 27, d))
+    // bare chalk: scuffs on the floor, a worn forecourt before the door (bank streaks read as puddles from the rim: left out)
+    const n2 = fbm(x * 0.5, 7.1, z * 0.5, 2)
+    let chalk = d < 21 && d > MR ? ss(0.6, 0.72, n) * 0.7 : 0
     const along = (x - door.x) * D.x + (z - door.y) * D.y, across = Math.abs(-(x - door.x) * D.y + (z - door.y) * D.x)
-    if (along > -0.5 && d < RR + 6) chalk += (1 - ss(0.5, 1.4 + along * 0.02, across)) * (0.85 - ss(14, RR + 6, d) * 0.6) * (0.75 + 0.5 * n)
+    if (along > -0.5) chalk += (1 - ss(0.8, 2.2, across + along * 0.2)) * (1 - ss(2.5, 6, along)) * ss(0.2, 0.5, n2 + 0.2)
     chalk += 1 - ss(0.4, 1.6, Math.hypot(x - scar.x, z - scar.y))
     let light = 1
     for (const f of foot) {
       const s = sdf(f, x, z)
       if (s > 2) continue
       grass = Math.min(grass, ss(-0.05, 0.9, s) * 0.5 + 0.5 * ss(0.6, 2, s)) // none under the stone, short round its foot
-      light = Math.min(light, 0.45 + 0.55 * ss(-0.1, 1.2, s))          // contact shade
+      light = Math.min(light, 0.6 + 0.4 * ss(-0.1, 0.9, s))            // contact shade
     }
     if (along < 0.6 && along > -2.5 && across < 1.1) light = Math.min(light, 0.25) // inside the portal
-    chalk = Math.min(1, chalk)
-    grass *= 1 - ss(0.3, 0.8, chalk) // bare chalk: no blades at all
+    chalk = ss(0.3, 0.6, chalk) // sharp edged: turf or bare chalk, never grey mud between
+    grass *= 1 - chalk
+    chalk *= 0.72 + 0.28 * noise3(x * 1.7, 2.2, z * 1.7) // mottled, so it never reads as a sheet of water
     const k = (j * N + i) * 4
-    data[k] = half(H[j * N + i]); data[k + 1] = half(grass); data[k + 2] = half(chalk); data[k + 3] = half(light)
+    data[k] = half(off(x, z)); data[k + 1] = half(grass); data[k + 2] = half(chalk); data[k + 3] = half(light)
   }
   gp.rect.set(x0, z0, S)
   gp.tex.needsUpdate = true
@@ -234,7 +232,7 @@ export async function createRing(ctx) {
   // Proof view: ?ring=1 pins the camera on the rim behind the door path, looking in.
   if (params.get('ring')) {
     const eye = new THREE.Vector3(C.x + D.x * 35, 0, C.z + D.y * 35)
-    eye.y = ctx.heightAt(eye.x, eye.z) + 3
+    eye.y = ctx.heightAt(eye.x, eye.z) + 5
     const prev = scene.onBeforeRender
     scene.onBeforeRender = function (r, s, c, ...rest) {
       prev.call(this, r, s, c, ...rest)
