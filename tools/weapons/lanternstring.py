@@ -20,13 +20,13 @@ def mat(name, rgb, rough, metal=0.0, glow=None):
     b.inputs["Roughness"].default_value = rough
     if glow:
         b.inputs["Emission Color"].default_value = (*glow, 1)
-        b.inputs["Emission Strength"].default_value = 1.5
+        b.inputs["Emission Strength"].default_value = 1.0
     return m
 
 YEW = mat("yew", (0.24, 0.13, 0.07), 0.6)
 MOSS = mat("moss_leather", (0.20, 0.30, 0.12), 0.8)
 HORN = mat("horn", (0.84, 0.78, 0.64), 0.45)
-STRING = mat("string", (0.55, 0.85, 0.20), 0.5, glow=(0.78, 1.0, 0.35))
+STRING = mat("string", (0.578, 1.0, 0.102), 0.5, glow=(0.578, 1.0, 0.102))  # linear #C8FF5A
 LEATHER = mat("leather", (0.22, 0.13, 0.07), 0.7)
 GREY = mat("grey_fletch", (0.55, 0.56, 0.55), 0.9)
 IRON = mat("iron", (0.40, 0.41, 0.43), 0.45, 0.9)
@@ -76,8 +76,8 @@ def bend(y):  # tips curve back toward -X, 0.15 m at |y| = 0.80
 
 def limb(s):
     ys = [0.06, 0.2, 0.4, 0.6, 0.76]
-    f = lambda y: 0.032 + (0.012 - 0.032) * (y - 0.06) / 0.70
-    g = lambda y: 0.022 + (0.009 - 0.022) * (y - 0.06) / 0.70
+    f = lambda y: 0.016 + (0.006 - 0.016) * (y - 0.06) / 0.70
+    g = lambda y: 0.011 + (0.0045 - 0.011) * (y - 0.06) / 0.70
     return tube("limb", [(s * y, f(y), g(y), bend(y), 0) for y in ys], YEW)
 
 
@@ -108,7 +108,7 @@ def finish(parts, name):
 # --- weapon: bow, origin = grip centre
 w = [tube("grip", [(-.06, .018, .018, 0, 0), (0, .020, .020, 0, 0), (.06, .018, .018, 0, 0)], MOSS, 12), limb(1), limb(-1)]
 for s in (1, -1):
-    w.append(tube("nock", [(s * .76, .012, .009, bend(.76), 0), (s * .80, .004, .004, bend(.80), 0)], HORN, 8))
+    w.append(tube("nock", [(s * .76, .006, .0045, bend(.76), 0), (s * .80, .004, .004, bend(.80), 0)], HORN, 8))
 w.append(tube("string", [(-.80, .002, .002, -.15, 0), (.80, .002, .002, -.15, 0)], STRING, 6))
 weapon = finish(w, "weapon")
 
@@ -159,7 +159,7 @@ if render_to:  # picture beside the broadsword, same camera
     bpy.ops.object.camera_add(location=(0.55, -4.6, 0.55)); cam = bpy.context.object
     cam.rotation_euler = (pi / 2, 0, 0); cam.data.lens = 35
     sc = bpy.context.scene; sc.camera = cam
-    sc.render.engine = "BLENDER_WORKBENCH"; sc.display.shading.light = "STUDIO"; sc.display.shading.color_type = "MATERIAL"
+    sc.render.engine = "BLENDER_EEVEE"
     sc.render.resolution_x, sc.render.resolution_y = 1400, 900
     sc.render.filepath = render_to
     bpy.ops.render.render(write_still=True)
