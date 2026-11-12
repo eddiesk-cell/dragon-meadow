@@ -143,7 +143,7 @@ export async function createSettlements(ctx) {
     return m
   }
   const rnd = fract(sin(dot(floor(positionWorld.mul(vec3(0.55, 0.42, 0.55))), vec3(12.9898, 78.233, 37.719))).mul(43758.5453))
-  const winMat = glass(step(0.1, rnd).mul(rnd.mul(1.5).add(2.6))) // 9 in 10 windows lit, each its own warmth
+  const winMat = glass(step(0.1, rnd).mul(rnd.mul(2).add(3.4))) // 9 in 10 windows lit, each its own warmth, bright enough to carry through the night haze
   const lampMat = glass(float(5))
   const swaps = new Map() // kit material → ours
   const swap = (m, name) => m.name === 'window' ? (name === 'lantern' ? lampMat : winMat) : swaps.get(m) || m
@@ -242,7 +242,6 @@ export async function createSettlements(ctx) {
   row(SS, 1, 4, 70, ['house', 'cottage_s', 'cottage_l', 'house', 'cottage_s'])
   row(SS, -1, 4, 70, ['cottage_s', 'house', 'cottage_l', 'house'])
   row(LANE, -1, 62, 92, ['cottage_l', 'cottage_s'])
-  row(LANE, 1, 136, 152, ['house'])
   placed.push({ name: 'market', x: TOWN.x - 20, z: TOWN.z + 3, yaw: Math.PI / 2 }, { name: 'well', x: TOWN.x + 2, z: TOWN.z + 1, yaw: 0.3 },
     { name: 'church', x: -36, z: 552, yaw: Math.atan2(TOWN.x - -36, TOWN.z - 552) })
   for (const b of placed) { // a terrace under each: level to its centre's height, grass off the footprint
