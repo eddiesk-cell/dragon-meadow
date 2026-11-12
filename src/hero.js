@@ -1,5 +1,6 @@
 // Hero lane: the Drifter, third-person camera, WASD/Shift/Space, ?auto=walk|run for proof.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js'
 
 export async function createHero(ctx) {
   const { THREE, scene, camera, params, heroPos } = ctx
@@ -147,14 +148,29 @@ export async function createHero(ctx) {
 
   // Camera collision: rays from his head to the camera stop 0.3 m short of anything flagged userData.cameraBlock
   // (stones, landmarks, buildings: Contract). Five parallel rays, the centre and 0.2 m / 0.12 m off it across the view,
-  // so the near plane's edges stay out of a stone's edge too. The list is re-read every second: modules add props late.
-  const ray = new THREE.Raycaster(), seg = new THREE.Vector3(), corner = new THREE.Vector3(), blocks = []
+  // so the near plane's edges stay out of a stone's edge too. They test each flagged mesh's convex hull, built once: it
+  // holds the mesh, so outside it is outside the stone, and a ray costs ~0.2 ms instead of ~1.7 ms on a 10k-triangle
+  // stone (three has no BVH). So flag pieces, not one merged town. The list is re-read every second: modules add props late.
+  const ray = new THREE.Raycaster(), seg = new THREE.Vector3(), corner = new THREE.Vector3(), solids = [], blocks = []
   const side = new THREE.Vector3(), lift = new THREE.Vector3(), from = new THREE.Vector3(), to = new THREE.Vector3()
   const OFF = [[0, 0], [0.2, 0], [-0.2, 0], [0, 0.12], [0, -0.12]] // [across, up] in metres
-  const hitAt = (from, to, pad) => { // distance to the first block on from→to (+pad), or undefined
+  const hulls = new WeakMap(), hullMat = new THREE.MeshBasicMaterial()
+  const hullOf = m => {
+    if (!hulls.has(m)) {
+      let h = m // instanced, skinned, or flat with no hull: the mesh itself
+      if (!m.isInstancedMesh && !m.isSkinnedMesh) try {
+        const p = m.geometry.attributes.position
+        h = new THREE.Mesh(new ConvexGeometry(Array.from({ length: p.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(p, i))), hullMat)
+        h.matrixWorld = m.matrixWorld // the same matrix: the hull moves with its mesh
+      } catch { h = m }
+      hulls.set(m, h)
+    }
+    return hulls.get(m)
+  }
+  const hitAt = (list, from, to, pad) => { // distance to the first of `list` on from→to (+pad), or undefined
     seg.subVectors(to, from); const len = seg.length()
     ray.set(from, seg.divideScalar(len)); ray.far = len + pad
-    return ray.intersectObjects(blocks, true)[0]?.distance
+    return ray.intersectObjects(list, false)[0]?.distance
   }
   let scanT = 0, pulled = 0, frames = 0, behind = 0, inStone = 0
   const camtest = params.get('camtest') // proof: the orbit is swung behind the nearest block (in ?auto=fight, the barrow-door stones)
@@ -198,16 +214,20 @@ export async function createHero(ctx) {
 
       // Camera: orbit target at head height, never under the ground, never inside a block.
       camTarget.set(pos.x, pos.y + 1.5, pos.z)
-      if ((scanT -= dt) <= 0) { scanT = 1; blocks.length = 0; scene.traverse(o => o.userData.cameraBlock && blocks.push(o)) }
+      if ((scanT -= dt) <= 0) {
+        scanT = 1; solids.length = 0
+        scene.traverse(o => o.userData.cameraBlock && o.traverse(m => m.isMesh && solids.push(m)))
+        blocks.length = 0; blocks.push(...solids.map(hullOf))
+      }
       let R = DIST, near = Infinity
-      if (camtest) for (const o of blocks) { // swing ±30° across the nearest block, 2.5 m beyond it, low: its goal keeps landing behind stone
+      if (camtest) for (const o of solids) { // swing ±30° across the nearest block, 2.5 m beyond it, low: its goal keeps landing behind stone
         const p = o.getWorldPosition(corner), d = Math.hypot(p.x - pos.x, p.z - pos.z)
         if (d < near) { near = d; R = Math.min(d + 2.5, 16); yaw = Math.atan2(p.x - pos.x, p.z - pos.z) + 0.5 * Math.sin(ctx.time * 0.9); pitch = 0.05 + 0.1 * Math.abs(Math.sin(ctx.time * 0.6)) }
       }
       const cp = Math.cos(pitch)
       camGoal.set(camTarget.x + Math.sin(yaw) * cp * R, camTarget.y + Math.sin(pitch) * R, camTarget.z + Math.cos(yaw) * cp * R)
       camGoal.y = Math.max(camGoal.y, ctx.heightAt(camGoal.x, camGoal.z) + 0.4)
-      if (camtest) behind += hitAt(camTarget, camGoal, 0) !== undefined
+      if (camtest) behind += hitAt(solids, camTarget, camGoal, 0) !== undefined
       camera.position.lerp(camGoal, 1 - Math.exp(-dt * 12))
       // After the lerp, so a lagging camera never trails through stone.
       const cl = camera.position.distanceTo(camTarget)
@@ -215,7 +235,7 @@ export async function createHero(ctx) {
       let k = cl
       for (const [x, y] of OFF) {
         from.copy(camTarget).addScaledVector(side, x).addScaledVector(lift, y)
-        const d = hitAt(from, to.copy(camera.position).addScaledVector(side, x).addScaledVector(lift, y), 0.3)
+        const d = hitAt(blocks, from, to.copy(camera.position).addScaledVector(side, x).addScaledVector(lift, y), 0.3)
         if (d !== undefined) k = Math.min(k, d - 0.3)
       }
       if (k < cl) { camera.position.lerp(camTarget, 1 - Math.max(k, 0.2) / cl); pulled++ }
@@ -223,8 +243,8 @@ export async function createHero(ctx) {
       frames++
       if (camtest) { // independent check: the camera and its near-plane corners all on his side of every block
         camera.updateMatrixWorld()
-        let inside = hitAt(camTarget, camera.position, 0) !== undefined
-        for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) inside ||= hitAt(camTarget, corner.set(x, y, -1).unproject(camera), 0) !== undefined
+        let inside = hitAt(solids, camTarget, camera.position, 0) !== undefined // against the real meshes, not the hulls
+        for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) inside ||= hitAt(solids, camTarget, corner.set(x, y, -1).unproject(camera), 0) !== undefined
         inStone += inside
       }
     },
