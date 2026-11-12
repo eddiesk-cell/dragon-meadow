@@ -615,3 +615,20 @@ way `bell.py` already damps head and neck. The hit should still read as a hit (k
 - **CHECK:** printed worst bell tilt off rest per clip: Hit and Stagger ≤ 35°, every other clip unchanged ±2°.
   A render of the Hit and Stagger peak frames (front and side) shows the bell above the shoulders. The glb holds
   the same 9 clips and is ≤ 8 MB.
+
+### Lane vfx2 — `src/vfx.js` (Sonnet, after wave A frees the desk)
+From the monster and combat reviews:
+- Warm the trail material at load the way the particle layers already are. The first cut froze the desk for about 4 s, and combat.js carries a `shortcut:` that the orchestrator removes afterwards.
+- `flash()` turns the troll and its club pure white for about 0.3 s, so it reads as a white cut-out. Make it a warm additive tint at most 35% and 0.12 s long.
+- `trail(obj, {base, tip, life})` gets a per-trail `life` (default 0.2, combat will pass 0.35).
+- The trail's bright tip band draws after the flash (renderOrder) so arcs still read on a hit.
+- **CHECK:** `node tools/clip.mjs shots/vfx2-fight.mp4 "auto=fight" 20` shows no `vfx:` error. In the frames at a hit flash, the troll keeps its texture under a warm glow (never a flat white shape). The first cut has no stall: the probe `__probes.vfx().maxFrameMs` stays under 120 after load.
+
+### Lane hero2 — `src/hero.js` (Opus, after wave A frees the desk)
+- `?auto=` holds W only for `walk` and `run`.
+- `heroAct.play(name, {hold: true})` keeps the last pose until `stop()`, so Death can lie still.
+- The camera never enters solid things: it raycasts from the hero's head to the camera against meshes with `userData.cameraBlock = true` and pulls in to the hit point minus 0.3 m. Ring stones, landmarks and buildings set that flag (Contract).
+- **CHECK:** `auto=fight` with the camera driven behind a standing stone (`&camtest=1`, a scripted orbit through the barrow-door stones): no frame shows the camera inside stone. `node tools/controls-check.mjs` 7/7. After `heroAct.play('Death (Collapse)', {hold:true})` the pose is unchanged 2 s later (probe).
+
+Contract additions (2026-11-13): `combat` also writes `ctx.heroPos` (rolls, lunges, knock-backs, respawn) — hero.js reads the
+same Vector3. Any mesh the camera must not pass through sets `userData.cameraBlock = true`.
