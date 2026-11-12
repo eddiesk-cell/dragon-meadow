@@ -7,7 +7,7 @@ export async function createDragon(ctx) {
   const gltf = await new GLTFLoader().loadAsync('/models/dragon.glb')
   const model = gltf.scene
   const holder = new THREE.Group() // holder carries path pose; model carries scale
-  model.scale.setScalar(2.6) // ~7 m shipped span -> ~18 m
+  model.scale.setScalar(3) // ~7 m shipped span -> ~18 m
   model.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true } })
   holder.add(model)
   scene.add(holder)
@@ -17,11 +17,11 @@ export async function createDragon(ctx) {
   let clip = 'fly'
   mixer.clipAction(clips.fly).play()
 
-  // Path: figure-eight R=75 ahead of start; near mode: R=12 circle ~34 m ahead; the proof camera is aimed at it in front.
+  // Path: figure-eight R=75 ahead of start; near mode: R=6 circle ~16 m ahead; the proof camera is aimed at it in front.
   const pos = (t, out) => {
     if (near) {
-      const u = 0.6 * t + 1.0
-      out.set(12 * Math.sin(u), 0, -34 + 12 * Math.cos(u))
+      const u = 0.95 * t + 1.0
+      out.set(6 * Math.sin(u), 0, -16 + 6 * Math.cos(u))
       out.y = ctx.heightAt(out.x, out.z) + 16
     } else {
       const u = 0.11 * t
