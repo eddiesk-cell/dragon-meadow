@@ -25,17 +25,18 @@ wood = (ax > 0.33) & (co[:, 2] >= 1.37)                                     # th
 # and sticks out of the lowered forearm like a fin
 G = {g.index: g.name for g in ob.vertex_groups}
 ARMY = ("Shoulder", "UpperArm", "LowerArm", "Hand", "Thumb", "Index", "Middle", "Ring", "Little")
-fixed = 0
+fixed = left = 0
 for i in np.flatnonzero(wood):
     v = ob.data.vertices[int(i)]; side = "left" if co[i, 0] > 0 else "right"
     keep = {G[g.group]: g.weight for g in v.groups if G[g.group].startswith(side) and any(k in G[g.group] for k in ARMY)}
     if len(keep) == len(v.groups) or not v.groups: continue
-    for g in list(v.groups): ob.vertex_groups[g.group].remove([int(i)])
+    for j in [g.group for g in v.groups]: ob.vertex_groups[j].remove([int(i)])   # indices first: removing invalidates the live group elements
     tot = sum(keep.values())
     if tot < 1e-3: keep, tot = {side + ("UpperArm" if ax[i] < abs(arm.data.bones[side + "LowerArm"].head_local.x) else "LowerArm"): 1.0}, 1.0
     for n, w in keep.items(): ob.vertex_groups[n].add([int(i)], w / tot, "REPLACE")
-    fixed += 1
-print(f"NETS arm vertices cleaned of body weights: {fixed}")
+    fixed += 1; left += len(v.groups) > len(keep)    # still holds a body group the rewrite meant to clear
+print(f"NETS arm vertices cleaned of body weights: {fixed}; leftover: {left} vertices still in a cleared group")
+assert left == 0, "stale weights left behind"
 
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.mode_set(mode="EDIT")

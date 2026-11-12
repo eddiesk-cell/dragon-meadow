@@ -110,12 +110,18 @@ hw0 = np.array([next((g.weight for g in v.groups if g.group == HG.index), 0.0) f
 head |= ~core & (co[:, 2] > 1.50) & (hw0 > 0.5)        # crest tips the flood misses (decimation cut their edges)
 ramp = core & (co[:, 2] > HEAD_Z0) & ~head
 k = np.clip((co[:, 2] - HEAD_Z0) / (HEAD_Z1 - HEAD_Z0), 0, 1); k = k * k * (3 - 2 * k)
+left = left_w = 0
 for i in np.flatnonzero(head | ramp):
     v = ob.data.vertices[int(i)]; f = 1.0 if head[i] else float(k[i])
-    for g in list(v.groups):
-        if g.group != HG.index: g.weight *= 1 - f
+    for j, w in [(g.group, g.weight) for g in v.groups if g.group != HG.index]:   # indices first: removing invalidates the live group elements
+        if f >= 1: ob.vertex_groups[j].remove([int(i)])                          # all head: the other groups go, not stay at 0
+        else: ob.vertex_groups[j].add([int(i)], w * (1 - f), "REPLACE")
     hw = next((g.weight for g in v.groups if g.group == HG.index), 0.0)
     HG.add([int(i)], hw * (1 - f) + f, "REPLACE")
+    others = [g.weight for g in v.groups if g.group != HG.index]
+    left += f >= 1 and bool(others); left_w += f >= 1 and any(w > 0 for w in others)   # all-head: other groups meant cleared
+print(f"FIXRIG leftover: {left} all-head vertices still in another group ({left_w} with weight > 0)")
+assert left == 0, "stale weights left behind"
 tip = int(np.argmin(np.where(head, co[:, 1], 9))); dv = co[tip] - np.array(hj[:])
 print(f"FIXRIG head rigid: {int(head.sum())} vertices all head (lowest z {co[head, 2].min():.3f}), {int(ramp.sum())} ramped on "
       f"the throat, neck tube {int(core.sum())}; beak tip {np.round(co[tip], 3)}, {np.degrees(np.arctan2(dv[0], -dv[1])):.0f} deg to his left")

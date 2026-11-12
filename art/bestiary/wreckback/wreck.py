@@ -116,12 +116,15 @@ elif MODE == "shell":
     hd, wide = names.index("head"), np.abs(V[:, 0]) > 0.2  # head weight out on the shoulders is the long head bone bleeding
     W[wide, up] += W[wide, hd]; W[wide, hd] = 0          # through the hull: the shoulders would nod with the head
     W = (1 - s)[:, None] * W; W[:, up] += s
+    left = 0
     for v in me.data.vertices:                            # rewrite each vertex's groups: 4 strongest, normalised
         i = v.index; top = np.argsort(W[i])[-4:]; top = top[W[i, top] > 1e-4]; tot = W[i, top].sum()
-        for g in list(v.groups):
-            me.vertex_groups[g.group].remove([i])
+        for j in [g.group for g in v.groups]:             # indices first: removing invalidates the live group elements
+            me.vertex_groups[j].remove([i])
         for j in top:
             me.vertex_groups[j].add([i], float(W[i, j] / tot), "REPLACE")
+        left += len(v.groups) > len(top)                  # still holds a group the rewrite meant to clear
+    print(f"SHELL leftover: {left} vertices still in a cleared group"); assert left == 0, "stale weights left behind"
     print(f"SHELL rigid on upperChest: {(s > 0.5).sum()} vertices; claw bones folded into rightHand: {[names[i] for i in claw]}")
     acts = list(bpy.data.actions)                         # one NLA track per clip, as retarget.py exports them
     from mathutils import Quaternion
