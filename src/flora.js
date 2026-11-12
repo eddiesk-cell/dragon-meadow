@@ -3,21 +3,23 @@
 // as in refs/world/mix-day.png. One InstancedMesh per model; each frame the CPU keeps only the instances near and in view,
 // and feeds each a low-passed ctx.windAt so the plants lean into the same gusts the grass shows. Glow = mask² × ctx.night.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { uniform, vec3, float, attribute, vertexColor, positionLocal, mix, clamp } from 'three/tsl'
+import { uniform, vec3, float, attribute, vertexColor, positionLocal, positionWorld, cameraPosition, normalize, dot, smoothstep, mix, clamp } from 'three/tsl'
 
 // glow: emissive colour at full night × power; day: the bells keep a little of it by day (they leak the light they drink);
+// lift / trans: sunlight through the leaves by day, all round / when looking toward the sun (×1.5 where the mask is);
 // tint: base colour the leaves drift toward under the moon; lean: m the top moves per m/s of wind (× height² along the
 // plant); vine: the same for the tree's vines, growing toward their tips; tau: s the plant lags the wind; far: draw range m.
 const KINDS = {
-  bellflower: { glow: [1.0, 0.62, 0.28], power: 5, day: 0.25, lean: 0.06, tau: 0.6, far: 260, scale: [0.8, 1.45] },
-  fern: { glow: [0.6, 0.28, 1.0], power: 4, tint: [0.2, 0.1, 0.36], lean: 0.035, tau: 0.35, far: 180, scale: [1.0, 1.6] },
-  vinetree: { glow: [0.3, 1.0, 0.72], power: 2.6, lean: 0.006, vine: 0.09, tau: 1.6, far: 4000, scale: [0.9, 1.25] },
+  bellflower: { glow: [1.0, 0.5, 0.14], power: 1.6, day: 0.25, lift: 0.06, trans: 0.25, lean: 0.06, tau: 0.6, far: 260, scale: [0.8, 1.45] },
+  fern: { glow: [0.6, 0.28, 1.0], power: 1.5, lift: 0.06, trans: 0.15, tint: [0.2, 0.1, 0.36], lean: 0.035, tau: 0.35, far: 180, scale: [1.0, 1.6] },
+  vinetree: { glow: [0.25, 1.0, 0.65], power: 1.4, lift: 0.04, trans: 0.2, lean: 0.006, vine: 0.09, tau: 1.6, far: 4000, scale: [0.9, 1.25] },
 }
-// The start view (hero at the origin looking −Z, the rock and lake to the right, the castle 17° left): a giant tree
-// whose canopy and vines hang over the upper left, bells down the left edge and in the left foreground, ferns in both
+// The start view (hero at the origin looking −Z, the rock and lake to the right, the castle 17° left): a giant tree on
+// the crest at the left (placed and turned so no vine crosses the castle or the egg, beside Crestwatch's road and beyond
+// the dragon's figure-eight, which flies ~15 m up: a nearer tree could not miss all three), bells down the left edge and in the left foreground, ferns in both
 // foreground corners, a few bells along the right shore. [kind, x, z, scale, yaw°]
 const FRAME = [
-  ['vinetree', -34, -40, 1.15, 200],
+  ['vinetree', -121, -180, 1.5, 5],
   ['bellflower', -4.2, -1.5, 1.35, 120], ['bellflower', -6.5, -6, 1.15, 150], ['bellflower', -5, -12, 0.95, 90],
   ['bellflower', -9, -19, 1.2, 160], ['bellflower', -12, -30, 1.0, 130], ['bellflower', -10.5, -44, 1.3, 170],
   ['bellflower', 8, -14, 1.0, 20], ['bellflower', 11, -22, 1.2, 40], ['bellflower', 14, -31, 0.9, 10],
@@ -42,6 +44,7 @@ export async function createFlora(ctx) {
   function free(x, z, r, slope) {
     if (Math.hypot(x, z) > R) return false
     for (const c of ctx.keepClear) if (Math.hypot(x - c.x, z - c.z) < c.r + r) return false
+    for (const t of lists.vinetree) if (Math.hypot(x - t.x, z - t.z) < 8 * t.s + r) return false // trunk and buttresses
     for (const [a, b] of ROAD) if (Math.hypot(x - a, z - b) < 6 + r) return false
     if (ctx.pond && ctx.pond.inside(x, z) > 0) return false
     if (H(x, z) < -5) return false // the sea below the cliff
@@ -92,7 +95,7 @@ export async function createFlora(ctx) {
       const m = rnd()
       let cx, cz
       if (m < 0.45 && rims.length) { const c = rims[Math.floor(rnd() * rims.length)], a = rnd() * 6.28, r = c.r + 2 + rnd() * 10; cx = c.x + r * Math.cos(a); cz = c.z + r * Math.sin(a) }
-      else if (m < 0.7 && trees.length) { const t = trees[Math.floor(rnd() * trees.length)], a = rnd() * 6.28, r = 8 + rnd() * 26; cx = t.x + r * Math.cos(a); cz = t.z + r * Math.sin(a) }
+      else if (m < 0.7 && trees.length) { const t = trees[Math.floor(rnd() * trees.length)], a = rnd() * 6.28, r = t.s * (9 + rnd() * 20); cx = t.x + r * Math.cos(a); cz = t.z + r * Math.sin(a) }
       else { const a = rnd() * 6.28, r = R * rnd() ** 1.6; cx = r * Math.sin(a); cz = -r * Math.cos(a) }
       if (OPEN(cx, cz) || !free(cx, cz, 1, 0.35)) continue
       d++
@@ -107,7 +110,8 @@ export async function createFlora(ctx) {
   drifts('fern', 90, 5, 1.3)
 
   // One InstancedMesh per kind; per-instance aBend (m/s of wind, low-passed + the plant's own sway) bends it.
-  const uNight = uniform(0)
+  const uNight = uniform(0), uDay = uniform(1), uSun = uniform(new THREE.Vector3())
+  const back = smoothstep(0.2, 1, dot(normalize(positionWorld.sub(cameraPosition)), uSun)) // looking through a leaf at the sun
   const kinds = names.map(name => {
     const cfg = KINDS[name], geo = geos[name].clone(), list = lists[name]
     geo.computeBoundingBox(); geo.computeBoundingSphere()
@@ -117,7 +121,8 @@ export async function createFlora(ctx) {
     const vc = vertexColor(), mask = geo.attributes._glow ? attribute('_glow', 'float') : vc.a, m2 = mask.mul(mask)
     const mat = new THREE.MeshStandardNodeMaterial({ roughness: name === 'vinetree' ? 0.85 : 0.6, metalness: 0, side: THREE.DoubleSide })
     mat.colorNode = cfg.tint ? mix(vc.rgb, vec3(...cfg.tint), uNight.mul(0.55)) : vc.rgb
-    mat.emissiveNode = vec3(...cfg.glow).mul(m2).mul(uNight.mul(cfg.power).add(cfg.day || 0))
+    const through = vc.rgb.mul(back.mul(cfg.trans).add(cfg.lift)).mul(mask.mul(0.5).add(1)).mul(uDay)
+    mat.emissiveNode = vec3(...cfg.glow).mul(m2).mul(uNight.mul(cfg.power).add(uDay.mul(cfg.day || 0))).add(through)
     const y = attribute('position', 'vec3').y, hn = y.div(top)
     let k = hn.mul(hn).mul(cfg.lean)
     if (cfg.vine) k = k.add(mask.mul(clamp(float(20).sub(y).div(16), 0, 1)).mul(cfg.vine)) // vines swing more toward their tips
@@ -140,6 +145,8 @@ export async function createFlora(ctx) {
   const frustum = new THREE.Frustum(), PV = new THREE.Matrix4(), sphere = new THREE.Sphere()
   function update(dt, t) {
     uNight.value = ctx.night
+    uSun.value.copy(ctx.sunDir)
+    uDay.value = THREE.MathUtils.clamp(ctx.sunDir.y * 4 + 0.35, 0, 1) * (1 - ctx.night) // the sun's strength on the leaves
     frustum.setFromProjectionMatrix(PV.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
     const cx = camera.position.x, cz = camera.position.z
     for (const K of kinds) {
@@ -168,7 +175,7 @@ export async function createFlora(ctx) {
     for (const K of kinds) for (const p of K.list) gap = Math.max(gap, Math.abs(p.y - ctx.heightAt(p.x, p.z)))
     return {
       ...Object.fromEntries(kinds.map(K => [K.name, K.list.length])), drawn: kinds.map(K => K.mesh.count),
-      groves: groves.length, maxBaseGap: +gap.toFixed(3), night: +ctx.night.toFixed(2),
+      groves: groves.length, trees: lists.vinetree.map(t => [Math.round(t.x), Math.round(t.z)]), maxBaseGap: +gap.toFixed(3), night: +ctx.night.toFixed(2),
       cam: [camera.position.x, camera.position.y, camera.position.z].map(v => +v.toFixed(1)),
     }
   }
