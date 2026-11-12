@@ -18,7 +18,7 @@ const sunAt = (tod, v) => { const a = (tod - 0.5) * TAU; return v.set(-0.8434 * 
 // Linear-light palette keyed by sun height (sunDir.y). Night ← twilight ← sunset ← dusk ← golden ← noon.
 // zenith, horizon (= fog), sun-side glow, key-light colour, hemi sky, hemi ground, cloud lit, cloud shade | key I, hemi I, cloud cover
 const KEYS = [
-  [-0.25, [.008, .012, .060], [.140, .190, .370], [0, 0, 0], [.55, .66, 1], [.25, .45, .85], [.02, .045, .06], [.07, .08, .17], [.012, .015, .045], 0, 1.15, .1],
+  [-0.25, [.008, .012, .060], [.155, .205, .390], [0, 0, 0], [.55, .66, 1], [.25, .45, .85], [.02, .045, .06], [.07, .08, .17], [.012, .015, .045], 0, 1.15, .1],
   [-0.08, [.020, .030, .130], [.24, .17, .33], [.30, .09, .08], [.55, .66, 1], [.42, .38, .70], [.05, .05, .06], [.32, .13, .20], [.04, .035, .09], 0, .8, -.12],
   [0.03, [.060, .080, .280], [.66, .38, .38], [1.4, .45, .12], [1, .45, .2], [.80, .58, .62], [.12, .10, .08], [1.3, .55, .38], [.22, .14, .26], 1.3, .9, -.2],
   [0.15, [.070, .140, .460], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.6, .95, .66], [.34, .28, .42], 1.9, 1.0, -.26],
@@ -40,7 +40,7 @@ export async function createSky(ctx) {
   // Haze: horizon→zenith gradient, a warm glow round the sun and along its horizon, a cool halo round the moon.
   const haze = Fn(([d]) => {
     const e = max(d.y, 0)
-    const base = mix(uHorizon, uZenith, pow(smoothstep(0, 0.75, e), 0.5))
+    const base = mix(uHorizon, uZenith, pow(smoothstep(0, 0.65, e), 0.5))
     const mu = max(dot(d, uSun), 0)
     const az = max(dot(normalize(d.xz.add(1e-4)), normalize(uSun.xz.add(1e-4))), 0)
     const glow = pow(mu, 12).mul(0.3).add(pow(mu, 64).mul(0.8)).add(pow(az, 4).mul(exp(e.mul(-9))).mul(0.3))
@@ -122,11 +122,12 @@ export async function createSky(ctx) {
   const avgY = clamp(positionWorld.y.add(cameraPosition.y).mul(0.5), -40, 600)
   const air = x.mul(0.0008).add(x.mul(0.0005).pow(2)).mul(exp(avgY.mul(-1 / 200)))
   const ground = x.mul(0.002).mul(exp(max(avgY, 0).mul(-1 / 20)))
-  // Sea mist along the north cliffs (PLAN: crest ~25 m by z ≈ −200, lip ≈ −222…−242). It pools at the lip and thins with
-  // height (12 m), so the crest dissolves into the sky behind it while the meadow stays clear and Castle Crestwatch
-  // (−520, −240) rises out of it: base ~80 %, walls at 50 m ~55 %, towers at 70 m ~45 %. Clear within 50 m of the eye.
+  // Sea mist along the north cliffs (PLAN: crest ~25 m by z ≈ −200, lip ≈ −222…−242). It pools at the lip up to 21 m and
+  // thins fast above (8 m), so the crest dissolves into the sky behind it while the meadow stays clear and Castle Crestwatch
+  // (−520, −240) rises out of it (with the air: base ~95 %, walls at 50 m ~60 %, towers at 70 m ~47 % by day).
+  // Clear within 50 m of the eye.
   const lip = positionWorld.z.add(225).div(60)
-  const mist = exp(lip.mul(lip).negate()).mul(exp(max(positionWorld.y.sub(18), 0).mul(-1 / 12))).mul(smoothstep(50, 200, dist)).mul(7)
+  const mist = exp(lip.mul(lip).negate()).mul(exp(max(positionWorld.y.sub(21), 0).mul(-1 / 8))).mul(smoothstep(50, 200, dist)).mul(7)
   const fogF = max(float(1).sub(exp(air.add(ground).add(mist).mul(uFogK).negate())), smoothstep(2300, 2900, dist))
   // A thin veil scatters more blue (same brightness); as it thickens it whitens to the horizon itself, so the far land reads pale blue
   // and a fully hazed ridge is exactly the sky behind it.
