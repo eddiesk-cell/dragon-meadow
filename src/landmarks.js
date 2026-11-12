@@ -4,9 +4,33 @@
 // Publishes ctx.landmarks { rockisle, egg, crestStone }; pushes ctx.keepClear.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import {
-  vertexColor, positionLocal, uniform, vec3, float, smoothstep, abs, max, mix, sin, pow, dot, mx_noise_float, normalView,
-  positionViewDirection,
+  vertexColor, positionLocal, uniform, vec3, vec4, float, smoothstep, abs, max, mix, sin, pow, dot, mx_noise_float, normalView,
+  positionViewDirection, attribute, fract, normalize, cross, cameraPosition, uv, length, saturate,
 } from 'three/tsl'
+
+// Chimney smoke, all on the GPU: N puffs per chimney, each one's age = fract(time + its offset), so nothing updates on
+// the CPU. Puffs rise ~16 m, lean downwind (the field's WIND, +x), swell and fade; dimmer at night.
+function smoke(THREE, tops, uT, uNight) {
+  const N = 26, geo = new THREE.InstancedBufferGeometry(), s = new Float32Array(tops.length * N * 4)
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0], 3))
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2))
+  geo.setIndex([0, 1, 2, 0, 2, 3])
+  tops.forEach((p, k) => { for (let i = 0; i < N; i++) s.set([p.x, p.y, p.z, i / N + k * 0.37], (k * N + i) * 4) })
+  // shortcut: drift is a fixed lean along the field's mean WIND, not ctx.windAt; fine for a chimney seen from afar
+  geo.setAttribute('aS', new THREE.InstancedBufferAttribute(s, 4))
+  geo.instanceCount = tops.length * N
+  const a = attribute('aS', 'vec4'), ph = fract(uT.mul(0.06).add(a.w)) // ~17 s from the pot to gone
+  const wob = sin(a.w.mul(37)).mul(ph).mul(2.5) // each puff wanders a little off the line
+  const c = a.xyz.add(vec3(ph.mul(13).add(wob), ph.mul(16), ph.mul(4.7).sub(wob))), size = ph.mul(7).add(1.2)
+  const toCam = normalize(cameraPosition.sub(c)), right = normalize(cross(vec3(0, 1, 0), toCam)), up = cross(toCam, right), q = attribute('position', 'vec3')
+  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false })
+  mat.positionNode = c.add(right.mul(q.x.mul(size))).add(up.mul(q.y.mul(size)))
+  const r = saturate(float(1).sub(length(uv().sub(0.5).mul(2))))
+  mat.colorNode = vec4(vec3(0.84, 0.84, 0.86).mul(float(1).sub(uNight.mul(0.75))), r.mul(r).mul(sin(ph.mul(Math.PI))).mul(0.28))
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.frustumCulled = false
+  return mesh
+}
 
 // Where they stand. The island's north half rises out of the crest slope; its south foot reaches the hollow at
 // (10…60, −40…−70) where the ground dips to −2 m: the pond's natural basin, below eye level so it reads from the start.
@@ -17,6 +41,7 @@ const CREST = { x: -90, z: -205, yaw: Math.atan2(-0.92, -0.38), lean: 0.12 } // 
 
 export async function createLandmarks(ctx) {
   const { THREE, scene } = ctx
+  if (ctx.params.get('landmarks') === '0') return null // A/B for fps and look
   const loader = new GLTFLoader()
   const [isle, kit, crest] = await Promise.all(['rockisle', 'town-kit', 'stoneface'].map(n => loader.loadAsync(`/models/world/${n}.glb`)))
   const uNight = uniform(0), uT = uniform(0)
@@ -24,25 +49,25 @@ export async function createLandmarks(ctx) {
   // Stone with night veins: thin noise level-set lines (ring.js recipe), only where COLOR_0 alpha allows (bare rock),
   // patchy, pulsing slowly upward. `k` = noise frequency per metre, `w` = line width — big stones get wide veins.
   // carved: alpha ≥ 0.9 marks cut lines that glow whole (the Crest Stone's face); veins then run only below 0.8.
-  const stone = (k, w, carved = false) => {
+  const stone = (k, w, carved = false, glow = 2.2) => {
     const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.93, metalness: 0 })
     const P = positionLocal.mul(k), vc = vertexColor()
     const n1 = mx_noise_float(P), n2 = mx_noise_float(P.mul(2.7).add(11))
     const line = (n, ww) => float(1).sub(smoothstep(ww * 0.3, ww, abs(n)))
     const cut = carved ? smoothstep(0.8, 0.95, vc.a) : float(0)
     const vein = max(line(n1, w), line(n2, w * 1.4).mul(0.55)).mul(carved ? vc.a.mul(float(1).sub(cut)) : vc.a)
-      .mul(smoothstep(-0.25, 0.25, mx_noise_float(P.mul(0.37).add(5))))
-    m.colorNode = vc.rgb.add(vec3(0.03, 0.07, 0.02).mul(vein)) // soft green lines by day
+      .mul(smoothstep(0, 0.35, mx_noise_float(P.mul(0.37).add(5)))) // in patches, not a net over everything
+    m.colorNode = vc.rgb.add(vec3(0.015, 0.035, 0.01).mul(vein)) // faint green lines by day
     const pulse = sin(uT.mul(0.9).sub(positionLocal.y.mul(k * 1.7)).add(n1.mul(4))).mul(0.3).add(0.85)
-    m.emissiveNode = mix(vec3(0.1, 1, 0.75), vec3(0.35, 1, 0.35), n2.mul(0.5).add(0.5)).mul(vein.mul(2.2).mul(pulse))
-      .add(vec3(0.25, 1, 0.8).mul(cut.mul(sin(uT.mul(0.6)).mul(0.2).add(1.6)))).mul(uNight)
+    m.emissiveNode = mix(vec3(0.1, 1, 0.75), vec3(0.35, 1, 0.35), n2.mul(0.5).add(0.5)).mul(vein.mul(glow).mul(pulse))
+      .add(vec3(0.25, 1, 0.8).mul(cut.mul(sin(uT.mul(0.6)).mul(0.1).add(0.7)))).mul(uNight)
     return m
   }
   const leaf = new THREE.MeshStandardNodeMaterial({ roughness: 0.9, metalness: 0 })
   leaf.colorNode = vertexColor().rgb
   const egg = new THREE.MeshStandardNodeMaterial({ roughness: 0.55, metalness: 0 }) // skystone: a pearl glow at night
   egg.colorNode = vertexColor().rgb
-  egg.emissiveNode = vec3(0.5, 0.85, 1).mul(pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 2).mul(0.9).add(0.2)).mul(uNight)
+  egg.emissiveNode = vec3(0.35, 0.6, 0.75).mul(pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 2).mul(0.8).add(0.06)).mul(uNight)
 
   const nodes = Object.fromEntries(isle.scene.children.map(o => [o.name, o]))
   const ground = (x, z) => ctx.heightAt(x, z)
@@ -53,8 +78,9 @@ export async function createLandmarks(ctx) {
   const baseY = ground(ISLE.x, ISLE.z)
   const island = new THREE.Group()
   island.position.set(ISLE.x, baseY, ISLE.z)
-  const rock = nodes.rock, geo = rock.children[0]?.geometry ?? rock.geometry, p = geo.attributes.position
+  const rock = nodes.rock, rockMat = stone(0.07, 0.04, false, 1.5)
   let floatMax = -Infinity
+  const geo = rock.geometry, p = geo.attributes.position
   for (let i = 0; i < p.count; i++) {
     const y = p.getY(i)
     if (y >= 11) continue
@@ -65,9 +91,10 @@ export async function createLandmarks(ctx) {
   }
   geo.computeVertexNormals()
   geo.computeBoundingSphere()
-  prep(rock, stone(0.085, 0.07))
+  prep(rock, rockMat)
+  prep(nodes.boulders, rockMat) // on the terrace and ledges, above the part that moves
   prep(nodes.trees, leaf)
-  island.add(rock, nodes.trees)
+  island.add(rock, nodes.boulders, nodes.trees)
 
   const ex = rock.userData.cottage // [x, y, z, yaw] on the terrace, front toward the start
   const cottage = kit.scene.getObjectByName('cottage_l')
@@ -81,6 +108,8 @@ export async function createLandmarks(ctx) {
   })
   island.add(cottage)
   scene.add(island)
+  island.updateMatrixWorld(true)
+  scene.add(smoke(THREE, (cottage.userData.smoke || []).map(v => cottage.localToWorld(new THREE.Vector3(...v))), uT, uNight))
 
   // --- the egg stone on the pond's west shore, rocking a hair now and then (skystone: light enough to rock by hand)
   const eggM = nodes.egg
@@ -89,23 +118,23 @@ export async function createLandmarks(ctx) {
   eggM.position.set(EGG.x, eggY, EGG.z)
   eggM.rotation.y = EGG.yaw
   scene.add(eggM)
-  for (let a = 0; a < 6.28; a += 0.4) floatMax = Math.max(floatMax, eggY - ground(EGG.x + 2.2 * Math.cos(a), EGG.z + 2.2 * Math.sin(a)) - 0.6) // its sunk foot
+  for (let a = 0; a < 6.28; a += 0.4) floatMax = Math.max(floatMax, eggY - ground(EGG.x + 2.8 * Math.cos(a), EGG.z + 2.8 * Math.sin(a)) - 0.8) // its sunk foot
 
   // --- the Crest Stone at the cliff lip: root 3 m in the turf, leaning out toward its gaze
   const face = crest.scene.getObjectByName('stone')
-  prep(face, stone(0.22, 0.09, true))
+  prep(face, stone(0.2, 0.05, true, 1.2))
   const crestY = ground(CREST.x, CREST.z)
   face.position.set(CREST.x, crestY, CREST.z)
   face.rotation.set(CREST.lean, CREST.yaw, 0, 'YXZ')
   scene.add(face)
-  for (let a = 0; a < 6.28; a += 0.4) { // the slab's foot ring (5.6 x 3.6 m) after the lean: still under the turf?
-    const v = new THREE.Vector3(5.4 * Math.cos(a), -0.2, 3.4 * Math.sin(a)).applyEuler(face.rotation).add(face.position)
+  for (let a = 0; a < 6.28; a += 0.4) { // the root's bottom ring (3 m down) after the lean: under the turf all round?
+    const v = new THREE.Vector3(5.4 * Math.cos(a), -3, 3.4 * Math.sin(a)).applyEuler(face.rotation).add(face.position)
     floatMax = Math.max(floatMax, v.y - ground(v.x, v.z))
   }
 
-  ctx.keepClear.push({ x: ISLE.x, z: ISLE.z, r: 46 }, { x: EGG.x, z: EGG.z, r: 7 }, { x: CREST.x, z: CREST.z, r: 9 })
+  ctx.keepClear.push({ x: ISLE.x, z: ISLE.z, r: rock.userData.r + 2 }, { x: EGG.x, z: EGG.z, r: 7 }, { x: CREST.x, z: CREST.z, r: 9 })
   ctx.landmarks = {
-    rockisle: { x: ISLE.x, z: ISLE.z, y: baseY, r: 44, top: baseY + rock.userData.top },
+    rockisle: { x: ISLE.x, z: ISLE.z, y: baseY, r: rock.userData.r, top: baseY + rock.userData.top },
     egg: { x: EGG.x, z: EGG.z, y: eggY },
     crestStone: { x: CREST.x, z: CREST.z, y: crestY },
   }
