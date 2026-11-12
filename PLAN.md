@@ -277,7 +277,7 @@ front of the camera for proof.
   readable, game-quality (trail tapers and fades, sparks arc and die, dust drifts, flash is brief).
 
 ### Lane monster — `src/monster.js`, `tools/monster/club.py` (Opus)
-The Barrow Troll from `WORLD.md`, using `public/models/troll.glb` (rigged at 1.80 m like the hero — scale it ×1.67 to stand 3 m; built by the orchestrator, joints hand-placed in `art/troll/rig/troll-markers-fixed.json`, skeleton picture `art/troll/rig/troll.skeleton.png`; clips: `Idle`, `Walk`, `Run`,
+The Barrow Troll from `WORLD.md`, using `public/models/troll.glb` (rigged at 1.80 m like the hero — scale it ×1.67 to stand 3 m; built by the orchestrator, joints hand-placed in `art/troll/rig/troll-markers-fixed.json`, skeleton picture `art/troll/rig/troll.skeleton.png`; human clips fitted to his body with `tools/monster/pose_offset.py … leftUpperArm=Y,-28 rightUpperArm=Y,28 neck=X,12 head=X,12` so his arms clear his belly and he looks ahead; clips: `Idle`, `Walk`, `Run`,
 `Sit` (asleep), `Stand Up`, `Channel (Two-Handed)` (roar), `Hammer Overhead Smash`, `AoE Ground Slam`,
 `Punch (Cross)`, `Kick (Front)`, `Hit (Front)`, `Stagger`, `Death (Collapse)`). Club: a standing stone ripped
 from the ring, made in Blender from code (`tools/monster/club.py` → `public/models/club.glb`), held in the right
