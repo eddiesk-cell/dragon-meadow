@@ -2,7 +2,7 @@
 // Writes ctx.tod, ctx.night, ctx.sunDir, ctx.fogColor (all live). haze(dir) paints the fog AND the sky at the horizon,
 // so a fully hazed hill is exactly the sky behind it: no hard line. Clouds, stars, aurora and the moon live above the haze.
 import {
-  Fn, If, vec2, vec3, vec4, float, uniform, normalize, dot, max, min, pow, exp, smoothstep, mix, length, clamp,
+  Fn, If, vec2, vec3, vec4, float, uniform, normalize, dot, max, min, pow, exp, smoothstep, mix, length, clamp, atan, abs,
   sin, fract, floor, step, positionWorld, cameraPosition, normalWorldGeometry, fog, mx_fractal_noise_float, mx_worley_noise_float,
 } from 'three/tsl'
 
@@ -18,12 +18,12 @@ const sunAt = (tod, v) => { const a = (tod - 0.5) * TAU; return v.set(-0.8434 * 
 // Linear-light palette keyed by sun height (sunDir.y). Night ← twilight ← sunset ← dusk ← golden ← noon.
 // zenith, horizon (= fog), sun-side glow, key-light colour, hemi sky, hemi ground, cloud lit, cloud shade | key I, hemi I, cloud cover
 const KEYS = [
-  [-0.25, [.008, .012, .060], [.155, .205, .390], [0, 0, 0], [.55, .66, 1], [.25, .45, .85], [.02, .045, .06], [.07, .08, .17], [.012, .015, .045], 0, 1.15, .1],
+  [-0.25, [.007, .013, .072], [.155, .205, .390], [0, 0, 0], [.55, .66, 1], [.25, .45, .85], [.02, .045, .06], [.07, .08, .17], [.012, .015, .045], 0, 1.15, .1],
   [-0.08, [.020, .030, .130], [.24, .17, .33], [.30, .09, .08], [.55, .66, 1], [.42, .38, .70], [.05, .05, .06], [.32, .13, .20], [.04, .035, .09], 0, .8, -.12],
   [0.03, [.060, .080, .280], [.66, .38, .38], [1.4, .45, .12], [1, .45, .2], [.80, .58, .62], [.12, .10, .08], [1.3, .55, .38], [.22, .14, .26], 1.3, .9, -.2],
-  [0.15, [.070, .140, .460], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.6, .95, .66], [.34, .28, .42], 1.9, 1.0, -.26],
-  [0.32, [.035, .140, .620], [.80, .84, 1.25], [1.3, .90, .50], [1, .86, .68], [.72, .84, 1], [.30, .36, .16], [1.9, 1.75, 1.6], [.46, .50, .72], 2.6, 1.2, -.3],
-  [0.60, [.030, .130, .600], [.72, .80, 1.22], [.80, .75, .60], [1, .96, .90], [.70, .82, 1], [.30, .36, .16], [2.0, 2.0, 2.0], [.52, .58, .78], 3.0, 1.3, -.3],
+  [0.15, [.090, .170, .520], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.7, 1.0, .70], [.36, .30, .44], 2.1, 1.0, .15],
+  [0.32, [.100, .240, .800], [.80, .84, 1.25], [1.4, .95, .38], [1, .80, .55], [.74, .80, .92], [.30, .36, .16], [2.0, 1.8, 1.7], [.50, .52, .74], 2.9, 1.05, .2],
+  [0.60, [.090, .220, .780], [.72, .80, 1.22], [.90, .80, .50], [1, .90, .75], [.72, .80, .94], [.30, .36, .16], [2.0, 1.95, 1.9], [.54, .58, .78], 3.2, 1.1, .2],
 ]
 
 export async function createSky(ctx) {
@@ -38,14 +38,17 @@ export async function createSky(ctx) {
   const uDisc = uniform(C()), uNight = uniform(0), uCover = uniform(0.1), uTime = uniform(0)
 
   // Haze: horizon→zenith gradient, a warm glow round the sun and along its horizon, a cool halo round the moon.
+  // The pale band holds to ~2° (the crest at ~4° dissolves in it); above, the zenith takes over: by ~10° by day,
+  // and much faster at night so the sky above ~9° is deep indigo.
   const haze = Fn(([d]) => {
     const e = max(d.y, 0)
-    const base = mix(uHorizon, uZenith, pow(smoothstep(0, 0.65, e), 0.5))
+    const base = mix(uHorizon, uZenith, pow(smoothstep(0.03, mix(0.3, 0.15, uNight), e), mix(0.5, 1, uNight)))
     const mu = max(dot(d, uSun), 0)
     const az = max(dot(normalize(d.xz.add(1e-4)), normalize(uSun.xz.add(1e-4))), 0)
-    const glow = pow(mu, 12).mul(0.3).add(pow(mu, 64).mul(0.8)).add(pow(az, 4).mul(exp(e.mul(-9))).mul(0.3))
-    const halo = pow(max(dot(d, uMoon), 0), 40).mul(uNight).mul(vec3(0.07, 0.09, 0.18))
-    return base.add(uGlow.mul(glow)).add(halo)
+    const glow = pow(mu, 150).mul(0.3).add(pow(mu, 500).mul(0.6)).add(pow(az, 6).mul(exp(e.mul(-14))).mul(0.3))
+    const halo = pow(max(dot(d, uMoon), 0), 120).mul(uNight).mul(vec3(0.06, 0.08, 0.16))
+    // By day the glow partly replaces the blue rather than adding to it, so round the sun the sky turns gold, not white.
+    return base.mul(float(1).sub(min(glow, 1).mul(0.8).mul(uNight.oneMinus()))).add(uGlow.mul(glow)).add(halo)
   })
 
   // Cumulus on a flat deck: banks placed by low noise, built of round puffs (Worley billows), each puff lit on its top
@@ -54,14 +57,15 @@ export async function createSky(ctx) {
   const cloudField = p => mx_fractal_noise_float(vec3(p.mul(0.5), 1.7), 3, 2, 0.5).mul(1.3)
     .sub(mx_worley_noise_float(vec3(p.mul(2.4), 0.5)).mul(0.6)).add(mx_fractal_noise_float(vec3(p.mul(6), 3.1), 2, 2, 0.5).mul(0.12))
   const clouds = Fn(([d]) => {
-    const q = d.xz.div(d.y.add(0.28)), p = q.mul(0.9).add(vec2(uTime.mul(0.006), uTime.mul(0.002)))
-    const toLight = normalize(uSun.xz.add(1e-4)).sub(normalize(q.add(1e-4))).mul(0.07) // toward the sun and up the screen
-    const n = cloudField(p), n2 = cloudField(p.add(toLight))
-    const dens = smoothstep(uCover, uCover.add(0.12), n)
-    const lit = smoothstep(-0.09, 0.09, n.sub(n2))
-    const rim = pow(max(dot(d, uSun), 0), 6).mul(dens.oneMinus()).mul(1.6)
+    const q = d.xz.div(d.y.add(0.28)), p = q.mul(1.3).add(vec2(uTime.mul(0.006).add(3.7), uTime.mul(0.002))) // offset: the start view opens with the sun clear and a puff behind the isles
+    const toLight = normalize(normalize(uSun.xz.add(1e-4)).mul(0.6).sub(normalize(q.add(1e-4))).add(1e-4)).mul(0.12) // toward the sun and up the screen, so puffs round the sun still get shaded bellies
+    const low = smoothstep(0.24, 0.05, d.y).mul(0.5) // low down only the cores survive: small far puffs, never a veil
+    const n = cloudField(p).sub(low), n2 = cloudField(p.add(toLight)).sub(low)
+    const dens = smoothstep(uCover, uCover.add(0.08), n)
+    const lit = smoothstep(-0.12, 0.12, n.sub(n2)).mul(smoothstep(0.5, 0.05, n.sub(uCover)).mul(0.45).add(0.55)) // thick cores sit in their own shade
+    const rim = pow(max(dot(d, uSun), 0), 24).mul(dens.oneMinus()).mul(0.8)
     const col = mix(uCloudShade, uCloudLit, lit).add(uCloudLit.mul(rim))
-    return vec4(mix(col, uHorizon, exp(d.y.mul(-7)).mul(0.75)), dens.mul(smoothstep(0.07, 0.25, d.y))) // clear haze band above the land
+    return vec4(mix(col, uHorizon, exp(d.y.mul(-12)).mul(0.6)), dens.mul(smoothstep(0.05, 0.12, d.y))) // clear haze band above the land
   })
 
   // Stars: one per lit cell of a 3-D grid on the sphere, twinkling; the Milky Way band crowds them and glows faintly.
@@ -75,26 +79,23 @@ export async function createSky(ctx) {
   const BAND = new THREE.Vector3(0.795, 0.19, 0.58).normalize() // the Milky Way crosses the night view upper right toward the zenith
   const stars = d => {
     const bd = dot(d, vec3(BAND.x, BAND.y, BAND.z)), band = exp(bd.mul(bd).mul(-28))
-    const s = starLayer(d, 90, float(0.08), 0.2).mul(2.2).add(starLayer(d, 210, band.mul(0.3).add(0.12), 0.16))
+    const s = starLayer(d, 90, float(0.12), 0.2).mul(3).add(starLayer(d, 210, band.mul(0.3).add(0.18), 0.16).mul(1.4))
     const neb = band.mul(mx_fractal_noise_float(d.mul(6), 3, 2, 0.5).mul(0.5).add(0.5)).mul(vec3(0.12, 0.09, 0.22))
     return vec3(0.85, 0.9, 1).mul(s).add(neb)
   }
 
-  // Aurora: two vertical curtains hanging ahead (scale-free: one unit = curtain distance), bright green at the sharp
-  // lower hem, violet as they fade upward, ray-streaked, folding slowly. Each ray is hit analytically, no marching.
-  const curtain = (d, A, slope, ph) => {
-    const hz = max(length(d.xz), 1e-3), h = d.xz.div(hz), den = h.y.sub(h.x.mul(slope)) // < 0 when looking toward it
-    const wig = x => sin(x.mul(2.5).add(uTime.mul(0.05)).add(ph)).mul(0.3).add(sin(x.mul(6.1).sub(uTime.mul(0.09)).add(ph * 2)).mul(0.1))
-    const r0 = float(-A).div(min(den, -1e-3)), x = h.x.mul(r0)
-    const r = float(-A).add(wig(x)).div(min(den, -1e-3)), y = r.mul(d.y).div(hz).div(A) // hit height in curtain units
-    const u = h.x.mul(r).div(A)
-    const rays = pow(sin(u.mul(9).add(sin(u.mul(2.3).add(uTime.mul(0.2))).mul(3)).add(uTime.mul(0.1))).mul(0.5).add(0.5), 3)
-      .mul(sin(u.mul(23).sub(uTime.mul(0.3))).mul(0.4).add(0.6)).mul(0.85).add(0.15)
-    const fold = smoothstep(0.25, 0.9, sin(u.mul(1.3).add(uTime.mul(0.07)).add(ph)).mul(0.5).add(0.5))
-    const dy = y.sub(sin(u.mul(1.7).add(uTime.mul(0.03)).add(ph)).mul(0.04).add(0.12)) // height above the undulating hem
-    const hem = smoothstep(0, 0.025, dy)
-    const col = vec3(0.12, 1.0, 0.45).mul(exp(dy.mul(-7))).add(vec3(0.5, 0.16, 1.0).mul(smoothstep(0.03, 0.14, dy).mul(exp(dy.mul(-2.2))).mul(0.55)))
-    return col.mul(hem).mul(rays).mul(fold.mul(0.9).add(0.1)).mul(smoothstep(-0.02, -0.25, den)).mul(smoothstep(4, 1, r.div(A)))
+  // Aurora: a ribbon hanging across the sky ahead (night.png): its sharp lower hem bright green, fading upward through
+  // violet, streaked by vertical rays, the hem sweeping down from the top of the view to the right and folding slowly.
+  // Angular, so its width is fixed on screen: u = bearing from straight ahead (−Z), d.y = sin(elevation).
+  const ribbon = (d, y0, amp, ph) => { // hem = y0 ± amp, highest at u = (π/2 − ph) / 3.5
+    const u = atan(d.x, d.z.negate())
+    const hem = sin(u.mul(3.5).add(ph).add(uTime.mul(0.02))).mul(amp).add(sin(u.mul(7).sub(uTime.mul(0.05)).add(ph)).mul(0.015)).add(y0)
+    const dy = d.y.sub(hem)
+    const rays = pow(sin(u.mul(140).add(sin(u.mul(17).add(uTime.mul(0.2))).mul(3)).add(uTime.mul(0.1))).mul(0.5).add(0.5), 3)
+      .mul(sin(u.mul(330).sub(uTime.mul(0.3))).mul(0.3).add(0.7)).mul(0.75).add(0.25)
+    const green = vec3(0.15, 1.0, 0.5).mul(smoothstep(-0.006, 0.004, dy)).mul(exp(dy.mul(-30)))
+    const violet = vec3(0.55, 0.18, 1.0).mul(smoothstep(0.01, 0.05, dy)).mul(exp(dy.mul(-9))).mul(0.6)
+    return green.add(violet).mul(rays).mul(smoothstep(1.4, 0.8, abs(u)))
   }
 
   const skyColor = Fn(([dir]) => {
@@ -106,7 +107,7 @@ export async function createSky(ctx) {
     const extra = vec3(0).toVar()
     If(uNight.greaterThan(0.01), () => {
       const moon = vec3(2.2, 2.15, 2.0).mul(smoothstep(0.99974, 0.99979, dot(d, uMoon))).mul(float(0.85).add(mx_fractal_noise_float(d.mul(900), 2, 2, 0.5).mul(0.25)))
-      const aur = curtain(d, 1.0, 0.5, 0).add(curtain(d, 1.7, -0.3, 2.4).mul(0.6)).mul(0.7)
+      const aur = ribbon(d, 0.33, 0.11, 3.67).add(ribbon(d, 0.38, 0.05, 0.5).mul(0.3)).mul(1.3) // main hem sweeps down from top-left of view to the right
       extra.assign(stars(d).mul(uNight.mul(uNight)).add(aur.mul(uNight)).mul(up).add(moon.mul(uNight)))
     })
     const cl = clouds(d)

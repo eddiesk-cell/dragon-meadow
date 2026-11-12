@@ -3,7 +3,7 @@
 // Falls back to a plain render if the node graph fails to build or render.
 import {
   Fn, If, Loop, pass, renderOutput, toneMapping, vec2, vec3, vec4, float, uniform, uv,
-  mix, smoothstep, length, dot, sin, fract, clamp, exp,
+  mix, smoothstep, length, dot, sin, fract, clamp, exp, min, max,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 
@@ -16,7 +16,8 @@ export async function createPost(ctx) {
   const uSunUV = uniform(new THREE.Vector3()) // xy: the sun on screen (uv), z: shaft strength (0 when it is down or behind)
   const scenePass = pass(scene, camera)
   const color = scenePass.getTextureNode('output')
-  const glow = bloom(color, 0.2, 0.6, 1.1)
+  // The bloom sees the frame capped at 3 (hue kept): the 40× sun disc would otherwise smear a white veil over half the sky.
+  const glow = bloom(color.mul(min(float(1), float(3).div(max(color.r, max(color.g, color.b)).add(1e-4)))), 0.2, 0.6, 1.1)
   const grain = fract(sin(dot(uv().mul(1024).add(uTime.mul(37.13)), vec2(127.1, 311.7))).mul(43758.5453))
 
   // Sun shafts: march from each pixel toward the sun, gathering only the sun's own bright sky, so anything in front
@@ -28,7 +29,7 @@ export async function createPost(ctx) {
       const p = uv().sub(delta.mul(grain)).toVar(), w = float(1).toVar()
       Loop(SHAFT_STEPS, () => {
         const c = color.sample(p).rgb
-        const near = exp(length(p.sub(uSunUV.xy).mul(vec2(1.6, 1))).mul(-6))
+        const near = exp(length(p.sub(uSunUV.xy).mul(vec2(1.6, 1))).mul(-10)) // tight: rays, not a veil over open sky
         acc.addAssign(c.mul(smoothstep(1.3, 4, dot(c, vec3(0.2126, 0.7152, 0.0722)))).mul(w.mul(near)))
         w.mulAssign(0.95)
         p.subAssign(delta)
@@ -67,11 +68,11 @@ export async function createPost(ctx) {
     camera.getWorldDirection(fwd)
     const onScreen = Math.max(0, 1 - Math.max(Math.abs(v.x), Math.abs(v.y)) / 1.6)
     const up = Math.min(1, Math.max(0, ctx.sunDir.y / 0.06))
-    uSunUV.value.set(v.x * 0.5 + 0.5, 0.5 - v.y * 0.5, fwd.dot(ctx.sunDir) > 0 ? 0.45 * onScreen * up * (1 - n) : 0)
+    uSunUV.value.set(v.x * 0.5 + 0.5, 0.5 - v.y * 0.5, fwd.dot(ctx.sunDir) > 0 ? 0.35 * onScreen * up * (1 - n) : 0)
   }
 
   let failed = false, frames = [], fps = 0
-  window.__probes.post = () => ({ pipeline: !failed, fps, bloomThreshold: +glow.threshold.value.toFixed(2), shafts: +uSunUV.value.z.toFixed(2) })
+  window.__probes.post = () => ({ pipeline: !failed, fps, bloomThreshold: +glow.threshold.value.toFixed(2), shafts: +uSunUV.value.z.toFixed(2), sunPx: [Math.round(uSunUV.value.x * innerWidth), Math.round(uSunUV.value.y * innerHeight)] })
   return {
     render() {
       if (failed) return plain.render()
