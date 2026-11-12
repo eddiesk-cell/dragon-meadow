@@ -28,7 +28,7 @@ export async function createPost(ctx) {
       const p = uv().sub(delta.mul(grain)).toVar(), w = float(1).toVar()
       Loop(SHAFT_STEPS, () => {
         const c = color.sample(p).rgb
-        const near = exp(length(p.sub(uSunUV.xy).mul(vec2(1.6, 1))).mul(-4))
+        const near = exp(length(p.sub(uSunUV.xy).mul(vec2(1.6, 1))).mul(-6))
         acc.addAssign(c.mul(smoothstep(1.3, 4, dot(c, vec3(0.2126, 0.7152, 0.0722)))).mul(w.mul(near)))
         w.mulAssign(0.95)
         p.subAssign(delta)
@@ -67,15 +67,18 @@ export async function createPost(ctx) {
     camera.getWorldDirection(fwd)
     const onScreen = Math.max(0, 1 - Math.max(Math.abs(v.x), Math.abs(v.y)) / 1.6)
     const up = Math.min(1, Math.max(0, ctx.sunDir.y / 0.06))
-    uSunUV.value.set(v.x * 0.5 + 0.5, 0.5 - v.y * 0.5, fwd.dot(ctx.sunDir) > 0 ? 0.6 * onScreen * up * (1 - n) : 0)
+    uSunUV.value.set(v.x * 0.5 + 0.5, 0.5 - v.y * 0.5, fwd.dot(ctx.sunDir) > 0 ? 0.45 * onScreen * up * (1 - n) : 0)
   }
 
-  let failed = false
-  window.__probes.post = () => ({ pipeline: !failed, bloomThreshold: +glow.threshold.value.toFixed(2), shafts: +uSunUV.value.z.toFixed(2) })
+  let failed = false, frames = [], fps = 0
+  window.__probes.post = () => ({ pipeline: !failed, fps, bloomThreshold: +glow.threshold.value.toFixed(2), shafts: +uSunUV.value.z.toFixed(2) })
   return {
     render() {
       if (failed) return plain.render()
-      uTime.value = performance.now() / 1000
+      const now = performance.now()
+      uTime.value = now / 1000
+      frames.push(now); while (now - frames[0] > 2000) frames.shift()
+      fps = Math.round(frames.length / 2) // frames the page itself drew over the last 2 s
       try { track(); pipe.render() } catch (e) {
         failed = true
         window.__errors.push(`post: ${e.message} (fell back to plain render)`)
