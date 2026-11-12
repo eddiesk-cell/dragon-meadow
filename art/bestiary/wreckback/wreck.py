@@ -3,13 +3,19 @@
   longarms  <rig.blend> <out.glb> <K>   stretch upper arm + forearm of the T-posed mesh by K along the arm (Eddie: golems
                                         and big creatures have LONG arms -- hanging, the knuckles reach the knees). The
                                         first autorig's weights say what is arm; hand, claw, hull and kelp keep their shape.
-  shell     <full.glb> <out.glb>        the hull and its kelp ride the upper chest rigidly (BESTIARY route +R), and the
-                                        claw is one rigid piece on the right hand (its auto "fingers" would melt it).
-  mask      <rig.blend|full.glb> <png>  front render with the shell mask in red, to check the mask by eye.
+  shell     <full.glb> <out.glb> <donor.glb>  the hull and its kelp ride the upper chest rigidly (BESTIARY route +R), the
+                                        claw is one rigid piece on the right hand (its auto "fingers" would melt it), the
+                                        elbows bend as the clip donor's do (REBASE), and the head under the bow keeps only
+                                        HEADKEEP of each clip's neck/head turn (else the bow tears).
+  mask      <rig.blend|full.glb> <png>  front + side render with the shell mask in red, to check the mask by eye.
 """
 import bpy, sys, colorsys, numpy as np
 
 a = sys.argv[sys.argv.index("--") + 1:]
+HEADKEEP = 0.2   # shell: share of each clip's neck/head turn the face keeps (bow + kelp tear above ~3 cm of slip)
+REBASE = ("leftLowerArm", "rightLowerArm")   # shell: bones whose clip turns are re-based onto the donor's rest
+FOLD = {"Death (Collapse)": (8, 18)}   # shell: frames over which the elbows fold back to the mesh's own bend: the donor
+                                       # plants its hands as it falls, and arms 1.6x as long would punch through the floor
 MODE, SRC, OUT = a[0], a[1], a[2]
 if SRC.endswith(".blend"):
     bpy.ops.wm.open_mainfile(filepath=SRC)
@@ -48,7 +54,7 @@ def shell_mask(W, names):
     e = np.empty(len(me.data.edges) * 2, np.int32); me.data.edges.foreach_get("vertices", e); e = e.reshape(-1, 2)
     for _ in range(2):                                    # two rings more, so a strand goes whole, not in patches
         k = kelp.copy(); k[e[:, 0]] |= kelp[e[:, 1]]; k[e[:, 1]] |= kelp[e[:, 0]]; kelp = k & ok
-    face = (ax < 0.15) & (z < 1.45) & (y < 0.0)           # the head pokes out under the bow
+    face = (ax < 0.15) & (z < 1.37) & (y < 0.0)           # the head pokes out under the bow (above 1.37: its planks)
     armw = W[:, [i for i, n in enumerate(names) if any(p in n for p in ("Arm", "Hand", "Thumb", "Index", "Middle",
              "Ring", "Pinky", "Little"))]].sum(1)
     hull = np.clip((z - 1.31) / 0.05, 0, 1) * ~face
@@ -107,6 +113,8 @@ elif MODE == "shell":
     up = names.index("upperChest")
     claw = [i for i, n in enumerate(names) if n.startswith("right") and any(f in n for f in ("Thumb", "Index", "Middle", "Ring", "Little"))]
     W[:, names.index("rightHand")] += W[:, claw].sum(1); W[:, claw] = 0
+    hd, wide = names.index("head"), np.abs(V[:, 0]) > 0.2  # head weight out on the shoulders is the long head bone bleeding
+    W[wide, up] += W[wide, hd]; W[wide, hd] = 0          # through the hull: the shoulders would nod with the head
     W = (1 - s)[:, None] * W; W[:, up] += s
     for v in me.data.vertices:                            # rewrite each vertex's groups: 4 strongest, normalised
         i = v.index; top = np.argsort(W[i])[-4:]; top = top[W[i, top] > 1e-4]; tot = W[i, top].sum()
@@ -116,6 +124,37 @@ elif MODE == "shell":
             me.vertex_groups[j].add([i], float(W[i, j] / tot), "REPLACE")
     print(f"SHELL rigid on upperChest: {(s > 0.5).sum()} vertices; claw bones folded into rightHand: {[names[i] for i in claw]}")
     acts = list(bpy.data.actions)                         # one NLA track per clip, as retarget.py exports them
+    from mathutils import Quaternion
+    Bw = {b.name: b.matrix_local.to_3x3() for b in arm.data.bones}
+    par = {b.name: b.parent.name for b in arm.data.bones if b.parent}
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=a[3])              # the clips' donor: its rest is what their rotations mean
+    new = [o for o in bpy.data.objects if o not in before]
+    Bh = {b.name: b.matrix_local.to_3x3() for b in next(o for o in new if o.type == "ARMATURE").data.bones}
+    for o in new:
+        bpy.data.objects.remove(o)
+    for x_ in [x_ for x_ in bpy.data.actions if x_ not in acts]:
+        bpy.data.actions.remove(x_)
+    # The mesh's forearms point ~53 deg forward at rest (the donor's are straight), so a copied elbow turn lands that far
+    # off: give each clip key the donor's forearm rest (relative to the upper arm) and the elbow bends as the donor's does.
+    L = {b: (Bw[b].inverted() @ Bw[par[b]] @ Bh[par[b]].inverted() @ Bh[b]).to_quaternion() for b in REBASE}
+    for act in acts:
+        f0, f1 = FOLD.get(act.name, (1e9, 2e9))
+        cs = [c for layer in act.layers for st in layer.strips for bag in st.channelbags for c in bag.fcurves]
+        for bone in (*REBASE, "neck", "head"):
+            q = {c.array_index: c for c in cs if c.data_path == f'pose.bones["{bone}"].rotation_quaternion'}
+            assert len(q) == 4, f"{act.name}: {bone} has {len(q)} rotation curves"
+            for i in range(len(q[0].keyframe_points)):
+                k0 = Quaternion([q[k].keyframe_points[i].co[1] for k in range(4)])
+                if bone in L:
+                    w = min(max((f1 - q[0].keyframe_points[i].co[0]) / (f1 - f0), 0), 1)
+                    r = Quaternion().slerp(L[bone], w) @ k0
+                else:   # the face sits boxed under the rigid bow, between rigid kelp: it keeps HEADKEEP of the head's turn
+                    r = Quaternion().slerp(k0, HEADKEEP)
+                for k in range(4):
+                    q[k].keyframe_points[i].co[1] = r[k]
+            for c in q.values():
+                c.update()
     ad = arm.animation_data or arm.animation_data_create()
     for tr in list(ad.nla_tracks):
         ad.nla_tracks.remove(tr)
@@ -141,5 +180,6 @@ elif MODE == "mask":
     sc.render.resolution_x = sc.render.resolution_y = 900
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam")); sc.collection.objects.link(cam); sc.camera = cam
     cam.data.type = "ORTHO"; cam.data.ortho_scale = max(np.ptp(V[:, 0]), H) * 1.05
-    cam.location = (V[:, 0].mean(), -6, V[:, 2].min() + H / 2); cam.rotation_euler = (np.pi / 2, 0, 0)
-    sc.render.filepath = OUT; bpy.ops.render.render(write_still=True)
+    for tag, loc, rz in (("", (V[:, 0].mean(), -6, V[:, 2].min() + H / 2), 0), ("-side", (6, 0, V[:, 2].min() + H / 2), np.pi / 2)):
+        cam.location = loc; cam.rotation_euler = (np.pi / 2, 0, rz)
+        sc.render.filepath = OUT.replace(".png", tag + ".png"); bpy.ops.render.render(write_still=True)
