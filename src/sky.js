@@ -22,8 +22,8 @@ const KEYS = [
   [-0.08, [.020, .030, .130], [.24, .17, .33], [.30, .09, .08], [.55, .66, 1], [.42, .38, .70], [.05, .05, .06], [.32, .13, .20], [.04, .035, .09], 0, .8, .3],
   [0.03, [.060, .080, .280], [.66, .38, .38], [1.4, .45, .12], [1, .45, .2], [.80, .58, .62], [.12, .10, .08], [1.3, .55, .38], [.22, .14, .26], 1.3, .9, -.2],
   [0.15, [.090, .170, .520], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.7, 1.0, .70], [.36, .30, .44], 2.1, 1.0, .15],
-  [0.32, [.100, .240, .800], [1.12, 1.03, .92], [1.6, 1.12, .30], [1, .77, .47], [.82, .82, .86], [.30, .36, .16], [1.7, 1.3, .98], [.56, .50, .70], 3.2, 1.0, .06],
-  [0.60, [.090, .220, .780], [.84, .86, 1.02], [1.2, .85, .40], [1, .88, .68], [.80, .82, .88], [.30, .36, .16], [2.1, 1.9, 1.7], [.56, .56, .76], 3.4, 1.05, .12],
+  [0.32, [.220, .360, .780], [1.12, 1.03, .92], [1.5, .90, .20], [1, .77, .47], [.82, .82, .86], [.30, .36, .16], [1.7, 1.3, .98], [.56, .50, .70], 3.2, 1.0, .17],
+  [0.60, [.200, .340, .760], [.84, .86, 1.02], [1.2, .85, .40], [1, .88, .68], [.80, .82, .88], [.30, .36, .16], [2.1, 1.9, 1.7], [.56, .56, .76], 3.4, 1.05, .12],
 ]
 
 export async function createSky(ctx) {
@@ -49,8 +49,8 @@ export async function createSky(ctx) {
     const halo = pow(max(dot(d, uMoon), 0), 120).mul(uNight).mul(vec3(0.06, 0.08, 0.16))
     // By day the glow partly replaces the blue rather than adding to it, so round the sun the sky turns gold, not white.
     // Round the sun by day the blue gives way to a gold sky (mixed, not added: gold over blue would turn pink).
-    const warm = mix(base, uGlow.mul(0.5), pow(mu, 25).mul(0.9).mul(uNight.oneMinus()))
-    return warm.mul(float(1).sub(min(glow, 1).mul(0.8).mul(uNight.oneMinus()))).add(uGlow.mul(glow)).add(halo)
+    const warm = mix(base, uGlow.mul(0.6), pow(mu, 60).mul(0.9).mul(uNight.oneMinus()))
+    return warm.mul(float(1).sub(min(glow, 1).mul(0.8).mul(uNight.oneMinus()))).add(uGlow.mul(glow).mul(mix(0.45, 1, uNight))).add(halo) // by day kept under ~1 in green and blue so the core stays gold through the tone curve
   })
 
   // Cumulus on a flat deck: banks placed by low noise, built of round puffs (Worley billows), each puff lit on its top
@@ -59,15 +59,16 @@ export async function createSky(ctx) {
   const cloudField = p => mx_fractal_noise_float(vec3(p.mul(0.5), 1.7), 3, 2, 0.5).mul(1.3)
     .sub(mx_worley_noise_float(vec3(p.mul(2.4), 0.5)).mul(0.6)).add(mx_fractal_noise_float(vec3(p.mul(6), 3.1), 2, 2, 0.5).mul(0.12))
   const clouds = Fn(([d]) => {
-    const q = d.xz.div(d.y.add(0.28)), p = q.mul(1.8).add(vec2(uTime.mul(0.006).add(3.7), uTime.mul(0.002))) // offset: the start view opens with the sun clear and a puff behind the isles
+    const q = d.xz.div(d.y.add(0.28)), p = q.mul(2.7).add(vec2(uTime.mul(0.006).add(3.7), uTime.mul(0.002))) // offset: the start view opens with the sun clear and a puff behind the isles
     const toLight = normalize(normalize(uSun.xz.add(1e-4)).mul(0.6).sub(normalize(q.add(1e-4))).add(1e-4)).mul(0.12) // toward the sun and up the screen, so puffs round the sun still get shaded bellies
-    const low = smoothstep(0.24, 0.05, d.y).mul(0.5) // low down only the cores survive: small far puffs, never a veil
+    const low = smoothstep(0.10, 0.02, d.y).mul(0.3) // low down only the cores survive: small far puffs, never a veil
     const n = cloudField(p).sub(low), n2 = cloudField(p.add(toLight)).sub(low)
     const dens = smoothstep(uCover, uCover.add(0.08), n)
     const lit = smoothstep(-0.12, 0.12, n.sub(n2)).mul(smoothstep(0.5, 0.05, n.sub(uCover)).mul(0.45).add(0.55)) // thick cores sit in their own shade
     const rim = pow(max(dot(d, uSun), 0), 24).mul(dens.oneMinus()).mul(0.8)
     const col = mix(uCloudShade, uCloudLit, lit).add(uCloudLit.mul(rim))
-    return vec4(mix(col, uHorizon, exp(d.y.mul(-12)).mul(0.6)), dens.mul(smoothstep(0.05, 0.12, d.y))) // clear haze band above the land
+    const clear = mix(float(1), smoothstep(0.9955, 0.98, max(dot(d, uSun), 0)), uNight.oneMinus()) // by day the sun burns a small gap, so its disc sits in gold sky, not behind a whitened puff
+    return vec4(mix(col, uHorizon, exp(d.y.mul(-12)).mul(0.6)), dens.mul(smoothstep(0.03, 0.08, d.y)).mul(clear)) // clear haze band above the land
   })
 
   // Stars: one per lit cell of a 3-D grid on the sphere, twinkling; the Milky Way band crowds them and glows faintly.
@@ -105,7 +106,7 @@ export async function createSky(ctx) {
     const up = smoothstep(0, 0.14, d.y)
     // The sun's bright core lives in the sky only, cut by the horizon, so land in front of the sun hides it.
     const mu = max(dot(d, uSun), 0)
-    const sunDisc = uDisc.mul(smoothstep(0.999925, 0.999955, mu)).add(uGlow.mul(pow(mu, 600).mul(2))).mul(smoothstep(-0.01, 0.03, d.y))
+    const sunDisc = uDisc.mul(smoothstep(0.999925, 0.999955, mu)).add(uGlow.mul(pow(mu, 600).mul(0.8))).mul(smoothstep(-0.01, 0.03, d.y))
     const extra = vec3(0).toVar()
     If(uNight.greaterThan(0.01), () => {
       const moon = vec3(2.2, 2.15, 2.0).mul(smoothstep(0.99974, 0.99979, dot(d, uMoon))).mul(float(0.85).add(mx_fractal_noise_float(d.mul(900), 2, 2, 0.5).mul(0.25)))
@@ -179,7 +180,7 @@ export async function createSky(ctx) {
     uFogK.value = 1 + 0.6 * ctx.night
 
     const sunUp = ss(-0.02, 0.06, s), moonUp = ss(-0.02, -0.14, s)
-    uDisc.value.copy(pal.key).multiplyScalar(40 * sunUp)
+    uDisc.value.copy(pal.glow).multiplyScalar(25 * sunUp) // gold, so the capped bloom round it stays gold instead of ivory
     lightIs = sunUp >= moonUp ? 'sun' : 'moon'
     const dir = lightIs === 'sun' ? ctx.sunDir : moonDir
     key.color.copy(pal.key)
