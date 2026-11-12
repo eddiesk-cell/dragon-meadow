@@ -1,5 +1,6 @@
 """Glowing bell flower: a 3 m stem arching over, drooping lilac/peach bells, leaves. Vertex colour alpha = glow mask (1 glows).
   blender -b -P tools/flora/bellflower.py -- public/models/flora   [--render out.png]
+Glow mask = glb attribute _GLOW (float, 1 glows); COLOR_0 is plain RGB.
 Origin = base of the stem, +Y up (glTF), metres. One material reads COLOR_0 for both day and night."""
 import bpy, bmesh, sys, os, random
 from math import pi, sin, cos, radians
@@ -11,6 +12,7 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 random.seed(7)
 bm = bmesh.new()
 col = bm.loops.layers.float_color.new("Col")
+glow = bm.loops.layers.float.new("_GLOW")  # glow mask; glb keeps it as _GLOW (COLOR_0 loses alpha on export)
 
 
 def lerp(a, b, t): return tuple(x + (y - x) * t for x, y in zip(a, b))
@@ -26,7 +28,7 @@ def grid(pts, colors, wrap=False):
             k = (j + 1) % n
             try: f = bm.faces.new((a[j], a[k], b[k], b[j]))
             except ValueError: continue
-            for lp, c in zip(f.loops, (ca[j], ca[k], cb[k], cb[j])): lp[col] = (c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2, c[3])  # authored sRGB, stored linear
+            for lp, c in zip(f.loops, (ca[j], ca[k], cb[k], cb[j])): lp[col] = (c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2, c[3]); lp[glow] = c[3]  # authored sRGB, stored linear
     return vs
 
 
@@ -83,14 +85,14 @@ def bell(tip, d, ang_end, L, R, seed=0):
     # clapper and stamens: glowing filaments with bead tips (the dripping lights in night.png)
     for k in range(5):
         th = 2 * pi * k / 5 + seed; off = (B * cos(th) + S * sin(th)) * R * (0.0 if k == 0 else 0.22)
-        top = tip + ax * L * 0.25; bot = tip + ax * L * (0.98 if k == 0 else 0.82 + 0.06 * (k % 2)) + off
+        top = tip + ax * L * 0.25; bot = tip + ax * L * (1.3 if k == 0 else 1.1 + 0.07 * (k % 3)) + off
         rows = []; cl = []
         for s in (0, 0.5, 1):
-            c0 = top + (bot - top) * s; rr = R * 0.012 * (1.2 - 0.3 * s)
+            c0 = top + (bot - top) * s; rr = R * 0.026 * (1.2 - 0.3 * s)
             rows.append([c0 + (B * cos(2 * pi * j / 4) + S * sin(2 * pi * j / 4)) * rr for j in range(4)])
             cl.append([(1.0, 0.85, 0.45, 1.0)] * 4)
         grid(rows, cl, wrap=True)
-        bead = [[bot + ax * R * 0.02 * z + (B * cos(2 * pi * j / 4) + S * sin(2 * pi * j / 4)) * R * 0.035 * w for j in range(4)] for z, w in ((0, 0.3), (1, 1), (3, 0.9), (5, 0.1))]
+        bead = [[bot + ax * R * 0.04 * z + (B * cos(2 * pi * j / 4) + S * sin(2 * pi * j / 4)) * R * 0.07 * w for j in range(4)] for z, w in ((0, 0.3), (1, 1), (3, 0.9), (5, 0.1))]
         grid(bead, [[(1.0, 0.9, 0.5, 1.0)] * 4] * 4, wrap=True)
 
 
@@ -140,7 +142,7 @@ bb = [ob.matrix_world @ Vector(c) for c in ob.bound_box]
 print("BELLFLOWER height %.2f m, width %.2f m, triangles %d" % (max(v.z for v in bb), max(v.x for v in bb) - min(v.x for v in bb), len(me.loop_triangles)))
 os.makedirs(out_dir, exist_ok=True)
 bpy.ops.export_scene.gltf(filepath=os.path.join(out_dir, "bellflower.glb"), export_format='GLB', use_selection=True,
-                          export_vertex_color='ACTIVE', export_active_vertex_color_when_no_material=True, export_apply=True)
+                          export_vertex_color='ACTIVE', export_active_vertex_color_when_no_material=True, export_apply=True, export_attributes=True)
 if "--render" in argv:
     out = argv[argv.index("--render") + 1]
     sc = bpy.context.scene; sc.render.engine = 'BLENDER_EEVEE'; sc.view_settings.view_transform = 'Standard'; sc.render.resolution_x = 900; sc.render.resolution_y = 1100
