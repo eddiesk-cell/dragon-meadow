@@ -158,13 +158,13 @@ everything on `ctx.heightAt`, each pushing its footprint into `ctx.keepClear`.
 
 | place | kind | where (world m) | first seen |
 |---|---|---|---|
-| Castle Crestwatch | castle | (−520, −240), cliff headland, Dragon Meadow | from the start, ahead-left (`mix-day.png`) |
+| Castle Crestwatch | castle | (−122, −390), chalk headland, Dragon Meadow | from the start, ahead-left (`mix-day.png`) |
 | Springwell | town (grown from the woodcutters' village) | (−75, 500), foot of the Holloway | stepping out of the Holloway (`mix-settlements.png`) |
 | Asterhaven | harbour city | (−1500, 650), where the Spill meets the sea | far off from the meadow's rise, across the island |
 | Reedholt | stilt village (kept) | Mirrormere | its lamps doubled in the lake |
 | The Windgap Gate | ruined fortress (kept) | (1525, 1300) | from the switchbacks |
 
-**Castle Crestwatch** · (−520, −240) — on the highest chalk of the cliff headland, 570 m west-north-west of the start
+**Castle Crestwatch** · (−122, −390) — on a chalk headland (plateau 42–56 m) ~400 m north-north-west of the start, 17° left of the start view
 - Look: a huge grey castle on the cliff edge (as in `mix-settlements.png`, right): a 50 m keep with battlements, corner
   turrets and tall arched windows; a curtain wall with 6–8 round and square towers, their conical roofs grey slate; a
   gatehouse with a portcullis; a road winding down the downs to the meadow. Grey flint-and-ragstone in stacked courses,

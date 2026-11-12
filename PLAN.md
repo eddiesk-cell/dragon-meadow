@@ -449,7 +449,7 @@ night, chimney smoke; they emerge from the haze. Read-only code to borrow from:
 `~/PROJECTS CODING/sanctuary-world` → `settlements.ts` (masonry shader, window glow, clearance).
 
 **Where they stand (fixed here so no lane waits on another):** Castle Crestwatch on the cliff headland at
-(−520, −240), seen ahead-left from the start; the town of Springwell at (−75, 500) at the foot of the Holloway; the
+(−122, −390) on its own chalk headland, seen ahead-left from the start; the town of Springwell at (−75, 500) at the foot of the Holloway; the
 harbour city Asterhaven at (−1500, 650) where the Spill meets the sea, glimpsed far off from the meadow's rise;
 Reedholt stays the stilt village on Mirrormere; the Windgap Gate stays a ruined fortress.
 
@@ -514,6 +514,9 @@ Two or three flocks (instanced, flapping), wheeling over the meadow by day; at n
 
 ### Lane dragon-ride — `src/dragon.js`, `src/ride.js` (Opus, after Phase 6 passes)
 Walk to the dragon when it lands, press E to climb on, fly with the same keys, E to land. As in the dragon clip.
+The free-flying dragon and the ridden one both keep clear of solid things: the rock island (`ctx.landmarks.rockisle`,
+already skirted by the figure-eight), grove trees (`ctx.flora.trees` {x, z, r, top}) and Crestwatch's towers
+(`ctx.settlements`). Probe the closest approach to each along the path, as `dragon.isleGap` does.
 - **CHECK:** `auto=ride` clip: hero mounts, flies a loop over the rock island and lake, lands; controls-check 7/7.
 
 ### Lane sky6 — `src/sky.js`, `src/post.js` (Opus)
@@ -658,3 +661,11 @@ turf and grass instead (`shortcut:` in water.js), and it finds the grass by gues
 - **CHECK:** `shots/water2-shore-{day,night}.png` from the shore camera: the bank meets the water without a painted
   edge, no upside-down grass in the reflection, the lanterns doubled; the hero walking in (`auto=walk` into the pond)
   sinks to the knees at most; errors []; fps ≥ 50.
+
+## Wave B follow-ups, part 2 (2026-11-13, from the settlements / flora-place / hero2 reviews)
+Contract rows added: `settlements` also replaces `heightAt` (adds Crestwatch's headland and Asterhaven's hill, as ring
+adds its bowl) — modules that load earlier and cached the old function miss the headland, harmless while they are far
+from it. `flora.trees` (writer: flora) = [{x, z, r, top}] for flyers and the camera.
+Queued after field-carve passes, `src/field.js` (Opus): publish `ctx.ground` = the terrain extents plus settlements'
+far tile, so flora drops the GROUND rects it copies by hand (`shortcut:` in flora.js).
+Queued with dragon-ride, `src/hero.js` (Opus): the camera treats grove trunks (`ctx.flora.trees`) as blockers.

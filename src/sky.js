@@ -128,7 +128,7 @@ export async function createSky(ctx) {
   const ground = x.mul(0.002).mul(exp(max(avgY, 0).mul(-1 / 20)))
   // Sea mist along the north cliffs (PLAN: crest ~25 m by z ≈ −200, lip ≈ −222…−242). It pools at the lip up to 21 m and
   // thins fast above (8 m), so the crest dissolves into the sky behind it while the meadow stays clear and Castle Crestwatch
-  // (−520, −240) rises out of it (with the air: base ~95 %, walls at 50 m ~60 %, towers at 70 m ~47 % by day).
+  // (−122, −390, on its own headland) rises out of it (with the air: base ~95 %, walls at 50 m ~60 %, towers at 70 m ~47 % by day).
   // Clear within 50 m of the eye.
   const lip = positionWorld.z.add(225).div(60)
   const mist = exp(lip.mul(lip).negate()).mul(exp(max(positionWorld.y.sub(21), 0).mul(-1 / 8))).mul(smoothstep(50, 200, dist)).mul(7)
