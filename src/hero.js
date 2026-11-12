@@ -173,8 +173,8 @@ export async function createHero(ctx) {
     return ray.intersectObjects(list, false)[0]?.distance
   }
   let scanT = 0, pulled = 0, frames = 0, behind = 0, inStone = 0
-  // ?camtest=1 proof: the orbit swings behind the nearest of the ring's REAL stone meshes (in ?auto=fight, the barrow-door
-  // stones), found from ctx.ring.stones[].pos and not from the flag, so an unflagged ring shows inStone > 0 instead of a quiet 0.
+  // The ring's stone meshes, found from ctx.ring.stones[].pos (not from the flag): they block the camera even unflagged, and
+  // ?camtest=1 swings the orbit behind the nearest of them (in ?auto=fight, the barrow-door stones) and checks the real meshes.
   const camtest = params.get('camtest')
   let rocks = []
   const findRocks = () => { // the mesh standing at the first ring stone, then every mesh in its group with the same stone material
@@ -224,8 +224,9 @@ export async function createHero(ctx) {
       if ((scanT -= dt) <= 0) {
         scanT = 1; solids.length = 0
         scene.traverse(o => o.userData.cameraBlock && o.traverse(m => m.isMesh && solids.push(m)))
+        if (!rocks.length) findRocks()
+        for (const m of rocks) solids.includes(m) || solids.push(m) // shortcut: ring.js:121 does not flag its stones yet (Contract); drop this line once it does
         blocks.length = 0; blocks.push(...solids.map(hullOf))
-        if (camtest && !rocks.length) findRocks()
       }
       let R = DIST, near = Infinity
       if (camtest) for (const o of rocks) { // swing ±30° across the nearest stone, 2.5 m beyond it, low: its goal keeps landing behind stone
