@@ -27,7 +27,7 @@ export async function createSprings(ctx) {
   const head = wp(bone('head')), top = wp(bone('HeadTop_End'))
   const headC = head.clone().lerp(top, 0.45)
   const UPPER = [
-    cap('head', headC, headC, 0.105),
+    cap('head', headC, headC, 0.13), // skull + spiky hair
     cap('neck', wp(bone('neck')), head, 0.06),
     cap('upperChest', wp(bone('upperChest')), wp(bone('neck')), 0.11),
     ...['left', 'right'].flatMap(s => [
