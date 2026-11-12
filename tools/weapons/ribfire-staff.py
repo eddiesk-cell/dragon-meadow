@@ -17,6 +17,8 @@ def mat(name, rgb, rough, emit=0.0):
     b.inputs["Base Color"].default_value = (*rgb, 1)
     b.inputs["Roughness"].default_value = rough
     b.inputs["Metallic"].default_value = 0.8 if name == "iron" else 0.0
+    if name == "saltglass":
+        b.inputs["Alpha"].default_value = 0.55  # translucent so the ember core shows through
     if emit:
         b.inputs["Emission Color"].default_value = (*rgb, 1)
         b.inputs["Emission Strength"].default_value = emit
@@ -87,7 +89,7 @@ for n in range(3):
     for i in range(7):
         t = i / 6
         r = 0.02 + 0.07 * sin(pi * 0.85 * t)
-        pts.append((r * cos(a), 0.86 + 0.19 * t, r * sin(a), 0.012 - 0.009 * t, 0.012 - 0.009 * t))
+        pts.append((r * cos(a), 0.86 + 0.19 * t, r * sin(a), 0.014 - 0.010 * t, 0.014 - 0.010 * t))
     weapon.append(tube(f"tine{n}", pts, BONE, k=6))
 weapon.append(add(bpy.ops.mesh.primitive_ico_sphere_add, GLASS, radius=0.05, subdivisions=2, location=(0, 1.0, 0)))
 weapon.append(add(bpy.ops.mesh.primitive_ico_sphere_add, EMBER, radius=0.025, subdivisions=2, location=(0, 1.0, 0)))
