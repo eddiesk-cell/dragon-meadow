@@ -669,3 +669,11 @@ from it. `flora.trees` (writer: flora) = [{x, z, r, top}] for flyers and the cam
 Queued after field-carve passes, `src/field.js` (Opus): publish `ctx.ground` = the terrain extents plus settlements'
 far tile, so flora drops the GROUND rects it copies by hand (`shortcut:` in flora.js).
 Queued with dragon-ride, `src/hero.js` (Opus): the camera treats grove trunks (`ctx.flora.trees`) as blockers.
+
+### Lane hero3 — `src/hero.js` (Opus)
+The camera treats grove trunks as solid: build one blocker per tree in `ctx.flora.trees` (a capsule or hull round the
+trunk from the ground to the first boughs, radius from `r`), added to the same ray test as `userData.cameraBlock`
+meshes. No per-frame cost growth: test only trees within 30 m of the hero.
+- **CHECK:** `?fieldcam` is not enough — add `&camtest=tree`: the hero walks a circle round the nearest grove trunk with
+  the camera swinging behind it; probe `hero.cam.inTrunk` = 0 over 20 s (and > 0 with the blockers switched off, to
+  prove it can see). `controls-check` 7/7; fps ≥ 50 in a grove.
