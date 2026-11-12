@@ -405,3 +405,84 @@ arms; the hero's and troll's lessons — joints go where the body BENDS, checked
    `public/models/bestiary/<id>.glb` (only your files).
 - **CHECK:** skeleton.png — every joint on a bend (reviewer looks, joint by joint); idle.png — arms hang clear of the
   body at full length, head looks ahead, feet flat; the glb lists exactly the entry's available clips; ≤ 8 MB.
+
+## Phase 6 — Asterholm made mesmerizing (Eddie 2026-11-12: "redesign the world, keep the creatures, beautiful and mesmerizing")
+
+**Status: concepts drawn, waiting for Eddie's go on the look.** Spend: 11 credits (4 concepts); everything below is
+code and Blender, free. Creatures, hero, pet, dragon, weapons, the map and its eight lands all stay.
+
+**The picture is the spec — open all four:** `refs/world/day.png` (meadow, golden afternoon), `refs/world/night.png`
+(same view at night), `refs/world/ring-night.png` (the Old Ring at night), `refs/world/island.png` (the whole island).
+The game will match their mood, palette and parts, not their painted detail.
+
+**The world rule, so the glow is physics and not decoration:** Asterholm's plants drink sunlight by day and give it
+back at night; pressure wakes them, so a footstep sends a ring of light through the grass. Skystone floats; the springs
+on its islands pour off the edges as waterfalls that turn to mist before they land.
+
+**Goal check:** `node tools/shot.mjs shots/world-day.png "tod=day" 6000` and the same with `tod=night` exit 0 with
+`errors []`, fps ≥ 50, `node tools/controls-check.mjs` 7/7, and the two shots read like `refs/world/day.png` and
+`refs/world/night.png`: jade grass with gold tips; giant bell flowers and spiral ferns; colossal pale trees with
+curtains of vines; floating islands with waterfalls; at night glowing grass tips, flowers and vines, the light ring at
+the hero's feet, drifting seed lights, stars and aurora.
+
+**Contract change (main.js, orchestrator):** `ctx.tod` 0..1 time of day and `ctx.night` 0..1 glow amount (writer: sky;
+`?tod=day|dusk|night` pins it, default a 6-minute day); `ctx.sunDir` and `ctx.fogColor` become live (writer: sky).
+main loads `flora`, `skyisles`, `motes` after `ring`.
+
+**Order:** sky, field, flora models, skyisles, motes and world-doc start together (no shared files). flora-place
+starts when the three flora models pass. ring-glow starts when the monster and combat lanes pass (they read the ring).
+Last: a day→night walk clip (`auto=walk&tod=cycle`), final review, show Eddie.
+
+### Lane sky6 — `src/sky.js`, `src/post.js` (Opus)
+Day–night cycle driving `ctx.tod`, `ctx.night`, `ctx.sunDir`, `ctx.fogColor`, sun and moon light. Sky dome: warm
+pastel clouds and sun shafts by day (`day.png`), deep indigo with stars and a slow green–violet aurora by night
+(`night.png`). Bloom tuned so only glowing things bloom at night; nothing neon by day.
+- **CHECK:** shots at `tod=day`, `tod=dusk`, `tod=night` exit 0, errors [], fps ≥ 50; side by side with `day.png` and
+  `night.png` the sky, light and haze colours match; the horizon has no hard line.
+
+### Lane field6 — `src/field.js` (Opus)
+Grass in jade and teal with pale gold tips (day), tips glowing cyan–teal by `ctx.night`; the footstep light ring: each
+step of `ctx.heroPos` starts a ring that spreads ~3 m and fades over ~2 s, brighter at night. Small pale star flowers
+replace the dot flowers. Keep `heightAt`, `windAt` and the ring hook unchanged.
+- **CHECK:** `tod=day` and `tod=night` shots match the grass in `day.png` / `night.png`; `auto=walk&tod=night` shows
+  rings behind the walking hero; controls-check 7/7; fps ≥ 50.
+
+### Lanes flora-<id> — one Sonnet builder per Blender model (`tools/flora/<id>.py` → `public/models/flora/<id>.glb`)
+`bellflower` (2–4 m stem bending over, 3–6 drooping bells, petals lilac and peach, inner glow mask), `fern` (1–2 m
+spiral fronds, violet vein glow mask), `vinetree` (25–40 m pale buttressed trunk, broad canopy, 30+ hanging vine
+strands, vine glow mask). Glow mask = vertex colour alpha (1 glows), so one material drives day and night.
+### Lane flora-bellflower
+### Lane flora-fern
+### Lane flora-vinetree
+- **CHECK (each):** the script prints height and triangles (≤ 6k bellflower, ≤ 4k fern, ≤ 40k vinetree); a Blender
+  render beside the hero glb at true scale reads like the matching plant in `day.png`, and a dark render with the glow
+  mask lit reads like `night.png`.
+
+### Lane flora-place — `src/flora.js` (Opus, after the three flora lanes pass)
+Instance the three models: bell flowers and ferns in drifts round the meadow edges (none on the path or in the Old
+Ring), vine trees in groves on the rises, as in `day.png`. Sway with `ctx.windAt`; glow by `ctx.night`.
+- **CHECK:** `tod=day` and `tod=night` default views read like `day.png` / `night.png`; fps ≥ 50; no plant floats or
+  sinks (probe: max |base − heightAt| ≤ 0.05 m).
+
+### Lane skyisles — `src/skyisles.js`, `tools/flora/skyisle.py` (Opus)
+5–9 floating islands of pale stone, 40–200 m across, 150–600 m up and 0.5–3 km out, with trees on top, roots hanging
+below, waterfalls off their edges (scrolling, fading to mist), and a slow bob. Glowing vines at night.
+- **CHECK:** default and `tod=night` shots show islands where `day.png` / `night.png` have them; waterfalls move in
+  `auto=walk` clip frames; fps ≥ 50.
+
+### Lane motes — `src/motes.js` (Sonnet)
+Drifting seed lights (instanced, additive): a few pale pollen specks by day, hundreds of slow glowing seeds at night,
+densest near the hero, rising gently.
+- **CHECK:** `tod=night` shot shows seed lights like `night.png`; probe count ≥ 300 at night, ≤ 80 by day; fps ≥ 50.
+
+### Lane ring-glow — `src/ring.js` (Opus, after monster and combat pass)
+The Old Ring in `ring-night.png`: cyan-green glowing moss veins on the stones, gold light from the barrow door, teal
+mist at night; by day the same moss is soft green.
+- **CHECK:** `ring=1&tod=night` and `fight=1&tod=night` read like `ring-night.png`; the ring probe still reads stones
+  11, fallen 3; the monster and combat probes are unchanged.
+
+### Lane world-doc — `WORLD.md` (Opus)
+Rewrite each land's Look and palette in the new language (`island.png`); keep geography, connections, the travel loop
+and every creature's home.
+- **CHECK:** every land keeps its position, landmark and connection; every BESTIARY creature's land still exists;
+  each Look names its day and night palette and what glows.
