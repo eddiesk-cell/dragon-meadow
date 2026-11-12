@@ -18,7 +18,7 @@ Glow mask (same as castle-kit): COLOR_0 rgb is white everywhere, alpha 1 on wind
 and lantern glass, 0 elsewhere; those faces also carry material `window`.
 Node extras (three: object.userData): smoke [[x, y, z], ...] chimney tops, light [[x, y, z], ...] lamp centres, both in
 the node's own glTF frame (y up), for the settlements lane's chimney smoke and night lights.
-With a second arg, renders <shots>/town-kit-{day,night,close}.png from the EXPORTED glb beside public/models/hero.glb.
+With a second arg, renders <shots>/town-kit-{day,night,close,pieces}.png from the EXPORTED glb beside public/models/hero.glb.
 """
 import bpy, sys, os, json, struct
 import numpy as np
@@ -82,26 +82,33 @@ def normal_map(h, n, tile):  # height in metres -> tangent-space normal (OpenGL 
 
 
 def masonry(n=1024, tile=2.4):
-    """Village stone: ~9 courses of 0.2-0.34 m, stones 0.35-0.8 m, deep mortar, warm cream/grey/tan per stone."""
-    d, bid, _, nb = blocks(n, tile, cuts(tile, .2, .34), .35, .8)
-    pal = np.array([[.80, .74, .63], [.74, .69, .60], [.84, .79, .69], [.68, .66, .62], [.80, .71, .58], [.63, .60, .55]])
-    col = pal[rng.integers(0, len(pal), nb)][bid] * (1 + .07 * rng.standard_normal(nb))[bid][..., None]
-    bulge = rng.uniform(.6, 1, nb)[bid]
-    h = ss(.008, .045, d) * bulge * (1 + .2 * noise(n, 4)) + .15 * ss(.01, .1, d) * noise(n, 14)
-    col = col * (.62 + .38 * ss(.008, .06, d))[..., None]  # rounded arrises darken into the joint
-    col = np.where((d < .009)[..., None], np.array([.42, .39, .34]) * (1 + .1 * noise(n, 2))[..., None], col)
-    col = col * (1 + .06 * noise(n, 1.2))[..., None] * (1 + .07 * noise(n, 50))[..., None]
-    return col, normal_map(h * .035, n, tile)
+    """Village stone: courses of 0.16-0.38 m, stones 0.3-0.9 m with rounded arrises, deep mortar, warm
+    honey / cream / grey per stone, weathered darker in broad patches."""
+    d, bid, _, nb = blocks(n, tile, cuts(tile, .16, .38), .3, .9)
+    pal = np.array([[.76, .66, .52], [.71, .62, .50], [.80, .71, .57], [.68, .62, .54], [.76, .64, .49], [.66, .59, .50]])
+    col = pal[rng.integers(0, len(pal), nb)][bid] * (1 + .06 * rng.standard_normal(nb))[bid][..., None]
+    bulge = rng.uniform(.5, 1, nb)[bid]
+    h = ss(.008, .06, d) * bulge * (1 + .25 * noise(n, 4)) + .2 * ss(.01, .12, d) * noise(n, 12)
+    col = col * (.55 + .45 * ss(.008, .07, d))[..., None]  # rounded arrises darken into the joint
+    col = np.where((d < .009)[..., None], np.array([.46, .42, .36]) * (1 + .12 * noise(n, 2))[..., None], col)
+    col = col * (1 + .035 * noise(n, 1.5))[..., None] * (1 + .06 * noise(n, 60))[..., None]
+    return col, normal_map(h * .05, n, tile)
 
 
-def tiles(base, n=512, tile=2.4, rows=10, var=.12, pan=.3):
+def dressed(n=256, tile=2.4):
+    """Smooth sandstone for quoins, sills, copings: fine grain and broad weathering."""
+    c = np.array([.72, .65, .54])[None, None, :] * (1 + .03 * noise(n, .8) + .05 * noise(n, 16))[..., None]
+    return c, normal_map(.0015 * noise(n, 1.5), n, tile)
+
+
+def tiles(base, n=512, tile=2.4, rows=10, var=.12, hue=.3, pan=.3):
     """Roof: `rows` courses, tiles 0.2-0.3 m wide; each thick at its bottom lip, rounded across (pantile `pan`)."""
     d, bid, t, nb = blocks(n, tile, np.linspace(0, tile, rows + 1), .2, .3)
     u = (np.arange(n) + .5) * tile / n
     h = np.where(d < .008, 0, 1 - .75 * t)
-    tone = (1 + var * rng.standard_normal((nb, 3)) * [1, .8, .6])[bid]
-    col = np.array(base)[None, None, :] * tone * (.5 + .5 * ss(.006, .03, d))[..., None]
-    col = col * (1 - .4 * ss(.75, 1, t))[..., None] * (1 + .05 * noise(n, 1))[..., None]
+    tone = (1 + var * (rng.standard_normal((nb, 1)) + hue * rng.standard_normal((nb, 3))))[bid]
+    col = np.array(base)[None, None, :] * tone * (.62 + .38 * ss(.006, .03, d))[..., None]
+    col = col * (1 - .4 * ss(.75, 1, t))[..., None] * (1 + .05 * noise(n, 1))[..., None] * (1 + .06 * noise(n, 40))[..., None]
     return col, normal_map(h * .02 + pan * .02 * ss(0, 1, np.abs(np.sin(u * pi / .25)))[None, :], n, tile)
 
 
@@ -136,16 +143,17 @@ def mat(name, rgb=(1, 1, 1), rough=.85, metal=0., tex=None):
 
 
 MATS = [mat("stone", rough=.92, tex=masonry()),
-        mat("clay", rough=.8, tex=tiles([.62, .27, .17])),
-        mat("slate", rough=.6, tex=tiles([.27, .30, .35], var=.1, pan=0)),
-        mat("dressed", (.56, .52, .46), .85),
+        mat("clay", rough=.8, tex=tiles([.70, .36, .22], var=.14)),
+        mat("slate", rough=.6, tex=tiles([.25, .28, .33], var=.12, hue=.05, pan=0)),
+        mat("dressed", rough=.85, tex=dressed()),
         mat("timber", (.10, .055, .028), .8),
         mat("door", (.15, .07, .03), .75),
         mat("iron", (.03, .03, .035), .5, .6),
         mat("shutter", (.05, .10, .09), .7),
-        mat("window", (.04, .035, .03), .25)]  # dark glass by day; the game lights it by the vertex alpha mask
-ST, CY, SL, DR, TB, DO, IR, SH, WI = range(9)
-TILE = {ST: 2.4, CY: 2.4, SL: 2.4}  # metres per texture repeat; other materials are untextured
+        mat("window", (.04, .035, .03), .25),  # dark glass by day; the game lights it by the vertex alpha mask
+        mat("flowers", (.50, .26, .55), .9)]
+ST, CY, SL, DR, TB, DO, IR, SH, WI, FL = range(10)
+TILE = {ST: 2.4, CY: 2.4, SL: 2.4, DR: 2.4}  # metres per texture repeat; other materials are untextured
 
 
 # ---------- geometry: a piece is a list of faces (Blender Z up; fronts face -Y, which glTF writes as +Z) ----------
@@ -282,9 +290,14 @@ class Wall:
             s.box(u - .13, u + .13, 0, .07, zb + h - .1, zb + h + .22, DR)  # keystone
         elif lintel is not None:
             s.box(u - w / 2 - .15, u + w / 2 + .15, 0, .09, zb + h, zb + h + .2, lintel)
-        if shut:
+        if shut:  # open shutters and a box of flowers
             for sg in (-1, 1):
                 s.box(u + sg * (w / 2 + .03), u + sg * (w / 2 + .03 + w * .48), 0, .05, zb + .02, zb + h - .02, SH)
+            s.box(u - w / 2 - .05, u + w / 2 + .05, .13, .36, zb - .36, zb - .12, TB)
+            for i in range(6):  # mounds of bloom, uneven
+                a = -.52 + i * .18
+                s.box(u + a * w, u + (a + .22) * w, .15 + .03 * (i % 2), .36 - .03 * (i % 3), zb - .12,
+                      zb + (.08, .15, .11, .17, .07, .13)[i], FL)
 
     def door(s, u, zb, w, h=2.0, arch=False, depth=.25):
         hl = (u - w / 2, u + w / 2, zb, zb + h + (w / 2 if arch else 0), arch, depth)
@@ -635,6 +648,8 @@ def bridge():
                      [(x0, y, spring + 1.6), (x1, y, spring + 1.6), (x1, y + n * .02, spring + 1.62), (x0, y + n * .02, spring + 1.62)]),
                     DR, skip=((0, -n, 0), (0, 0, -1)))
     P.f([(-6, y0 + .45, 0), (6, y0 + .45, 0), (6, y1 - .45, 0), (-6, y1 - .45, 0)], ST, Z)  # road
+    for x in (-6, 6):  # end caps: buried in the bank, or back to back with the next module
+        P.f([(x, y0, -7), (x, y1, -7), (x, y1, 0), (x, y0, 0)], ST, (x, 0, 0))
     for y, n in ((y0, -1), (y1, 1)):  # parapets with dressed coping, a string course under them
         ya, yb = sorted((y, y - n * .45))
         P.box(-6, 6, ya, yb, 0, .95, ST, skip=((0, 0, -1),))
@@ -675,9 +690,9 @@ def to_object(P):
     bpy.context.scene.collection.objects.link(ob)
     gl = lambda p: [round(p[0], 3), round(p[2], 3), round(-p[1], 3)]  # Blender Z-up -> glTF Y-up
     if P.smoke:
-        ob["smoke"] = json.dumps([gl(p) for p in P.smoke])
+        ob["smoke"] = [gl(p) for p in P.smoke]
     if P.light:
-        ob["light"] = json.dumps([gl(p) for p in P.light])
+        ob["light"] = [gl(p) for p in P.light]
     return ob
 
 
@@ -715,6 +730,9 @@ for P in PIECES:
     assert not any(n.get("translation", [0, 0, 0])), P.name
     prims = js["meshes"][n["mesh"]]["primitives"]
     assert all(js["accessors"][p["attributes"]["COLOR_0"]]["type"] == "VEC4" for p in prims), "COLOR_0 lacks alpha"
+    ex = n.get("extras", {})
+    assert len(ex.get("smoke", [])) == len(P.smoke) and len(ex.get("light", [])) == len(P.light), (P.name, ex)
+    assert all(len(v) == 3 for v in ex.get("smoke", []) + ex.get("light", [])), (P.name, ex)
 print(f"TOWNKIT wrote {GLB} {os.path.getsize(GLB) / 1e6:.2f} MB, nodes {sorted(names)}, materials "
       f"{[m['name'] for m in js['materials']]}, images {len(js.get('images', []))}")
 
@@ -746,7 +764,7 @@ def glow_materials(strength):
         mu.name, mu.operation = "glow", "MULTIPLY"
         nt.links.new(vc.outputs["Alpha"], mu.inputs[0])
         mu.inputs[1].default_value = strength
-        b.inputs["Emission Color"].default_value = (1.0, .58, .22, 1)
+        b.inputs["Emission Color"].default_value = (1.0, .32, .05, 1)
         nt.links.new(mu.outputs[0], b.inputs["Emission Strength"])
 
 
@@ -779,19 +797,18 @@ ground(11, 200, -200, 200, -10, 0, GR)
 ground(-12, 12, -200, 200, -10, -3.6, (.03, .09, .11), .08)
 for x in (-6, 6):
     place("bridge", x, 0)
-L = [place("lantern", x, y) for x, y in ((-12.6, -2.6), (12.6, -2.6), (12.6, 2.6), (19, -3.2), (-19, -3.2))]
-place("cottage_s", 17.5, -9.5)
-place("well", 22.5, -2.5 + 0)
-place("cottage_l", 28, -8.5)
-place("house", 18.5, 8.5)
-place("market", 30, 5.5)
-place("church", 27, 25)
+L = [place("lantern", x, y) for x, y in ((-12.6, -2.6), (12.6, -2.6), (12.6, 2.6), (25, -3.2), (-19, -3.2))]
+place("cottage_s", 21, -14)
+place("well", 16, -2.5)
+place("cottage_l", 31.5, -9)
+place("house", 18, 9)
+place("market", 30, 6)
+place("church", 40, 24, 0, -90)  # nave side and buttresses toward the camera, tower to the left
 place("cottage_s", -17, 7.5)
-place("house", -22, -10)
 hero = load(os.path.join(ROOT, "public/models/hero.glb"))
 for o in hero:
     if o.parent is None:
-        o.location = (15.3, -13.2, 0)
+        o.location = (18.9, -17.4, 0)
         o.rotation_euler = (0, 0, pi * .85)
 
 cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
@@ -812,10 +829,16 @@ for eng in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
 sc.eevee.taa_render_samples = 24
 sc.render.resolution_x, sc.render.resolution_y = 1600, 900
 sc.view_settings.view_transform = "AgX"
+for look in ("AgX - Punchy", "Punchy"):
+    try:
+        sc.view_settings.look = look
+        break
+    except TypeError:
+        pass
 lamps = []
 for o in L:
     pt = bpy.data.objects.new("lamp", bpy.data.lights.new("lamp", "POINT"))
-    pt.data.color, pt.data.shadow_soft_size = (1, .6, .25), .1
+    pt.data.color, pt.data.shadow_soft_size, pt.data.use_shadow = (1, .6, .25), .1, False
     pt.location = o.location + Vector((0, 0, 2.8))
     sc.collection.objects.link(pt)
     lamps.append(pt)
@@ -840,6 +863,16 @@ def shoot(name, sky, sun_e, sun_c, glow, lamp_e):
 
 aim((1.0, -31, 8.5), (19, 4, 4.5), 30)
 shoot("day", (.42, .56, .78), 4.0, (1, .93, .8), 0., 0.)
-shoot("night", (.012, .016, .045), .08, (.5, .6, 1), 9., 60.)
-aim((9.5, -24, 2.6), (17.5, -10, 2.4), 40)  # hero at the cottage door: scale and the stacked stone up close
+shoot("night", (.09, .06, .16), .5, (.65, .5, 1), 1.6, 250.)  # dusk, like mix-settlements.png
+aim((13, -29, 2.6), (21, -14.5, 2.4), 40)  # hero at the cottage door: scale and the stacked stone up close
 shoot("close", (.42, .56, .78), 4.0, (1, .93, .8), 0., 0.)
+# every piece in a row on the far bank, the hero at the front for scale
+for name, x, rot, z in (("cottage_s", 20, 0, 0), ("well", 29, 0, 0), ("lantern", 33, 0, 0), ("cottage_l", 42, 0, 0),
+                        ("house", 56, 0, 0), ("market", 72, 0, 0), ("church", 95, -90, 0), ("bridge", 118, 0, 7.0)):
+    place(name, x, 100, z, rot)
+for o in hero:
+    if o.parent is None:
+        o.location, o.rotation_euler = (25, 95, 0), (0, 0, 0)
+sc.render.resolution_x = 2400
+aim((67, 26, 24), (69, 100, 5), 22)
+shoot("pieces", (.42, .56, .78), 4.0, (1, .93, .8), 0., 0.)
