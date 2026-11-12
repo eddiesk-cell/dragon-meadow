@@ -94,7 +94,7 @@ for n in range(3):
 weapon.append(add(bpy.ops.mesh.primitive_ico_sphere_add, GLASS, radius=0.05, subdivisions=2, location=(0, 1.0, 0)))
 weapon.append(add(bpy.ops.mesh.primitive_ico_sphere_add, EMBER, radius=0.025, subdivisions=2, location=(0, 1.0, 0)))
 
-# carrier: two strap loops (r 0.03) at y 0 and -0.85, seat = staff origin at carrier y -0.55, plus a thin back strip
+# carrier: two strap loops (r 0.03) at y 0 and -0.85, seat = staff origin at carrier y -0.55
 SEAT = -0.55
 carrier = []
 for cy in (0.0, -0.85):
@@ -103,7 +103,6 @@ for cy in (0.0, -0.85):
             minor_segments=5, location=(bow(sy), cy, 0), rotation=(pi / 2, 0, 0))
     o.scale = (1.1, 1, 0.9)
     carrier.append(o)
-carrier.append(tube("strip", [(0, 0.0, -0.034, 0.010, 0.003), (0, -0.85, -0.034, 0.010, 0.003)], LEATHER, k=4))
 
 def upright(objs):
     from mathutils import Matrix
@@ -120,7 +119,7 @@ def join(objs, name):
     bpy.ops.object.join()
     ob = bpy.context.object
     ob.name = name
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     return ob
 
 
