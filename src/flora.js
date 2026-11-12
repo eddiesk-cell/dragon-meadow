@@ -15,9 +15,9 @@ const KINDS = {
   vinetree: { glow: [0.25, 1.0, 0.65], power: 1.4, lift: 0.04, trans: 0.2, lean: 0.006, vine: 0.09, tau: 1.6, far: 4000, scale: [0.9, 1.25] },
 }
 // The start view (hero at the origin looking −Z, the rock and lake to the right, the castle 17° left): a giant tree on
-// the crest at the left (placed and turned so no vine crosses the castle or the egg, beside Crestwatch's road and beyond
-// the dragon's figure-eight, which flies ~15 m up: a nearer tree could not miss all three), bells down the left edge and in the left foreground, ferns in both
-// foreground corners, a few bells along the right shore. [kind, x, z, scale, yaw°]
+// the crest at the left, placed and turned so no vine crosses the castle or the egg, beside Crestwatch's road and beyond
+// the dragon's figure-eight, which flies ~15 m up (a nearer tree could not miss all three); bells down the left edge and
+// in the left foreground, ferns in both foreground corners, a few bells along the right shore. [kind, x, z, scale, yaw°]
 const FRAME = [
   ['vinetree', -121, -180, 1.5, 5],
   ['bellflower', -4.2, -1.5, 1.35, 120], ['bellflower', -6.5, -6, 1.15, 150], ['bellflower', -5, -12, 0.95, 90],
@@ -55,8 +55,7 @@ export async function createFlora(ctx) {
   const lists = Object.fromEntries(names.map(n => [n, []]))
   const add = (kind, x, z, s, yaw) => lists[kind].push({ x, z, s, yaw })
   for (const [k, x, z, s, yaw] of FRAME) add(k, x, z, s, yaw * Math.PI / 180)
-  const [lo, hi] = [k => KINDS[k].scale[0], k => KINDS[k].scale[1]]
-  const pick = k => lo(k) + (hi(k) - lo(k)) * rnd()
+  const pick = k => { const [a, b] = KINDS[k].scale; return a + (b - a) * rnd() }
 
   // Groves on the rises: grid points standing above the mean of a 45 m ring round them, best first, 170 m apart;
   // none in the start vista (−28° … +40° of straight ahead) or across the dragon's figure-eight, which flies ~15 m up.
@@ -76,7 +75,7 @@ export async function createFlora(ctx) {
   const groves = []
   for (const c of cand) {
     if (groves.length === 7) break
-    if (groves.some(g => Math.hypot(g.x - c.x, g.z - c.z) < 170) || Math.hypot(c.x + 34, c.z + 40) < 120) continue
+    if (groves.some(g => Math.hypot(g.x - c.x, g.z - c.z) < 170)) continue
     groves.push(c)
     add('vinetree', c.x, c.z, pick('vinetree'), rnd() * 6.28)
     for (let i = 0, n = 1 + Math.floor(rnd() * 3), tries = 0; i < n && tries < 20; tries++) {
@@ -140,7 +139,7 @@ export async function createFlora(ctx) {
       p.cy = p.y + bs.center.y * p.s; p.r = (bs.radius + Math.hypot(bs.center.x, bs.center.z)) * p.s
       p.wx = p.wz = 0; p.f = 1.1 + rnd() * 1.4; p.ph = rnd() * 6.28
     }
-    return { name, cfg, mesh, bend, list, a: 0 }
+    return { name, cfg, mesh, bend, list, top }
   })
 
   const frustum = new THREE.Frustum(), PV = new THREE.Matrix4(), sphere = new THREE.Sphere()
@@ -159,7 +158,7 @@ export async function createFlora(ctx) {
         const d = Math.hypot(p.x - cx, p.z - cz)
         if (d - p.r > K.cfg.far) continue
         if (d > 25 + p.r && !frustum.intersectsSphere(sphere.set(sphere.center.set(p.x, p.cy, p.z), p.r * 1.2))) continue
-        const f = Math.sin(t * p.f + p.ph) * (0.3 + 0.08 * Math.hypot(p.wx, p.wz)) // its own sway, livelier in a gust
+        const f = Math.sin(t * p.f + p.ph) * (0.5 + 0.12 * Math.hypot(p.wx, p.wz)) // its own sway, livelier in a gust
         for (let i = 0; i < 16; i++) arr[n * 16 + i] = p.m[i]
         bb[n * 2] = p.wx - 0.34 * f; bb[n * 2 + 1] = p.wz + 0.94 * f
         n++
@@ -169,6 +168,8 @@ export async function createFlora(ctx) {
     }
   }
   update(0, 0)
+  // For whoever flies or walks among them (the dragon's figure-eight is ~15 m up; a tree stands 29–40 m): trunk, canopy, top.
+  ctx.flora = { trees: trees.map(t => ({ x: t.x, z: t.z, r: 27 * t.s, top: t.y + kinds.find(K => K.name === 'vinetree').top * t.s })) }
 
   // Every base against the live ground (heightAt may be re-wrapped after create): max |base − heightAt| in metres.
   window.__probes.flora = () => {
