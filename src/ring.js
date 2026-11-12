@@ -5,6 +5,7 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
   vertexColor, positionLocal, positionWorld, positionView, uniform, vec2, vec3, float, smoothstep, length, mx_fractal_noise_float,
   viewportDepthTexture, perspectiveDepthToViewZ, cameraNear, cameraFar, cameraPosition, select, exp, abs, max, min, sqrt, dot, mix,
+  attribute, mx_noise_float, sin, uv,
 } from 'three/tsl'
 
 const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k) }
@@ -95,8 +96,18 @@ export async function createRing(ctx) {
   ctx.heightAt = (x, z) => base(x, z) + off(x, z)
 
   // --- stones: twelve slots on a 22 m ring (door gap between slots 11 and 0), slot 7 empty, three fallen
+  // Phase 6 (ring-night.png): moss creeps up from the turf (per-vertex 'moss', see mossify); thin veins run through it,
+  // soft green by day, glowing cyan-green at night (the world rule: plants give back the day's light), pulsing slowly upward.
+  const uT = uniform(0), uNight = uniform(0)
   const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.92, metalness: 0 }) // vertex colour via colorNode (vertexColors: true would square it)
-  mat.colorNode = vertexColor().mul(mx_fractal_noise_float(positionLocal.mul(7), 3).mul(0.22).add(1)) // fine grain close up
+  const P = positionLocal, moss = attribute('moss', 'float')
+  const n1 = mx_noise_float(P.mul(1.3)), n2 = mx_noise_float(P.mul(3.7).add(11))
+  const line = (n, w) => float(1).sub(smoothstep(w * 0.3, w, abs(n)))
+  const vein = max(line(n1, 0.05), line(n2, 0.035).mul(0.6)).mul(smoothstep(0.2, 0.7, moss))
+  mat.colorNode = mix(vertexColor(), vec3(0.07, 0.14, 0.04), moss.mul(0.8)).mul(mx_fractal_noise_float(P.mul(7), 3).mul(0.22).add(1)) // fine grain close up
+    .add(vec3(0.05, 0.09, 0.02).mul(vein))
+  const pulse = sin(uT.mul(0.9).sub(P.y.mul(1.7)).add(n1.mul(4))).mul(0.3).add(0.85)
+  mat.emissiveNode = mix(vec3(0.1, 1, 0.75), vec3(0.35, 1, 0.35), n2.mul(0.5).add(0.5)).mul(vein.mul(2.2).mul(pulse).add(moss.mul(0.05))).mul(uNight)
   const foot = [] // footprints for the ground patch: { c: Vector2, u: Vector2, a, b }
   const stones = [], group = new THREE.Group()
   const place = (geo, x, z, yaw, opts = {}) => {
@@ -106,6 +117,17 @@ export async function createRing(ctx) {
     m.rotation.set(opts.tilt || 0, yaw, opts.lean || 0, 'YXZ')
     group.add(m)
     return m
+  }
+  // Per-vertex moss in world space (after placing): climbs up to ~2.4 m from the turf in tongues, and caps up-facing tops.
+  const mossify = m => {
+    m.updateMatrixWorld(true)
+    const p = m.geometry.attributes.position, nr = m.geometry.attributes.normal, a = new Float32Array(p.count), v = new THREE.Vector3(), n = new THREE.Vector3()
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); n.fromBufferAttribute(nr, i).transformDirection(m.matrixWorld)
+      const f = fbm(v.x * 0.9, v.y * 0.9, v.z * 0.9, 3)
+      a[i] = Math.max(ss(2.4, 0.2, v.y - ctx.heightAt(v.x, v.z) + (f - 0.5) * 3.2), ss(0.5, 0.85, n.y) * ss(0.45, 0.6, f))
+    }
+    m.geometry.setAttribute('moss', new THREE.BufferAttribute(a, 1))
   }
   const FALLEN = new Set([2, 5, 9])
   for (let k = 0; k < 12; k++) {
@@ -155,11 +177,22 @@ export async function createRing(ctx) {
   const cap = stoneGeo(THREE, 3.4, 0.6, 2.9)
   cap.translate(0, -0.3, 0)
   place(cap, door.x - D.x * 1.1, door.y - D.y * 1.1, dyaw + 0.04, { tilt: 0.05 }).position.y = doorY + 2.05
-  const hole = new THREE.Mesh(new THREE.PlaneGeometry(1.75, 2.3), new THREE.MeshBasicNodeMaterial({ color: 0x050605 }))
+  // The doorway: black by day, at night gold lamplight from deep inside, brightest low and centred, with a lantern flicker.
+  const uDoor = uniform(0), hm = new THREE.MeshBasicNodeMaterial()
+  const core = smoothstep(0.8, 0, length(uv().sub(vec2(0.5, 0.15)).mul(vec2(1.3, 0.8))))
+  hm.colorNode = mix(vec3(0.0035, 0.004, 0.0035), vec3(1, 0.55, 0.16).mul(core.mul(2.4).add(0.12)), uDoor)
+  const hole = new THREE.Mesh(new THREE.PlaneGeometry(1.75, 2.3), hm)
   hole.position.set(door.x - D.x * 0.25, doorY + 0.85, door.y - D.y * 0.25)
   hole.rotation.y = dyaw
   group.add(hole)
+  const doorLight = new THREE.PointLight(0xffa040, 0, 14, 2) // spills out over the forecourt and the portal stones
+  doorLight.position.set(door.x + D.x * 0.8, doorY + 1, door.y + D.y * 0.8)
+  const bowlLight = new THREE.PointLight(0x40ffc8, 0, 34, 1.2) // the glowing mist lights the stones' inner faces and the fighters
+  bowlLight.position.set(C.x, floorY + 1.5, C.z)
+  group.add(doorLight, bowlLight)
+  for (const m of group.children) if (m.material === mat) mossify(m)
   scene.add(group)
+  ctx.keepClear.push({ x: C.x, z: C.z, r: RR + 2 })
 
   // --- ground patch: 80 m square round the centre → field grass + terrain (ctx.groundPatch, src/field.js)
   const gp = ctx.groundPatch, N = gp.size, S = 80, x0 = C.x - S / 2, z0 = C.z - S / 2, cell = S / N
@@ -199,7 +232,7 @@ export async function createRing(ctx) {
   // --- mist: one height-fog volume pooled in the bowl. Density falls off exponentially above the floor and is integrated
   // in closed form along each view ray (from 2 m out to whatever the ray hits, clipped to a cylinder round the bowl), so
   // it has no surface and no edge: it reads the same from the rim, at eye level in the fight, or edge-on.
-  const uT = uniform(0), uMist = uniform(1), mistCol = ctx.fogColor.clone().multiplyScalar(1.1)
+  const uMist = uniform(1), uMistCol = uniform(new THREE.Color()), TEAL = new THREE.Color(0.05, 0.6, 0.42) // day: the haze; night: glowing teal
   const MRAD = RR + 3, H = 0.75, SIG = 0.26 // cylinder radius, scale height (m), density at the floor (/m)
   const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture(), cameraNear, cameraFar)
   const ray = positionWorld.sub(cameraPosition), tExit = length(ray), v = ray.div(tExit)
@@ -219,7 +252,7 @@ export async function createRing(ctx) {
   }
   const wisp = mix(0.35, 1.4, smoothstep(-0.35, 0.65, nw.div(ws)))
   const mm = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, side: THREE.BackSide })
-  mm.colorNode = vec3(mistCol.r, mistCol.g, mistCol.b)
+  mm.colorNode = uMistCol
   mm.opacityNode = float(1).sub(exp(mean.mul(t1.sub(t0)).mul(SIG).mul(wisp).negate())).mul(uMist).min(0.85)
   const mist = new THREE.Mesh(new THREE.CylinderGeometry(MRAD, MRAD, 16, 64, 1), mm)
   mist.position.set(C.x, floorY + 7, C.z) // floor - 1 m to floor + 15 m
@@ -252,6 +285,13 @@ export async function createRing(ctx) {
   return {
     update(dt, t) {
       uT.value = t
+      const nt = ctx.night
+      uNight.value = nt
+      uMistCol.value.copy(ctx.fogColor).multiplyScalar(1.1).lerp(TEAL, nt)
+      const flick = 0.88 + 0.12 * noise3(t * 3.1, 0.5, 1.5)
+      uDoor.value = nt * flick
+      doorLight.intensity = 30 * nt * flick
+      bowlLight.intensity = 25 * nt * uMist.value
       uMist.value += (ctx.ring.mist - uMist.value) * Math.min(1, dt * 0.8)
       mist.visible = uMist.value > 0.01
     },
