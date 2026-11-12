@@ -21,8 +21,8 @@ def mix(c1, c2, t):
 
 
 GRASS, GRASS_D = (0.46, 0.64, 0.17), (0.27, 0.46, 0.12)
-STONE, STONE_D, STONE_W = (0.80, 0.77, 0.75), (0.50, 0.47, 0.51), (0.88, 0.82, 0.72)
-UNDER, UNDER_D = (0.47, 0.43, 0.42), (0.29, 0.27, 0.29)
+STONE, STONE_D, STONE_W = (0.84, 0.80, 0.75), (0.56, 0.52, 0.56), (0.91, 0.85, 0.74)
+UNDER, UNDER_D = (0.64, 0.60, 0.58), (0.46, 0.43, 0.46)
 MOSS = (0.33, 0.50, 0.17)
 WET = (0.40, 0.44, 0.47)
 LEAF = [(0.20, 0.42, 0.14), (0.32, 0.54, 0.16), (0.48, 0.64, 0.18)]
@@ -74,7 +74,7 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
     drift = (12 * cos(ph[0]), 12 * sin(ph[0]))  # the underside's point hangs off-centre
 
     def under(th, t):
-        r = R(th) * 0.93 * (1 - t) ** 0.7 * (1 + 0.35 * t * (lob(th) - 0.5) + 0.07 * sin(7 * th + 6 * t + ph[4]))
+        r = R(th) * 0.93 * (1 - t) ** 0.7 * (1 + 0.35 * t * (lob(th) - 0.5) + 0.09 * sin(7 * th + 6 * t + ph[4]) + 0.06 * sin(13 * th - 9 * t + ph[8]))
         z = -Hc - (Hd - Hc) * t * (1 - 0.15 * lob(th) * t)
         return P(th, r, z, (drift[0] * t * t, drift[1] * t * t))
 
@@ -160,7 +160,7 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
         L = min(Hc - 3, rnd.choice((8, 12, 16, 22, 30, 40)) * rnd.uniform(0.8, 1.2))
         n = max(3, int(L / 3))
         pts, outs, ws = [], [], []
-        w0 = rnd.uniform(1.6, 3.6)
+        w0 = rnd.uniform(2.0, 5.0)
         for i in range(n + 1):
             d = L * i / n
             t = d / Hc
@@ -168,13 +168,13 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
             pts.append(P(th, r, -1.5 - d))
             outs.append(Vector((cos(th) / stretch, sin(th) * stretch, 0)).normalized())
             ws.append(w0 * (1 - 0.75 * (i / n) ** 2))
-        ribbon(pts, outs, ws, VINE, mix(VINE, (0.38, 0.62, 0.16), 0.8), 1.0)
+        ribbon(pts, outs, ws, mix(VINE, (0.70, 0.80, 0.24), rnd.random() * 0.6), (0.38, 0.62, 0.16), 1.0)
 
     # --- underside: stone spikes, roots (dark), hanging vines (glow) ---
-    for _ in range(int(10 * Hd / 100)):
+    for _ in range(int(16 * Hd / 100)):
         th, t = rnd.uniform(0, 2 * pi), rnd.uniform(0.15, 0.65)
         p = under(th, t)
-        L, rb = rnd.uniform(14, 40), rnd.uniform(3.5, 8)
+        L, rb = rnd.uniform(8, 30), rnd.uniform(2.5, 6.5)
         dx = Vector((rnd.uniform(-2, 2), rnd.uniform(-2, 2), 0))
         n = 5
         tube([p + Vector((0, 0, 3)) + dx * (i / n) ** 2 - Vector((0, 0, L * i / n)) for i in range(n + 1)],
@@ -182,7 +182,7 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
     for j in range(int(24 * Hd / 100)):
         th, t = rnd.uniform(0, 2 * pi), rnd.uniform(0.05, 0.8)
         p = under(th, t)
-        L = rnd.uniform(15, 55)
+        L = rnd.uniform(10, 38)
         n = 7
         curl = Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), 0)) * rnd.uniform(2, 6)
         pts = [p + curl * sin(pi * i / n * 1.3) - Vector((0, 0, L * i / n)) for i in range(n + 1)]
@@ -196,7 +196,7 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
     placed = []
     while len(placed) < ntrees:
         th, f = rnd.uniform(0, 2 * pi), rnd.uniform(0.08, 0.82) ** 0.7
-        if near_fall(th, 3.5 / (50 * f)) > 0 or any((P(th, R(th) * f, 0) - q).length < 14 for q in placed):
+        if near_fall(th, 3.5 / (50 * f)) > 0 or any((P(th, R(th) * f, 0) - q).length < 11 for q in placed):
             continue
         b = P(th, R(th) * f, capz(th, f))
         placed.append(Vector((b.x, b.y, 0)))
@@ -207,12 +207,12 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
         tube([b - Vector((0, 0, 1)) + (top - b + Vector((0, 0, 1))) * (i / n) for i in range(n + 1)],
              [1.4 * (1 - 0.5 * i / n) + 0.4 * (i == 0) for i in range(n + 1)], 7, mix(BARK, STONE_D, 0.4), BARK)
         base = rnd.choice(LEAF)
-        blob(top + Vector((0, 0, 1.5)), rnd.uniform(5, 7), 0.5, base)
+        blob(top + Vector((0, 0, 1.5)), rnd.uniform(5.5, 7.5), 0.5, base)
         for k in range(3):
             a = rnd.uniform(0, 2 * pi)
             arm = Vector((cos(a), sin(a), 0)) * rnd.uniform(4, 7)
             tube([top - Vector((0, 0, 2)), top + arm * 0.6 + Vector((0, 0, 0.5)), top + arm + Vector((0, 0, 1.2))], [0.7, 0.45, 0.25], 5, BARK, BARK)
-            blob(top + arm + Vector((0, 0, 2.2)), rnd.uniform(3.5, 5.5), 0.55, base)
+            blob(top + arm + Vector((0, 0, 2.2)), rnd.uniform(4, 6), 0.55, base)
     for _ in range(26):
         th = rnd.uniform(0, 2 * pi)
         if near_fall(th, 0.08) > 0:
@@ -235,7 +235,7 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
     for i, fa in enumerate(falls):
         e = bpy.data.objects.new(f"fall_{i}", None)
         e.location = P(fa, R(fa) * 1.035 + 0.6, -1.2 - 1.0)
-        e["w"] = round(rnd.uniform(4.5, 8.5) * (1.2 if Hd > 120 else 1), 2)
+        e["w"] = round(rnd.uniform(7, 12) * (1.2 if Hd > 100 else 1), 2)
         e["drop"] = round(Hd + rnd.uniform(60, 140), 1)
         e.parent = ob
         bpy.context.collection.objects.link(e)
@@ -254,9 +254,9 @@ bsdf = mat.node_tree.nodes["Principled BSDF"]
 bsdf.inputs["Roughness"].default_value = 0.9
 mat.node_tree.links.new(vc.outputs["Color"], bsdf.inputs["Base Color"])
 
-total = isle("isle_a", 11, Hc=34, Hd=105, stretch=1.12, nfalls=3, ntrees=12, ncurtains=34)
-total += isle("isle_b", 23, Hc=52, Hd=140, stretch=0.85, nfalls=2, ntrees=8, ncurtains=30)
-total += isle("isle_c", 37, Hc=20, Hd=72, stretch=1.0, nfalls=1, ntrees=5, ncurtains=18)
+total = isle("isle_a", 11, Hc=30, Hd=80, stretch=1.12, nfalls=3, ntrees=20, ncurtains=50)
+total += isle("isle_b", 23, Hc=46, Hd=110, stretch=0.85, nfalls=2, ntrees=13, ncurtains=40)
+total += isle("isle_c", 37, Hc=18, Hd=58, stretch=1.0, nfalls=1, ntrees=9, ncurtains=26)
 print(f"skyisle kit triangles={total}")
 bpy.ops.export_scene.gltf(filepath=f"{out_dir}/skyisle.glb", export_format="GLB", export_extras=True,
                           export_vertex_color="NAME", export_vertex_color_name="Col")
