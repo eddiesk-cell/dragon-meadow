@@ -22,8 +22,8 @@ const KEYS = [
   [-0.08, [.020, .030, .130], [.24, .17, .33], [.30, .09, .08], [.55, .66, 1], [.42, .38, .70], [.05, .05, .06], [.32, .13, .20], [.04, .035, .09], 0, .8, .3],
   [0.03, [.060, .080, .280], [.66, .38, .38], [1.4, .45, .12], [1, .45, .2], [.80, .58, .62], [.12, .10, .08], [1.3, .55, .38], [.22, .14, .26], 1.3, .9, -.2],
   [0.15, [.090, .170, .520], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.7, 1.0, .70], [.36, .30, .44], 2.1, 1.0, .15],
-  [0.32, [.100, .240, .800], [.80, .84, 1.25], [1.4, .95, .38], [1, .77, .47], [.82, .82, .86], [.30, .36, .16], [2.0, 1.8, 1.7], [.50, .52, .74], 3.2, 1.0, .2],
-  [0.60, [.090, .220, .780], [.72, .80, 1.22], [.90, .80, .50], [1, .88, .68], [.80, .82, .88], [.30, .36, .16], [2.0, 1.95, 1.9], [.54, .58, .78], 3.4, 1.05, .2],
+  [0.32, [.100, .240, .800], [1.12, 1.03, .92], [1.6, 1.12, .30], [1, .77, .47], [.82, .82, .86], [.30, .36, .16], [1.7, 1.3, .98], [.56, .50, .70], 3.2, 1.0, .06],
+  [0.60, [.090, .220, .780], [.84, .86, 1.02], [1.2, .85, .40], [1, .88, .68], [.80, .82, .88], [.30, .36, .16], [2.1, 1.9, 1.7], [.56, .56, .76], 3.4, 1.05, .12],
 ]
 
 export async function createSky(ctx) {
@@ -48,7 +48,9 @@ export async function createSky(ctx) {
     const glow = pow(mu, 150).mul(0.3).add(pow(mu, 500).mul(0.6)).add(pow(az, 6).mul(exp(e.mul(-14))).mul(0.3))
     const halo = pow(max(dot(d, uMoon), 0), 120).mul(uNight).mul(vec3(0.06, 0.08, 0.16))
     // By day the glow partly replaces the blue rather than adding to it, so round the sun the sky turns gold, not white.
-    return base.mul(float(1).sub(min(glow, 1).mul(0.8).mul(uNight.oneMinus()))).add(uGlow.mul(glow)).add(halo)
+    // Round the sun by day the blue gives way to a gold sky (mixed, not added: gold over blue would turn pink).
+    const warm = mix(base, uGlow.mul(0.5), pow(mu, 25).mul(0.9).mul(uNight.oneMinus()))
+    return warm.mul(float(1).sub(min(glow, 1).mul(0.8).mul(uNight.oneMinus()))).add(uGlow.mul(glow)).add(halo)
   })
 
   // Cumulus on a flat deck: banks placed by low noise, built of round puffs (Worley billows), each puff lit on its top
@@ -57,7 +59,7 @@ export async function createSky(ctx) {
   const cloudField = p => mx_fractal_noise_float(vec3(p.mul(0.5), 1.7), 3, 2, 0.5).mul(1.3)
     .sub(mx_worley_noise_float(vec3(p.mul(2.4), 0.5)).mul(0.6)).add(mx_fractal_noise_float(vec3(p.mul(6), 3.1), 2, 2, 0.5).mul(0.12))
   const clouds = Fn(([d]) => {
-    const q = d.xz.div(d.y.add(0.28)), p = q.mul(1.3).add(vec2(uTime.mul(0.006).add(3.7), uTime.mul(0.002))) // offset: the start view opens with the sun clear and a puff behind the isles
+    const q = d.xz.div(d.y.add(0.28)), p = q.mul(1.8).add(vec2(uTime.mul(0.006).add(3.7), uTime.mul(0.002))) // offset: the start view opens with the sun clear and a puff behind the isles
     const toLight = normalize(normalize(uSun.xz.add(1e-4)).mul(0.6).sub(normalize(q.add(1e-4))).add(1e-4)).mul(0.12) // toward the sun and up the screen, so puffs round the sun still get shaded bellies
     const low = smoothstep(0.24, 0.05, d.y).mul(0.5) // low down only the cores survive: small far puffs, never a veil
     const n = cloudField(p).sub(low), n2 = cloudField(p.add(toLight)).sub(low)
@@ -130,9 +132,9 @@ export async function createSky(ctx) {
   const lip = positionWorld.z.add(225).div(60)
   const mist = exp(lip.mul(lip).negate()).mul(exp(max(positionWorld.y.sub(21), 0).mul(-1 / 8))).mul(smoothstep(50, 200, dist)).mul(7)
   const fogF = max(float(1).sub(exp(air.add(ground).add(mist).mul(uFogK).negate())), smoothstep(2300, 2900, dist))
-  // A thin veil scatters more blue (same brightness); as it thickens it whitens to the horizon itself, so the far land reads pale blue
+  // A thin veil scatters a little more blue (strongly at night, faintly by day so the golden afternoon stays warm); as it thickens it whitens to the horizon itself, so the far land reads pale
   // and a fully hazed ridge is exactly the sky behind it.
-  scene.fogNode = fog(haze(normalize(toFrag)).mul(mix(vec3(0.83, 1.0, 1.32), vec3(1), fogF.mul(fogF))), fogF)
+  scene.fogNode = fog(haze(normalize(toFrag)).mul(mix(mix(vec3(0.96, 1.0, 1.08), vec3(0.83, 1.0, 1.32), uNight), vec3(1), fogF.mul(fogF))), fogF)
   scene.fog = scene.background = null
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1)
