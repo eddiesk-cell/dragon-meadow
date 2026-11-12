@@ -2,8 +2,8 @@
 // Grass pattern borrowed from wanderlight/src/life/grass.js: blades on lattices that follow the camera,
 // identity hashed from the integer world cell, so the field stays nailed down as the tile slides.
 import {
-  Fn, uniform, attribute, varying, vec2, vec3, vec4, float, int, uint,
-  floor, sin, cos, mix, smoothstep, step, saturate, length, normalize, dot, pow, min,
+  Fn, uniform, uniformArray, attribute, varying, vec2, vec3, vec4, float, int, uint,
+  floor, sin, cos, mix, smoothstep, step, saturate, length, normalize, dot, pow, min, exp,
   cameraPosition, cameraViewMatrix, positionWorld, positionLocal, vertexColor, texture,
 } from 'three/tsl'
 
@@ -43,6 +43,20 @@ export async function createField(ctx) {
 
   const uTime = uniform(0), uCam = uniform(new THREE.Vector2()), uHero = uniform(new THREE.Vector3()), uSun = uniform(ctx.sunDir)
   const WIND = vec2(0.94, 0.34) // blowing across the view, left → right
+  const uNight = uniform(0) // ctx.night, 0 day … 1 night: how much the tips give back the light they drank
+
+  // Footstep light rings (Phase 6 world rule: pressure wakes the grass). A pool of RINGS slots (x, z, start time, strength);
+  // each spreads to ~3 m and fades over 2 s. Spawned on the CPU in update() from ctx.heroPos.
+  const RINGS = 8, ringSlots = Array.from({ length: RINGS }, () => new THREE.Vector4(0, 0, -99, 0)), uRings = uniformArray(ringSlots, 'vec4')
+  const ringGlow = w => {
+    let g = float(0)
+    for (let i = 0; i < RINGS; i++) {
+      const R = uRings.element(i), v = float(1).sub(saturate(uTime.sub(R.z).div(2))) // 1 at the step → 0 two seconds later
+      const k = length(w.sub(R.xy)).sub(float(1).sub(v.mul(v)).mul(2.9).add(0.15)).mul(3.5) // distance to the spreading edge, in ring widths
+      g = g.add(exp(k.mul(k).negate()).mul(v.mul(v)).mul(R.w))
+    }
+    return g
+  }
 
   // Ground patch hook — src/ring.js fills it (PLAN.md Lane ring): one HalfFloat texture over rect (x0, z0, size in m),
   // texel = (metres added to the ground, grass height ×, bare chalk 0..1, light ×). Clamped edges hold (0, 1, 0, 1): outside it nothing changes.
@@ -67,10 +81,11 @@ export async function createField(ctx) {
   function layer({ side, cell, segs, width, fadeIn, fadeOut, flowers, head, salt }) {
     const t = [], s = [], hd = []
     for (let i = 0; i <= segs; i++) t.push(i / segs, i / segs), s.push(-1, 1), hd.push(0, 0)
-    for (let a = 0; a < 6; a++) s.push(Math.cos(a * Math.PI / 3)), t.push((Math.sin(a * Math.PI / 3) + 1) / 2), hd.push(1) // hexagon flower head; collapses to nothing on plain blades
-    const n = t.length, idx = []
+    // five-point star flower head (centre + 10 rim points); collapses to nothing on plain blades
+    for (let a = -1; a < 10; a++) { const rr = a < 0 ? 0 : a % 2 ? 0.42 : 1, an = a * Math.PI / 5 + Math.PI / 2; s.push(Math.cos(an) * rr), t.push((Math.sin(an) * rr + 1) / 2), hd.push(1) }
+    const n = t.length, c0 = n - 11, idx = []
     for (let i = 0; i < segs; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2)
-    for (let a = 1; a < 5; a++) idx.push(n - 6, n - 6 + a, n - 5 + a)
+    for (let a = 0; a < 10; a++) idx.push(c0, c0 + 1 + a, c0 + 1 + (a + 1) % 10)
     const geo = new THREE.InstancedBufferGeometry() // must be Instanced: plain BufferGeometry ignores instanceCount
     geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3))
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => i % 3 === 1), 3))
@@ -114,8 +129,8 @@ export async function createField(ctx) {
     const lean = lean0.mul(min(float(1), float(0.9).div(length(lean0).add(1e-4)))) // lean is a fraction of blade length
 
     const tt = attribute('aT', 'float'), sd = attribute('aSide', 'float'), hh = attribute('aHead', 'float')
-    const tc = world.sub(cameraPosition.xz)
-    const camFace = normalize(vec2(tc.y.negate(), tc.x).add(1e-4))
+    const tc = world.sub(cameraPosition.xz), away = normalize(tc.add(1e-4))
+    const camFace = vec2(away.y.negate(), away.x)
     const face = normalize(mix(vec2(sin(yaw), cos(yaw).negate()), camFace, 0.35))
     const tl = lean.mul(tt.mul(tt))
     const halfW = mix(float(1), float(0.12), smoothstep(0.6, 1, tt)).mul(mix(float(1), float(0.35), fl)).mul(width / 2)
@@ -124,22 +139,39 @@ export async function createField(ctx) {
       world.y.add(tl.y.mul(H)).add(face.y.mul(sd).mul(halfW)))
     const hs = fl.mul(alive).mul(head)
     const tip = vec3(world.x.add(lean.x.mul(H)), ground.add(float(1).sub(length(lean).mul(0.45)).mul(H)), world.y.add(lean.y.mul(H)))
-    const headPos = tip.add(vec3(camFace.x.mul(sd).mul(hs), tt.mul(2).sub(1).mul(hs), camFace.y.mul(sd).mul(hs)))
+    // the star faces up and leans toward the camera, so it reads as a flower from the walking view, not a flat card
+    const hy = tt.mul(2).sub(1).mul(hs)
+    const headPos = tip.add(vec3(camFace.x.mul(sd).mul(hs).add(away.x.mul(hy).mul(0.8)), hy.mul(0.6), camFace.y.mul(sd).mul(hs).add(away.y.mul(hy).mul(0.8))))
 
-    // --- colour, worked out per vertex: dark root → muted green → lighter yellow-green tip; flowers white / yellow / orange-red
-    const tipCol = mix(vec3(0.42, 0.45, 0.15), vec3(0.5, 0.45, 0.2), r(10).mul(patch).mul(0.7))
-    const grassCol = mix(vec3(0.03, 0.06, 0.05), mix(vec3(0.15, 0.21, 0.075), tipCol, smoothstep(0.35, 1, tt)), smoothstep(0, 0.5, tt).max(smoothstep(15, 60, dist)))
+    // --- colour, per vertex: dark teal root → jade or fresh yellow-green blade (in broad drifts) → pale gold tip
+    const drift = lowNoise(world.add(31), 0.06, 0.04)
+    const tipCol = mix(vec3(0.46, 0.42, 0.1), vec3(0.36, 0.44, 0.12), r(10).mul(patch))
+    const bodyCol = mix(vec3(0.025, 0.13, 0.08), vec3(0.08, 0.21, 0.025), smoothstep(0.3, 0.75, drift))
+    const grassCol = mix(vec3(0.012, 0.045, 0.04), mix(bodyCol, tipCol, smoothstep(0.55, 1, tt)), smoothstep(0, 0.5, tt).max(smoothstep(15, 60, dist)))
       .mul(r(11).mul(0.3).add(0.85)).mul(lowNoise(world.add(13), 0.035, 0.05).mul(0.35).add(0.8)).mul(pt.w) // broad darker / lighter patches
+    // small star flowers: mostly pale (white, blush pink, lilac), some warm gold and poppy red as in mix-day.png; gold heart
     const r12 = r(12)
-    const flowerCol = mix(mix(vec3(0.82, 0.82, 0.76), vec3(0.88, 0.62, 0.1), step(0.6, r12)), vec3(0.8, 0.22, 0.06), step(0.8, r12))
-    const back = pow(saturate(dot(normalize(stem.sub(cameraPosition)), uSun)), 3).mul(pow(tt, 1.5)).mul(float(1).sub(hh))
+    const petal = mix(mix(mix(vec3(0.86, 0.86, 0.8), vec3(0.92, 0.62, 0.7), step(0.45, r12)), vec3(0.72, 0.66, 0.92), step(0.62, r12)),
+      mix(vec3(0.92, 0.66, 0.08), vec3(0.85, 0.16, 0.05), step(0.87, r12)), step(0.72, r12))
+    const flowerCol = mix(petal, vec3(0.9, 0.55, 0.06), float(1).sub(step(0.01, length(vec2(sd, tt.mul(2).sub(1))))))
+    const back = pow(saturate(dot(normalize(stem.sub(cameraPosition)), uSun)), 2).mul(tt.mul(tt)).mul(float(1).sub(hh))
+
+    // --- glow: by day a gold sheen through the tips against the sun; by night the tips give back the day's light (teal → cyan),
+    // a soft pool wakes round the hero's feet, and each footstep sends a ring of light out through the grass
+    const tipW = smoothstep(0.45, 1, tt), sparkle = r(14)
+    const nightTip = mix(vec3(0.03, 0.5, 0.4), vec3(0.25, 1.0, 0.9), sparkle).mul(tipW.mul(tipW).mul(pow(sparkle, 3).mul(0.85).add(0.12)))
+    const wake = ringGlow(world).add(float(1).sub(smoothstep(0.3, 2.2, pd)).mul(0.28).mul(uNight)).mul(tt.mul(0.8).add(0.2))
+    const wakeCol = mix(vec3(0.75, 0.68, 0.35), vec3(0.25, 1.0, 0.8), uNight)
+    const glow = mix(
+      vec3(1, 0.8, 0.38).mul(back).mul(sparkle.mul(0.3).add(0.12)).mul(float(1).sub(uNight)).add(nightTip.mul(uNight).mul(0.55)).add(wakeCol.mul(wake)),
+      flowerCol.mul(uNight.mul(0.35)).add(wakeCol.mul(wake).mul(0.5)), hh)
 
     const m = new THREE.MeshLambertNodeMaterial({ side: THREE.DoubleSide })
     m.positionNode = mix(stem, headPos, hh)
     m.colorNode = varying(mix(grassCol, flowerCol, hh))
     // Up-ish normal tipped by the lean: the grass lights like the ground it covers, and gust fronts read as light waves.
     m.normalNode = normalize(cameraViewMatrix.mul(vec4(varying(normalize(vec3(lean.x.mul(tt).mul(0.7), 1, lean.y.mul(tt).mul(0.7)))), 0)).xyz)
-    m.emissiveNode = varying(tipCol.mul(back).mul(0.35)) // light through the thin tips when looking toward the sun
+    m.emissiveNode = varying(glow)
     const mesh = new THREE.Mesh(geo, m)
     mesh.frustumCulled = false
     mesh.receiveShadow = true
@@ -148,9 +180,9 @@ export async function createField(ctx) {
   }
 
   const layers = [
-    layer({ side: 400, cell: 0.09, segs: 5, width: 0.028, fadeIn: 0, fadeOut: 18, flowers: 0.035, head: 0.024, salt: 0 }),
-    layer({ side: 320, cell: 0.2, segs: 3, width: 0.07, fadeIn: 18, fadeOut: 32, flowers: 0.05, head: 0.04, salt: 100 }),
-    layer({ side: 224, cell: 0.7, segs: 2, width: 0.15, fadeIn: 32, fadeOut: 80, flowers: 0.07, head: 0.075, salt: 200 }),
+    layer({ side: 400, cell: 0.09, segs: 5, width: 0.028, fadeIn: 0, fadeOut: 18, flowers: 0.05, head: 0.036, salt: 0 }),
+    layer({ side: 320, cell: 0.2, segs: 3, width: 0.07, fadeIn: 18, fadeOut: 32, flowers: 0.065, head: 0.06, salt: 100 }),
+    layer({ side: 224, cell: 0.7, segs: 2, width: 0.15, fadeIn: 32, fadeOut: 80, flowers: 0.08, head: 0.11, salt: 200 }),
   ]
 
   // --- terrain: one mesh from heightAt; meadow green, rock on the cliff, darker under the near grass
@@ -185,7 +217,23 @@ export async function createField(ctx) {
 
   const blades = layers.reduce((a, l) => a + l.geometry.instanceCount, 0)
   const r2 = v => Math.round(v * 100) / 100
-  window.__probes.field = () => ({ blades, h0: r2(heightAt(0, 0)), crest: r2(heightAt(0, -200)), sea: r2(heightAt(0, -320)) })
+  window.__probes.field = () => ({ blades, h0: r2(heightAt(0, 0)), crest: r2(heightAt(0, -200)), sea: r2(heightAt(0, -320)),
+    night: r2(uNight.value), rings: ringSlots.filter(s => uTime.value - s.z < 2).length, stepRings })
+
+  // A ring for every ~0.8 m walked (a footfall), a brighter one on landing, and at night a slow pulse while standing.
+  const last = new THREE.Vector3(NaN, 0, 0)
+  let slot = 0, walked = 0, still = 0, air = false, stepRings = 0
+  const spawn = (t, amp) => { ringSlots[slot].set(ctx.heroPos.x, ctx.heroPos.z, t, amp); slot = (slot + 1) % RINGS; stepRings++ }
+  function steps(dt, t) {
+    const h = ctx.heroPos, d = Math.hypot(h.x - last.x, h.z - last.z), amp = 0.35 + 0.65 * ctx.night
+    const up = h.y - ctx.heightAt(h.x, h.z) > 0.15
+    if (!(d < 3)) walked = 0 // first frame or a teleport: no trail of rings across the map
+    else if ((walked += d) >= 0.8) walked = still = 0, spawn(t, amp)
+    if (air && !up) spawn(t, amp * 1.6), still = 0
+    if (d < 0.01 && !up && (still += dt) > 2.4) still = 0, ctx.night > 0.1 && spawn(t, 0.6 * ctx.night)
+    air = up
+    last.copy(h)
+  }
 
   // Proof view: ?fieldcam=x,y,z,lookX,lookY,lookZ pins the main camera after every lane has moved it.
   const pin = ctx.params.get('fieldcam')?.split(',').map(Number)
@@ -198,8 +246,10 @@ export async function createField(ctx) {
   return {
     update(dt, t) {
       uTime.value = t
+      uNight.value = ctx.night
       uCam.value.set(camera.position.x, camera.position.z)
       uHero.value.copy(ctx.heroPos)
+      steps(dt, t)
     },
   }
 }
