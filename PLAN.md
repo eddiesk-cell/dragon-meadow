@@ -300,3 +300,58 @@ A small health bar for each. `?auto=fight` plays a scripted fight end-to-end for
 - **CHECK:** `node tools/clip.mjs shots/combat-fight.mp4 "auto=fight" 20` → no `combat:` error; 10 frames: sword
   drawn from the back into the hand, a 3-hit combo with trails, sparks and hit flashes on the troll, a roll
   through an attack, the troll falls. `node tools/controls-check.mjs` 7/7 (walking still works sword drawn).
+
+### Phase 4 — the bestiary (Eddie: *"you could make all the bestiary"*; Higgsfield cap 500, 54.5 spent)
+
+Reading taken: the monsters of every land in `WORLD.md` as rigged, animated models ready for a monster AI,
+plus a viewer to see them. Ambient animals (sheep, gulls…) are not in this pass. Creatures are the one asset
+kind that goes to Higgsfield (`3d-asset-routing`); ~21.75 credits each (concept 2.75 + Hunyuan3D 19).
+
+| # | phase | trigger | worker | CHECK |
+|---|---|---|---|---|
+| 4a | `BESTIARY.md` | now | Opus design lane | its CHECK below |
+| 4b | concept per creature → `art/bestiary/<id>/concept.png`, contact sheet to Eddie | 4a passed | orchestrator (paid) | each concept matches its entry, true T-pose (bipeds), original |
+| 4c | 3D → weld/prep → rig (markers + skeleton overlay checked by eye every time) → clips → slim → `public/models/bestiary/<id>.glb` | each concept | orchestrator (paid, Studio) | pose test clean, clips listed in its entry play |
+| 4d | `src/bestiary.js`: `?bestiary=1` gallery — each creature on a plinth, turning, cycling its clips, name + land | first 3 models | Sonnet lane | every model in `public/models/bestiary/` shows, animates, no errors |
+
+### Lane bestiary-design — `BESTIARY.md` (Opus)
+Design the bestiary for all nine lands of `WORLD.md` (read it in full; the Barrow Troll and the winter dragon
+already exist — list them, do not redesign them). 1–2 original monsters per land, ~12 new in total, each with:
+`id`, land, role (roamer / guardian / boss), size in metres, a look paragraph a concept artist could draw from
+(silhouette first, then materials and colour — tie it to its land's palette in WORLD.md), what it does in a
+fight (2–4 attacks with readable wind-ups), **body plan** and its rig route, clips it uses, and its cost.
+**Rig routes, and this decides the design:** our offline rigger is humanoid only (Mixamo skeleton), and the
+Drifter's 51 clips (list in `public/models/hero.glb`) are humanoid. So: bipeds (two arms, two legs, any
+proportions) are cheap and get those clips — make most of the bestiary bipedal. A non-biped (quadruped, serpent,
+flyer, swarm) must name how it gets bones and motion: research Higgsfield's `3d_rigging` / `animation_actions`
+(read-only — no paid calls), or a Blender rig from code with procedural motion (serpents and worms: a bone
+chain; flyers: wing bones). At most 3 non-bipeds. Original designs only — nothing from an existing game.
+- **CHECK:** every land in `WORLD.md` has ≥ 1 entry; every entry has all fields above; bipeds ≥ 75 %; each
+  non-biped names a rig route with a source for it; total new cost ≤ 300 credits; `grep -c "^## " BESTIARY.md`
+  ≥ 12. Reviewer reads it as a game designer: distinct silhouettes, each fight different, fits its land.
+
+### Phase 5 — weapons the hero finds (Eddie: *"new weapons for main hero, his clothes stay the same for now, but he can find different weapons and use them and switch them out"*)
+
+Weapons are props → built from code in Blender (free). Each weapon type uses a family of the hero's own clips.
+
+| # | phase | trigger | worker | CHECK |
+|---|---|---|---|---|
+| 5a | `WEAPONS.md` | now | Opus design lane | its CHECK below |
+| 5b | `tools/weapons/<id>.py` → `public/models/weapons/<id>.glb` (+ sheath/holster) | 5a passed | Sonnet lanes, one file each | renders match the entry; grip origin, sizes in metres |
+| 5c | find + switch: pickups placed in the world, an inventory, switching keys, per-weapon moveset, carry spot and trail colour, in `src/combat.js` + `src/weapons.js` | Lane combat passed + 5b | Opus | demo clip: find a weapon, switch, fight with it |
+
+### Lane weapons-design — `WEAPONS.md` (Opus)
+6–8 original weapons for the hero, found across the lands of `WORLD.md` (where each is found and why it is
+there). Cover the clip families the hero already has: sword (`Slash (Diagonal)`, `Slash (Horizontal)`, `Stab`),
+greatsword (`Greatsword Swing/Guard/Idle`), hammer/axe (`Hammer Overhead Smash`), spear (`Stab`, `Dash`),
+bow (`Bow Draw & Release`), staff (`Cast (One-Handed)`, `Conjure`, `Summon`, `Channel (Two-Handed)`). Each entry:
+`id`, name, family, where found, look (silhouette, materials, size in metres, how it is carried — back, hip,
+shoulder), its moveset from those clips, what makes it play differently (reach, speed, weight, special), its trail
+/ hit-effect colour, and a Blender build note (parts, proportions) so a code builder can make it. The starting
+sword is entry 1 (it exists: `tools/props/sword.py`).
+- **CHECK:** ≥ 6 entries, ≥ 5 families; every clip named exists in the hero's 51; every entry has a build note
+  with dimensions; reviewer reads it as a game designer: each weapon changes how the fight plays.
+
+**Clothes (Eddie asked):** outfits can switch the same way weapons do if each outfit is a whole new hero model on
+the same skeleton (same markers, same 51 clips — swapping is instant), about 22 credits an outfit. Layered,
+mix-and-match clothes need a separate under-body plus garment meshes — a bigger job, later if wanted.
