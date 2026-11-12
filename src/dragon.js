@@ -17,16 +17,18 @@ export async function createDragon(ctx) {
   let clip = 'fly'
   mixer.clipAction(clips.fly).play()
 
-  // Path: figure-eight R=75 ahead of start; near mode: R=6 circle ~16 m ahead; the proof camera is aimed at it in front.
+  // Path: figure-eight ahead of the hero; near mode: R=6 circle ~16 m ahead; the proof camera is aimed at it in front.
   const pos = (t, out) => {
     if (near) {
       const u = 0.95 * t + 1.0
       out.set(6 * Math.sin(u), 0, -16 + 6 * Math.cos(u))
       out.y = ctx.heightAt(out.x, out.z) + 16
     } else {
-      const u = 0.11 * t
-      out.set(75 * Math.sin(u), 0, -110 + 90 * Math.sin(u) * Math.cos(u))
-      out.y = ctx.heightAt(out.x, out.z) + 32 + 8 * Math.sin(0.7 * u)
+      // Figure-eight 65-125 m ahead of the (lagged) hero, ~14 m above them: 6-12 deg up, inside the
+      // level hero camera's frame and close enough to read through the haze.
+      const u = 0.13 * t
+      out.set(center.x + 60 * Math.sin(u), 0, center.z + 30 * Math.sin(2 * u))
+      out.y = Math.max(ctx.heightAt(out.x, out.z) + 10, center.y + 14 + 4 * Math.sin(0.7 * u))
     }
     return out
   }
@@ -34,13 +36,18 @@ export async function createDragon(ctx) {
   const x = new THREE.Vector3(), y = new THREE.Vector3(), z = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
   const m = new THREE.Matrix4(), qT = new THREE.Quaternion()
   let roll = 0, speed = 0, alt = 0, t = 0
+  const cv = new THREE.Vector3()
+  const center = ctx.heroPos.clone().add(new THREE.Vector3(0, 0, -95)) // follows the hero with a ~5 s lag
 
   const update = dt => {
     t += dt
+    cv.copy(center)
+    center.lerp(p1.set(ctx.heroPos.x, ctx.heroPos.y, ctx.heroPos.z - 95), 1 - Math.exp(-dt / 5))
+    cv.subVectors(center, cv).divideScalar(Math.max(dt, 1e-3)) // the centre's own drift: nose follows real travel
     const e = 0.2
     pos(t, p0); pos(t + e, p1)
-    v1.subVectors(p1, p0).divideScalar(e)
-    pos(t - e, p1); v0.subVectors(p0, p1).divideScalar(e)
+    v1.subVectors(p1, p0).divideScalar(e).add(cv)
+    pos(t - e, p1); v0.subVectors(p0, p1).divideScalar(e).add(cv)
     speed = v1.length()
     const turn = (v0.x * v1.z - v0.z * v1.x) / (v0.length() * v1.length() + 1e-6) / e // signed rad/s
     roll += (THREE.MathUtils.clamp(turn * 2.2, -0.6, 0.6) - roll) * Math.min(1, dt * 2)

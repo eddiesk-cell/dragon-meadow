@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "dragon-meadow", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--port", "5191", "--strictPort"], "port": 5191 }
+  ]
+}

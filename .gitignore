@@ -1,3 +1,5 @@
 node_modules/
 dist/
 shots/
+graphify-out/
+art/hero/*-small.png

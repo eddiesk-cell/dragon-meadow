@@ -125,10 +125,31 @@ review the orchestrator takes the lane over.
 | lane | owner | status |
 |---|---|---|
 | scaffold (main, shot tool, plan) | orchestrator | ✅ |
-| field | Opus builder | queued |
-| sky + post | Opus builder | queued |
-| hero | Sonnet builder | queued |
-| dragon | Sonnet builder | queued |
-| integration + final look | orchestrator + Opus reviewer | waiting |
+| field | Opus builder | ✅ passed review, round 1 |
+| sky + post | Opus builder | ✅ passed review, round 1 |
+| hero | Sonnet builder | ✅ passed review, round 2 (camera framing) |
+| dragon | Sonnet builder | ✅ passed review, round 2 (near view too small) |
+| integration + final look | orchestrator + Opus reviewer | fixes in review: #load blocked drag, Space tap missed, movementX 0 on touch |
 
-Not in this pass: touch controls on phones, a quality switch for weak devices, Higgsfield models.
+### Phase 2 — Eddie's new asks (2026-11-12, in his words, in this order)
+
+1. **New hero:** *"a dragonquest hero with a bandana with a large sword on his back, clothing like an
+   adventurer, you could use Higgsfield to create him then we could rig it ourself"*. Original design
+   (not the Dragon Quest character). Concept `art/hero/hero-front-v1.png` → sword-less turnaround →
+   Tripo H3.1 multiview (detailed) → house autorig → Drifter's 51 clips via retarget → `public/models/hero.glb`.
+   The sword and scabbard are separate Blender-built props on a back socket, so he can draw the sword.
+   Owner: orchestrator (paid credits). Spend so far: 2.75 + 2.75.
+2. **World design:** *"We should design the world now, how each land is connected to each other."*
+   Draft `WORLD.md` + `art/world-map.svg` for Eddie's taste call. Owner: Opus design lane.
+3. **Monster + fight:** *"a monster so we could do a fight scene, where our hero can pull out his sword
+   and fight (full special effects)."* Needs a monster model (paid — needs the cap raised past 40),
+   then lanes by file: `src/combat.js` (draw, combo, block, roll), `src/monster.js` (AI, hits, death),
+   `src/vfx.js` (sword trails, sparks, slash arcs, hit flash, shake, dust). Bipedal monster so our
+   rigger and the Drifter's attack/hit/death clips fit.
+
+Checks that exist now: `tools/shot.mjs` (picture + probes + fps), `tools/controls-check.mjs`
+(real keyboard and mouse: walk, run, idle, jump, drag-orbit, camera-relative walk).
+
+Not in this pass: touch walking on phones (drag-to-look works, walking needs a joystick), a quality
+switch for weak devices, the sea is hidden by haze from the crest (`refs/ref-dragon.png` wants it
+blue), Higgsfield models.

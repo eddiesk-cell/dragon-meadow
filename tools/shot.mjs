@@ -5,7 +5,8 @@
 // Captures queue on a lock so lanes never run two Chromes at once on this busy desk.
 import { createServer } from 'vite'
 import puppeteer from 'puppeteer-core'
-import { mkdirSync, rmSync, statSync, renameSync } from 'node:fs'
+import { mkdirSync, renameSync } from 'node:fs'
+import { lock } from './lock.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -13,18 +14,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const [out, query = '', waitMs = '3000'] = process.argv.slice(2)
 if (!out) { console.error('usage: node tools/shot.mjs <out.png> [query] [waitMs]'); process.exit(2) }
 const CHROME = process.env.CHROME || `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-const LOCK = resolve(ROOT, 'shots/.lock')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-mkdirSync(resolve(ROOT, 'shots'), { recursive: true })
-for (let i = 0; ; i++) {
-  try { mkdirSync(LOCK); break } catch {
-    try { if (Date.now() - statSync(LOCK).mtimeMs > 180000) rmSync(LOCK, { recursive: true }) } catch {}
-    if (i > 400) { console.error('lock busy for 10 min'); process.exit(3) }
-    await sleep(1500)
-  }
-}
-
+const unlock = await lock()
 let server, browser, result = { ready: false, errors: [], consoleErrors: [], out }
 try {
   server = await createServer({ root: ROOT, logLevel: 'error', server: { host: '127.0.0.1' } })
@@ -45,6 +37,8 @@ try {
   await sleep(+waitMs)
   await page.evaluate(() => document.getElementById('hint')?.remove())
   result.errors = await page.evaluate(() => window.__errors || [])
+  // Frames per second over 3 s, as the page itself sees them (headless, shared GPU: compare runs, don't quote alone).
+  result.fps = await page.evaluate(() => new Promise(res => { let n = 0; const t0 = performance.now(); const f = () => { n++; requestAnimationFrame(f) }; requestAnimationFrame(f); setTimeout(() => res(+(n / ((performance.now() - t0) / 1000)).toFixed(1)), 3000) }))
   result.probes = await page.evaluate(() => Object.fromEntries(Object.entries(window.__probes || {}).map(([k, f]) => { try { return [k, f()] } catch (e) { return [k, 'ERR ' + e.message] } })))
   const abs = resolve(ROOT, out)
   mkdirSync(dirname(abs), { recursive: true })
@@ -55,7 +49,7 @@ try {
 } finally {
   await browser?.close().catch(() => {})
   await server?.close().catch(() => {})
-  rmSync(LOCK, { recursive: true, force: true })
+  unlock()
 }
 console.log(JSON.stringify(result))
 process.exit(result.ready && !result.errors.length && !result.consoleErrors.length ? 0 : 1)

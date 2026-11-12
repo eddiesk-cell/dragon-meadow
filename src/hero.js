@@ -25,21 +25,28 @@ export async function createHero(ctx) {
 
   // Input flags; ?auto= sets the same ones the keys do.
   const keys = new Set()
+  let jumpQueued = false // latched on keydown: a tap shorter than one frame still jumps
   const auto = params.get('auto')
   if (auto) { keys.add('w'); if (auto === 'run') keys.add('shift') }
-  addEventListener('keydown', e => { keys.add(e.key.toLowerCase()); if (e.key === ' ') e.preventDefault() })
+  addEventListener('keydown', e => { keys.add(e.key.toLowerCase()); if (e.key === ' ') { e.preventDefault(); jumpQueued ||= !e.repeat } })
   addEventListener('keyup', e => keys.delete(e.key.toLowerCase()))
   addEventListener('blur', () => keys.clear())
 
   // Orbit: drag the mouse/finger. Camera starts behind the hero (hero faces -Z).
-  let yaw = 0, pitch = 0.10, dragging = false
+  // Deltas from clientX/Y: movementX is 0 for touch in Safari and for synthetic events.
+  let yaw = 0, pitch = 0.10, drag = null
   const el = ctx.renderer.domElement
-  el.addEventListener('pointerdown', e => { dragging = true; el.setPointerCapture(e.pointerId) })
-  el.addEventListener('pointerup', () => (dragging = false))
+  // One pointer steers; a second finger is ignored instead of making yaw jump between the two.
+  el.addEventListener('pointerdown', e => { if (drag) return; drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; el.setPointerCapture?.(e.pointerId) })
+  const release = e => { if (drag?.id === e.pointerId) drag = null }
+  addEventListener('pointerup', release)
+  addEventListener('pointercancel', release)
+  el.addEventListener('lostpointercapture', release) // a missed pointerup must not leave look-around dead
   el.addEventListener('pointermove', e => {
-    if (!dragging) return
-    yaw -= e.movementX * 0.005
-    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.005, -0.15, 1.2)
+    if (drag?.id !== e.pointerId) return
+    yaw -= (e.clientX - drag.x) * 0.005
+    pitch = THREE.MathUtils.clamp(pitch + (e.clientY - drag.y) * 0.005, -0.15, 1.2)
+    drag.x = e.clientX; drag.y = e.clientY
   })
 
   const pos = heroPos.set(0, ctx.heightAt(0, 0), 0)
@@ -68,7 +75,8 @@ export async function createHero(ctx) {
         d = Math.atan2(Math.sin(d), Math.cos(d))
         face += d * Math.min(1, dt * 10)
       }
-      if (keys.has(' ') && grounded) { vy = 5; grounded = false; jumpT = 0.9 }
+      if (jumpQueued && grounded) { vy = 5; grounded = false; jumpT = 0.9 }
+      jumpQueued = false
       const gy = ctx.heightAt(pos.x, pos.z)
       if (!grounded) {
         vy -= 14 * dt; pos.y += vy * dt; jumpT -= dt

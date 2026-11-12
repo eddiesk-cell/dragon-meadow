@@ -65,6 +65,6 @@ renderer.setAnimationLoop(() => {
   if (++frames === 12) {
     window.__ready = true
     document.getElementById('load').style.opacity = 0
-    setTimeout(() => (document.getElementById('hint').style.opacity = 0), 9000)
+    setTimeout(() => (document.getElementById('hint')?.style.setProperty('opacity', 0)), 9000)
   }
 })
