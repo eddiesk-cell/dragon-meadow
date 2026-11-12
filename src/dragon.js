@@ -100,9 +100,10 @@ export async function createDragon(ctx) {
     P.x += Math.sin(psi) * spd * dt; P.z += Math.cos(psi) * spd * dt; P.y += vy * dt
     const f = Math.max(ctx.heightAt(P.x, P.z) + minAlt, minAlt > 0 ? floorAt(P.x, P.z) : -1e9)
     if (P.y < f) { P.y = f; vy = Math.max(vy, 0) }
-    if (ri && minAlt > 0 && P.y < ri.top + 6) { // below the rock's top: slide round it, 12 m off its apron
+    if (ri && minAlt > 0 && P.y < ri.top + 6) { // the rock: out the nearer way, round its side 12 m off the apron or over its top
       const dx = P.x - ri.x, dz = P.z - ri.z, d = Math.hypot(dx, dz) || 1e-3, R = ri.r + 12
-      if (d < R) { P.x = ri.x + dx / d * R; P.z = ri.z + dz / d * R }
+      if (R - d > 0 && R - d < ri.top + 6 - P.y) { P.x = ri.x + dx / d * R; P.z = ri.z + dz / d * R }
+      else if (R - d > 0) { P.y = ri.top + 6; vy = Math.max(vy, 0) }
     }
     climbS += ((P.y - y0) / Math.max(dt, 1e-3) - climbS) * Math.min(1, dt * 6)
     if (ri) flown.isle = Math.min(flown.isle, gap(ri, P.x, P.y, P.z))
@@ -184,7 +185,7 @@ export async function createDragon(ctx) {
       const ax = L.x - lx * 55, az = L.z - lz * 55 // else first the approach point, 55 m back along the final heading
       const turn = L.final ? (d < 6 ? 0 : steerTo(L.x, L.z)) : steerTo(ax, az)
       const yT = g + (L.final ? Math.min(24, d * 0.3) : 26) // glide slope
-      fly(dt, turn, L.final ? clamp(d * 0.6 + 2, 0, 18) : 20, clamp((yT - P.y) * 0.8, -8, 8), L.final && d < 40 ? 0 : 3)
+      fly(dt, turn, L.final ? clamp(d * 0.6 + 2, 0, 18) : 20, clamp((yT - P.y) * 0.8, L.final ? -8 : -12, 8), L.final && d < 40 ? 0 : 3)
       if (L.final && d < 6) { P.x += dx * Math.min(1, dt * 2); P.z += dz * Math.min(1, dt * 2); psi += Math.atan2(Math.sin(L.psi - psi), Math.cos(L.psi - psi)) * Math.min(1, dt * 1.5) }
       flyPose(dt)
       holder.position.copy(P); holder.quaternion.copy(q)
@@ -237,6 +238,7 @@ export async function createDragon(ctx) {
     speed: state === 'free' ? v1.length() : spd, x: holder.position.x, z: holder.position.z,
     isleGap: isleGap(), treeGap: pathGap(trees), towerGap: pathGap(towers),
     flown: { isle: r1(flown.isle), tree: r1(flown.tree), tower: r1(flown.tower) },
+    land: L && { x: +L.x.toFixed(1), z: +L.z.toFixed(1), final: L.final, d: +Math.hypot(L.x - P.x, L.z - P.z).toFixed(1) },
   })
   return { update }
 }

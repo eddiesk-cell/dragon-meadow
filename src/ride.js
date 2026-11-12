@@ -21,7 +21,9 @@ export function createRide(ctx, d) {
   const seatW = new THREE.Vector3(), v = new THREE.Vector3(), M0 = new THREE.Matrix4(), up = new THREE.Vector3(0, 1, 0)
   const camPos = new THREE.Vector3(), look = new THREE.Vector3(), camWas = new THREE.Vector3(), qWas = new THREE.Quaternion(), qMine = new THREE.Quaternion()
   const down = new THREE.Vector3() // where the hop off lands
+  const sideCam = params.get('ridecam') === 'side' // proof view: from beside the saddle
   const log = [], note = e => log.push([e, +ctx.time.toFixed(1)])
+  const track = [] // [t, x, y, z, state] once a second off the ground: where it really flew
 
   const seat = () => d.seat.getWorldPosition(seatW)
   const reach = () => { seat(); return Math.hypot(heroPos.x - seatW.x, heroPos.z - seatW.z) }
@@ -58,35 +60,37 @@ export function createRide(ctx, d) {
   const press = (c, on = true) => dispatchEvent(new KeyboardEvent(on ? 'keydown' : 'keyup', { key: c }))
   const hold = (c, on) => on !== keys.has(c) && press(c, on)
   const ri = ctx.landmarks?.rockisle, pond = ctx.pond
-  const C = ri && pond ? { x: (ri.x + pond.x) / 2, z: (ri.z + pond.z) / 2 } : { x: 0, z: -100 }, R = 62, ALT = (ri?.top ?? 60) + 20
-  let ap = auto ? 'call' : null, swept = 0, lastA = 0, dir = 1, home = null
+  let ap = auto ? 'call' : null, wps = [], over = { isle: false, lake: false }
   const pilot = () => {
     const p = d.holder.position, i = d.input
     if (ap === 'call' && ctx.time > 1 && d.state === 'free') { press('e'); press('e', false); ap = 'wait' }
     if (ap === 'wait' && d.state === 'landed') { note('landed'); ap = 'walk' }
-    if (ap === 'walk') { // walk to his flank of it, camera-relative like the keys, then E
+    if (ap === 'walk') { // run to his flank of it, camera-relative like the keys, then E
       const s = flank(to), f = camera.getWorldDirection(v).setY(0).normalize(), dx = s.x - heroPos.x, dz = s.z - heroPos.z
       const fw = dx * f.x + dz * f.z, rt = dx * -f.z + dz * f.x
-      hold('w', fw > 0.6); hold('s', fw < -0.6); hold('d', rt > 0.6); hold('a', rt < -0.6)
-      if (reach() < 6.5) { for (const c of 'wsad') hold(c, false); press('e'); press('e', false); ap = 'mounting' }
+      hold('w', fw > 0.6); hold('s', fw < -0.6); hold('d', rt > 0.6); hold('a', rt < -0.6); hold('shift', reach() > 10)
+      if (reach() < 6.5) { for (const c of ['w', 's', 'a', 'd', 'shift']) hold(c, false); press('e'); press('e', false); ap = 'mounting' }
     }
-    if (ap === 'mounting' && d.state === 'ridden') { home = p.clone(); note('takeoff'); ap = 'out' }
-    if (ap === 'out' || ap === 'loop') { // climb out to a circle round the isle and the lake, once round, then home
-      const a = Math.atan2(p.z - C.z, p.x - C.x), r = Math.hypot(p.x - C.x, p.z - C.z), h = d.heading()
-      if (ap === 'out' && Math.abs(r - R) < 15) {
-        ap = 'loop'; note('loop'); lastA = a
-        dir = -Math.sin(a) * Math.sin(h) + Math.cos(a) * Math.cos(h) >= 0 ? 1 : -1 // round the way it is already heading
-      }
-      if (ap === 'loop') { swept += Math.atan2(Math.sin(a - lastA), Math.cos(a - lastA)) * dir; lastA = a }
-      const c = ap === 'loop' ? a + 0.5 * dir : a
-      const tx = C.x + R * Math.cos(c), tz = C.z + R * Math.sin(c), want = Math.atan2(tx - p.x, tz - p.z) - h
-      i.turn = clamp(2 * Math.atan2(Math.sin(want), Math.cos(want)), -1, 1); i.speed = 24; i.climb = clamp((ALT - p.y) * 0.5, -8, 9)
-      if (swept > Math.PI * 2) { note('loopDone'); if (d.land(home.x, home.z)) note('land'); ap = 'landing' }
+    if (ap === 'mounting' && d.state === 'ridden' && ri && pond) { // a loop from home: out past the lake's left, round behind
+      ap = 'loop'; note('takeoff') // the rock, over its top, back over the lake, swing round, home
+      const ux = (ri.x - p.x) / Math.hypot(ri.x - p.x, ri.z - p.z), uz = (ri.z - p.z) / Math.hypot(ri.x - p.x, ri.z - p.z)
+      const at = (bx, bz, f, l, y, name) => ({ x: bx + ux * f + uz * l, z: bz + uz * f - ux * l, y, name }) // f along home→rock, l to its left
+      wps = [at(p.x, p.z, 70, 70, 70), at(ri.x, ri.z, 90, 40, ri.top + 14), at(ri.x, ri.z, 0, 0, ri.top + 14, 'isle'),
+        { x: pond.x, z: pond.z, y: pond.level + 40, name: 'lake' }, at(p.x, p.z, 10, -60, 35), { home: p.clone() }]
+    }
+    if (ap === 'loop') {
+      if (ri) over.isle ||= Math.hypot(p.x - ri.x, p.z - ri.z) < ri.r && p.y > ri.top
+      over.lake ||= pond.inside(p.x, p.z) > 0
+      const wp = wps[0]
+      if (wp.home) { note('loopDone'); if (d.land(wp.home.x, wp.home.z)) note('land'); ap = 'landing'; return }
+      const want = Math.atan2(wp.x - p.x, wp.z - p.z) - d.heading()
+      i.turn = clamp(2 * Math.atan2(Math.sin(want), Math.cos(want)), -1, 1); i.speed = 26; i.climb = clamp((wp.y - p.y) * 0.5, -8, 12)
+      if (Math.hypot(wp.x - p.x, wp.z - p.z) < 25) { if (wp.name) note(wp.name); wps.shift() }
     }
   }
 
   let lastHint = ''
-  window.__probes.ride = () => ({ mode, auto: ap, log, swept: +swept.toFixed(2), loop: { C: [C.x, C.z], R, alt: ALT },
+  window.__probes.ride = () => ({ t: +ctx.time.toFixed(1), mode, auto: ap, log, track, over, wps: wps.length,
     heroAlt: +(heroPos.y - ctx.heightAt(heroPos.x, heroPos.z)).toFixed(2) })
 
   return {
@@ -131,17 +135,20 @@ export function createRide(ctx, d) {
       if (rig.sheath.parent === ctx.scene) rig.sheath.applyMatrix4(M0.premultiply(root.matrixWorld)) // same move for the scabbard
       if (mode === 'foot') return
 
-      // Chase camera behind and above, leaning into turns; blended in over the mount and out over the hop down.
-      lean += (clamp(d.yawRate() / 0.35, -1, 1) * 0.9 - lean) * Math.min(1, dt * 1.5)
-      const h = d.heading() + lean, w = mode === 'mount' ? smoothstep(mt / 1.6, 0, 1) : mode === 'dismount' ? 1 - smoothstep(mt / 0.9, 0, 1) : 1
+      if (ctx.time - (track.at(-1)?.[0] ?? -9) >= 1) { const p = d.holder.position; track.push([+ctx.time.toFixed(1), Math.round(p.x), Math.round(p.y), Math.round(p.z), d.state]) }
+      // Chase camera just behind and above the rider, looking past him between the wings as the reference clip does, leaning a little into turns; blended in over the mount and out over the hop down.
+      lean += (clamp(d.yawRate() / 0.5, -1, 1) * 0.35 - lean) * Math.min(1, dt * 1.5)
+      const h = d.heading() + lean, w = mode === 'mount' ? smoothstep(mt / 1.3, 0, 1) : mode === 'dismount' ? 1 - smoothstep(mt / 0.9, 0, 1) : 1
       seat()
-      v.set(seatW.x - Math.sin(h) * 26, seatW.y + 9, seatW.z - Math.cos(h) * 26)
+      v.set(seatW.x - Math.sin(h) * 5.5, seatW.y + 3, seatW.z - Math.cos(h) * 5.5)
+      look.set(seatW.x + Math.sin(h) * 12, seatW.y + 0.5, seatW.z + Math.cos(h) * 12)
+      if (sideCam) { v.set(1, 0, 0).applyQuaternion(d.holder.quaternion).multiplyScalar(9).add(seatW); v.y += 1.5; look.copy(seatW) }
       v.y = Math.max(v.y, ctx.heightAt(v.x, v.z) + 2)
-      camPos.lerp(v, 1 - Math.exp(-dt * 4))
-      look.set(seatW.x + Math.sin(h) * 10, seatW.y + 1, seatW.z + Math.cos(h) * 10)
+      camPos.lerp(v, mode === 'mount' ? 1 : 1 - Math.exp(-dt * 10)) // on the ground it sits on its mark; w alone blends it in
       camWas.copy(camera.position); qWas.copy(camera.quaternion)
       camera.position.copy(camPos); camera.lookAt(look); qMine.copy(camera.quaternion)
-      camera.position.lerpVectors(camWas, camPos, w); camera.quaternion.slerpQuaternions(qWas, qMine, w)
+      camera.position.lerpVectors(camWas, camPos, w).y += 4 * Math.sin(Math.PI * w); // over the wing, not through it
+      camera.quaternion.slerpQuaternions(qWas, qMine, w)
     },
   }
 }
