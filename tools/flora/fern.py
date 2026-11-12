@@ -2,8 +2,8 @@
   blender -b -P tools/flora/fern.py -- public/models/flora
 Writes fern.glb: origin = base on the ground, +Y up in glTF, ~1.5 m tall. Three tall croziers rise and roll into fat
 leafy spirals (clothoid curl, ~1.6 turns, ~0.45 m across; their leaflets fold in to fill the roll) that hang outside
-the clump; six open feathery fronds (32 leaflet pairs each) spread below. Vertex colour RGB = leaf colour; alpha = glow mask, linear 0..1 (rachis 1, coil leaflets
-0.85, other leaflet midribs 0.55, leaf edges 0). flora.js should light it as alpha^2 so a midrib reads as a thin vein, not a lit blade.
+the clump; six open feathery fronds (32 leaflet pairs each) spread below. Vertex colour RGB = leaf colour; alpha = glow mask, linear 0..1 (rachis, coils and the
+thin vein triangles 1; coil leaflets 0.85 fading out; other leaf blades 0). flora.js should light it as alpha^2 so a midrib reads as a thin vein, not a lit blade.
 """
 import bpy, bmesh, sys, os, random, json, struct
 from math import pi, sin, cos, radians
@@ -16,6 +16,7 @@ bm = bmesh.new()
 col = bm.loops.layers.color.new("Col")
 UP = Vector((0, 1, 0))
 DEEP, LIGHT, STEM, COIL = (0.07, 0.30, 0.05), (0.40, 0.64, 0.07), (0.20, 0.46, 0.06), (0.36, 0.60, 0.08)
+VEIN = (0.22, 0.50, 0.08)  # by day a slightly lighter midrib; the violet comes from the night material
 
 
 def add(verts, faces):
@@ -46,11 +47,17 @@ def rachis(az, L, tilt, kappa):
     return out
 
 
-def leaflet(p, d, w_axis, ln, wid, c, glow):
-    """Diamond leaflet, 2 triangles: base and tip carry the glow, the two side corners none, so under alpha^2 the lit
-    part is a thin midrib line between them."""
+def leaflet(p, d, w_axis, ln, wid, c, glow, vein=False):
+    """Diamond leaflet, 2 triangles. Plain: base and tip carry `glow` (the whole blade lights, brightest mid-line; used
+    on the coils, which glow whole). vein=True: the blade carries none and one thin triangle along the midline, lifted
+    2 mm off the blade, carries 1, so at night it reads as a bright vein on a dark leaf."""
     q = p + d * 0.42 * ln
-    add([(p, c, glow), (q - w_axis * wid, c, 0), (p + d * ln, c, glow * 0.8), (q + w_axis * wid, c, 0)], [(0, 1, 2), (0, 2, 3)])
+    g = 0 if vein else glow
+    add([(p, c, g), (q - w_axis * wid, c, 0), (p + d * ln, c, g * 0.8), (q + w_axis * wid, c, 0)], [(0, 1, 2), (0, 2, 3)])
+    if vein:
+        up = d.cross(w_axis).normalized() * 0.002
+        up = up if up.y >= 0 else -up
+        add([(p + up, VEIN, 1.0), (q + w_axis * wid * 0.08 + up, VEIN, 1.0), (p + d * ln * 0.92 + up, VEIN, 1.0)], [(0, 1, 2)])
 
 
 def along(pts, s):
@@ -92,7 +99,7 @@ def crozier(az, L_stem, tilt, r0, r1, turns):
             ln, glow, fold, step = 0.11 * (1 - 0.6 * v) + 0.025, 0.85, 0.85, 0.028
         for sg in (-1, 1):
             d = (sd * sg * (0.8 - 0.45 * fold) + n * fold * 0.9 + t * (0.55 - 0.25 * fold) - UP * 0.12 * (1 - fold)).normalized()
-            leaflet(p, d, (t - d * t.dot(d)).normalized(), ln, ln * 0.17, mix(DEEP, LIGHT, 0.35 + 0.45 * max(u, v)) if v == 0 else COIL, glow)
+            leaflet(p, d, (t - d * t.dot(d)).normalized(), ln, ln * 0.17, mix(DEEP, LIGHT, 0.35 + 0.45 * max(u, v)) if v == 0 else COIL, glow, vein=v == 0)
         if v > 0:  # and a short tooth on the outside of the curl, so the roll's rim is leafy too
             d = (-n + sd * (0.35 if int(s / step) % 2 else -0.35) - t * 0.4).normalized()
             leaflet(p, d, (t - d * t.dot(d)).normalized(), ln * 0.75, ln * 0.2, LIGHT, 0.75)
@@ -116,7 +123,7 @@ def open_frond(az, L, tilt):
         ln = 0.16 * sin(pi * (0.12 + 0.88 * u)) ** 0.7 + 0.025
         for sg in (-1, 1):
             d = (sd * sg * 0.85 + t * 0.5 - UP * (0.1 + 0.35 * u)).normalized()  # droops more toward the tip
-            leaflet(p, d, (t - d * t.dot(d)).normalized(), ln, ln * 0.15, mix(DEEP, LIGHT, 0.2 + 0.6 * u), 0.55)
+            leaflet(p, d, (t - d * t.dot(d)).normalized(), ln, ln * 0.15, mix(DEEP, LIGHT, 0.2 + 0.6 * u), 0, vein=True)
 
 
 for i, az in enumerate((15, 135, 250)):  # az deg, then stem length, lean, coil start radius, tip radius, turns
