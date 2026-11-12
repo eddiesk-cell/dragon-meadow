@@ -5,15 +5,15 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { uniform, vec3, float, mix, smoothstep, uv, positionLocal, positionWorld, normalWorld, vertexColor, mx_noise_float, abs, pow, max } from 'three/tsl'
 
 // [model, degrees right of the start view (−Z), distance m, width m, elevation° of its lowest point seen from the start,
-// yaw°]. The rock island (landmarks, at 50,−105) fills the right of the start view, so the in-frame ones gather in the
-// open sky centre and left of it, high and clear above the crest; the rest wait behind the rock and for whoever turns
-// round. Heights follow from the elevation, so every island hangs 150 m+ over the land.
+// yaw°]. The rock island (landmarks, at 50,−105) fills the right of the start view and the golden-afternoon sun sits
+// upper left (az −26° to −35°), so the in-frame ones layer in the open sky between them, away from the sun as in day.png;
+// the rest wait behind the rock and for whoever turns round. Heights follow from the elevation: all hang 150 m+ up.
 const ISLES = [
   ['isle_a', -6, 820, 120, 8.5, 20],
-  ['isle_c', 5, 1200, 75, 12, 140],
-  ['isle_b', -22, 1500, 100, 8, 70],
-  ['isle_c', -34, 1100, 70, 12.5, 300],
-  ['isle_a', 3, 2100, 150, 6.5, 210],
+  ['isle_c', -55, 1200, 75, 12, 140],
+  ['isle_b', 7, 900, 105, 12.5, 70],
+  ['isle_c', 2, 600, 45, 6, 300],
+  ['isle_a', 1, 1600, 120, 4, 210],
   ['isle_b', -14, 700, 38, 16, 10],
   ['isle_a', 28, 1700, 140, 10, 160],
   ['isle_c', 75, 900, 85, 9, 45],
@@ -61,7 +61,7 @@ export async function createSkyisles(ctx) {
     const s = w / 100
     const x = Math.sin(az * Math.PI / 180) * d, z = -Math.cos(az * Math.PI / 180) * d
     kit[name].geometry.computeBoundingBox()
-    const y = Math.max(ctx.heightAt(0, 0) + 1.8 + Math.tan(h * Math.PI / 180) * d - kit[name].geometry.boundingBox.min.y * s, Math.max(ctx.heightAt(x, z), 0) + 150)
+    const y = Math.max(ctx.heightAt(0, 0) + 1.8 + Math.tan(h * Math.PI / 180) * d - kit[name].geometry.boundingBox.min.y * s, Math.max(ctx.heightAt(x, z), 0) + 150 + 3 * s)
     isle.scale.setScalar(s)
     isle.position.set(x, y, z)
     isle.rotation.y = yaw * Math.PI / 180
@@ -98,11 +98,19 @@ export async function createSkyisles(ctx) {
   }
   update(0, 0)
 
-  const r = v => Math.round(v)
+  const r = v => Math.round(v), box = new THREE.Box3(), c = new THREE.Vector3()
+  // Screen box [x0, y0, x1, y1] in px of each island in front of the camera, and the sun's px, to check the layout.
+  const px = v => [r((v.x + 1) * innerWidth / 2), r((1 - v.y) * innerHeight / 2)]
   window.__probes.skyisles = () => {
     const alt = isles.map(o => o.isle.position.y - Math.max(ctx.heightAt(o.isle.position.x, o.isle.position.z), 0))
     const dist = isles.map(o => Math.hypot(o.isle.position.x - ctx.heroPos.x, o.isle.position.z - ctx.heroPos.z))
-    return { isles: isles.length, falls: falls.length, alt: [r(Math.min(...alt)), r(Math.max(...alt))], dist: [r(Math.min(...dist)), r(Math.max(...dist))], night: +ctx.night.toFixed(2) }
+    const boxes = isles.map(o => {
+      box.setFromObject(o.isle)
+      const pts = [0, 1, 2, 3, 4, 5, 6, 7].map(k => new THREE.Vector3(k & 1 ? box.max.x : box.min.x, k & 2 ? box.max.y : box.min.y, k & 4 ? box.max.z : box.min.z).project(camera)).filter(p => p.z < 1).map(px)
+      return pts.length < 8 ? null : [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))]
+    })
+    const sun = px(c.copy(ctx.sunDir).multiplyScalar(2000).add(camera.position).project(camera))
+    return { isles: isles.length, falls: falls.length, alt: [r(Math.min(...alt)), r(Math.max(...alt))], dist: [r(Math.min(...dist)), r(Math.max(...dist))], night: +ctx.night.toFixed(2), tod: +ctx.tod.toFixed(3), sun, boxes }
   }
   return { update }
 }
