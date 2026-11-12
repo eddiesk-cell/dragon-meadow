@@ -6,9 +6,49 @@ Map: `art/world-map.svg`. North = −Z (the hero starts at world (0, 0) facing n
 
 Asterholm is one island, about 5 km by 3.5 km, in a cold northern sea. Wet westerly winds come off the ocean, climb the Greyspine — a block of granite tilted up along a fault, a long gentle slope on its west side and a sheer wall on its east — and drop their rain on the way up. So the west is green and full of water, and the east, in the mountains' rain shadow, is red desert. Every river starts either at Wyrmcrown's glacier, where the winter dragon nests, or at the springs under Dragon Meadow's chalk, and all of them run downhill into Mirrormere. The sea is slowly eating the north coast: the chalk cliffs lose a little every winter, and the town that once stood on the headland is now an island. One cause explains the opening scene: on sunny days the land warms, a sea breeze blows in over the cliff, and that same breeze carries the fog that fills the meadow and gives the dragon the rising air it circles on.
 
+## How Asterholm looks — day and night (Phase 6)
+
+The pictures are the spec: `refs/world/mix-day.png` (**the master picture** — the meadow by day from the start; its castle is
+too white and spired, the castle follows `mix-settlements.png`), `refs/world/island.png` (the whole island at dusk),
+`refs/world/mix-settlements.png` (town, castle and city at dusk), `refs/world/night.png` (the meadow at night). Match their
+mood, palette and parts, not their painted detail.
+
+- **By day — the world of Eddie's reference videos.** Crisp, stylized 3D under a warm blue sky with cream cumulus. Dense,
+  saturated yellow-green grass full of small flowers; water so still it mirrors everything; flocks of birds; soft depth of
+  field and a little bloom. Sea fog comes and goes: it fills the hollows, then thins and shows what it hid. Nothing neon.
+- **By night — the Pandora glow.** Deep indigo sky, stars, a slow green-violet aurora. The land lights itself: grass tips,
+  ferns, vines, flowers, moss. Seed lights drift up. The towns' windows burn warm gold against it.
+- **Day and night share the scale and the wonder.** Colossal pale vine trees with curtains of hanging vines; giant bell
+  flowers (2–4 m) and spiral ferns (1–2 m) at the meadow edges; skystone isles floating overhead, pouring waterfalls that
+  turn to mist before they land.
+
+**The world rule — why it glows.** Asterholm's plants drink sunlight by day and give it back at night. Pressure wakes them:
+a footstep sends a ring of light through the grass (~3 m, fading over ~2 s). So the glow follows the weather — brightest
+after a clear day, faint after a day of fog.
+
+**The glow colour rule**, so every land reads the same way at night:
+
+| what | where it glows | colour |
+|---|---|---|
+| grass, vines, moss, lichen | tips and veins | cool — teal, cyan, green |
+| ferns | vein lines | violet |
+| flowers, fungus | from inside | warm — gold, amber |
+| sea and lake life (surf, tide pools, weed) | sparks and swirls | blue-cyan |
+| ice | from deep inside | ice blue; aurora green in cracks |
+| people (windows, lanterns, beacons) | steady, with chimney smoke | lamp orange-gold |
+
+Living light sways and pulses; people's light holds still. That is how you find a town at night.
+
+**Skystone.** A pale stone that floats. Five to nine skystone isles, 40–200 m across, drift 150–600 m up and 0.5–3 km
+out from the meadow, most of them toward the sea and Wyrmcrown (exact places: `src/skyisles.js`). Trees on top, roots
+hanging below, a slow bob. *Why they pour water:* the isles drink cloud — the sea fog condenses on their cold stone and
+their trees, gathers in springs, and runs off the edges. Day: bone-pale stone, green crowns, white falls. Night: hanging
+vines cyan, the falls faintly lit by them.
+
 ## The lands
 
-Each land keeps a narrow palette (4–6 colours) and one landmark you can see from the land next door.
+Each land keeps a narrow day palette and a night palette (4–6 colours each), one landmark you can see from the land next
+door, and its own share of the glow.
 
 **1. Dragon Meadow** — *you start here* · (0, 0)
 - Look: chalk downs under knee-high grass and wildflowers, sea fog in the hollows. Sage, yellow-green, chalk white, poppy red, pale grey sky.
@@ -58,6 +98,82 @@ Each land keeps a narrow palette (4–6 colours) and one landmark you can see fr
 - Feel: thin air, silence, awe — the end of the road.
 - Lives: the winter dragon, alone.
 - Landmark: **the Crown** itself — seen from every land; it is the island's compass.
+
+## Towns, castles and cities
+
+Eddie: *"We should add towns, and castles, and cities."* Three new places; the two old ones stay. The rules for all of
+them (the Sanctuary lesson): castles are HUGE and mostly grey stone, not Disney; every wall reads as STACKED stone with
+visible courses, never plaster; windows glow warm at night and chimneys smoke; they emerge from the haze rather than
+standing in front of it. Built from `public/models/world/town-kit.glb` and `castle-kit.glb` by `src/settlements.js`,
+everything on `ctx.heightAt`, each pushing its footprint into `ctx.keepClear`.
+
+| place | kind | where (world m) | first seen |
+|---|---|---|---|
+| Castle Crestwatch | castle | (−520, −240), cliff headland, Dragon Meadow | from the start, ahead-left (`mix-day.png`) |
+| Springwell | town (grown from the woodcutters' village) | (−75, 500), foot of the Holloway | stepping out of the Holloway (`mix-settlements.png`) |
+| Asterhaven | harbour city | (−1500, 650), where the Spill meets the sea | far off from the meadow's rise, across the island |
+| Reedholt | stilt village (kept) | Mirrormere | its lamps doubled in the lake |
+| The Windgap Gate | ruined fortress (kept) | (1525, 1300) | from the switchbacks |
+
+**Castle Crestwatch** · (−520, −240) — on the highest chalk of the cliff headland, 570 m west-north-west of the start
+- Look: a huge grey castle on the cliff edge (as in `mix-settlements.png`, right): a 50 m keep with battlements, corner
+  turrets and tall arched windows; a curtain wall with 6–8 round and square towers, their conical roofs grey slate; a
+  gatehouse with a portcullis; a road winding down the downs to the meadow. Grey flint-and-ragstone in stacked courses,
+  ivy and vines up the seaward wall, long slate-blue banners. The castle cistern overflows down the cliff face in a thin
+  white waterfall.
+- Day: stone grey, slate blue-grey, chalk white below, banner blue with a white star-flower, ivy green.
+- Night: every arrow-slit and hall window gold; the **beacon** on the keep's roof burning orange; the cliff-face vines
+  cyan; the waterfall a pale thread in the dark.
+- Glows: windows and the beacon (lamp gold); vines on the walls (cyan); moss in the old mortar (faint green).
+- People: the Crest Watch — a garrison of about thirty and their families under the Warden of the Crest; beacon-keepers
+  who log every flight of the dragon in the Wyrm Book; a bell-ringer who answers Bellholm's bells so walkers on the
+  causeway know to run.
+- Landmark: **the beacon on the keep**, the one warm light on the north cliffs, seen from the meadow every night.
+- Why it stands there: before the sea broke through, the headland ran another 800 m out to a harbour town at its tip.
+  Crestwatch was that town's castle, raised on the highest chalk so its beacon reached ships out in the north sea. The
+  sea took the town — it is Bellholm now, ringed by its drowned roofs — and left the castle on the high ground, still
+  keeping the light. The cliff is coming for it too: one corner tower already hangs over the edge.
+
+**Springwell** · (−75, 500) — the town where the Holloway comes out, between the downs and Lanternwood
+- Look: a market town of 12–20 houses, grown from the woodcutters' village. Grey-gold greensand and flint in stacked
+  courses, red clay and slate roofs, timber trim, wisteria over the doors, smoke from every chimney. A church with a
+  belfry; the spring rising into a stone well-house in the square; an arched stone bridge over the young Brightwater.
+  The Holloway arrives as a cobbled lane between low stone walls lined with lanterns (`mix-settlements.png`, foreground).
+- Day: stone grey-gold, roof red and slate, timber brown, wisteria lilac, stream turquoise.
+- Night: every window gold, a lantern on each wall post down the lane, the bridge and the windows doubled in the stream,
+  chimney smoke grey-violet under the aurora.
+- Glows: windows and lanterns (lamp gold); wisteria and garden bell flowers (warm, from inside); vines on the walls
+  (cyan); the Brightwater's weed (blue-cyan swirls).
+- People: woodcutters, raftwrights who build the Brightwater rafts, millers, spring-keepers, an inn; market day pulls in
+  shepherds from the downs and eel-traders up from the lake.
+- Landmark: **the Wellhead**, the spring's stone well-house, with the church belfry over it.
+- Why it stands there: rain soaks through the chalk and comes out where chalk meets clay — clean water all year, the
+  same spring line where the forest begins. It grew into a town because three ways meet at it: the Holloway up to the
+  meadow, the Brightwater down to Mirrormere (the rafts launch at its bridge), and the forest road east to the Rootbridge.
+
+**Asterhaven** · (−1500, 650) — the island's one city, on the west coast where the Spill meets the sea
+- Look: a walled hill of a few hundred houses climbing to a palace with a pale dome; below, a harbour of tall ships
+  behind a long sea wall (`mix-settlements.png`, centre). Seen only far off — across the island from the meadow's rise, a
+  pale crown of roofs on the west coast; from above Springwell at sunset, a silhouette against the sun on the sea. Far
+  detail only: a few hundred merged houses, the wall, the palace, masts.
+- Day: stone grey-gold, roofs red and slate, the dome pale cream, sea teal, sails white.
+- Night: thousands of warm windows; the palace dome lit from inside; the harbour's chain of lanterns doubled in the
+  water; sea-glow in the wake of every ship.
+- Glows: windows, the dome, harbour lanterns (lamp gold); the harbour water (blue-cyan sea-glow).
+- People: merchants, shipwrights, sailors, the island's council in the palace; Reedholt's eel-traders and Bellholm's
+  fishers sell on its quays.
+- Landmark: **the Domed Palace** on the hilltop, its dome lit every night — the light the ships steer home by.
+- Why it stands there: the Spill is the lake's only way to the sea, and the coast is otherwise all cliff and surf. The
+  same coast drift that piles shingle into Bellholm's causeway pushes the Spill's mouth north behind a long shingle spit,
+  so the river meets the sea in a sheltered lagoon — the one deep, calm harbour on the island. Everything the lake sells
+  (eels, reed, the glacier's milky clay for potters) meets everything the sea brings there, and the eel-boat ferry calls
+  at its quay on the way to Bellholm.
+
+**Reedholt** (kept) — the eel-fishers' village on stilts in the middle of Mirrormere: timber houses with steep reed-thatch
+roofs on piles, linked by walkways; lamp orange at dusk, every lamp doubled in the still water.
+
+**The Windgap Gate** (kept) — a ruined fortress of grey granite across the only pass: broken towers, a fallen gate arch,
+no roofs. Dark at night — no window is lit there, which is how you know nobody holds it.
 
 ## Connections — how you get from one land to the next
 
