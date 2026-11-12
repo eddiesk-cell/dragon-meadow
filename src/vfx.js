@@ -313,7 +313,7 @@ export async function createVfx(ctx) {
     update(dt) {
       const now = performance.now(), rdt = Math.min((now - lastNow) / 1000, 0.1)
       if (++frames > 30) worstMs = Math.max(worstMs, now - lastNow) // proof that effects never hitch (load frames excluded)
-      if (cutAt !== null && now - cutAt < 500) cutMs = Math.max(cutMs, now - lastNow) // worst frame gap in 0.5 s after the first trail()
+      if (cutAt !== null && lastNow - cutAt < 500) cutMs = Math.max(cutMs, now - lastNow) // by frame START, so a stall running past 0.5 s still counts
       lastNow = now
       if (stopUntil && now >= stopUntil) release()
       clock += dt
