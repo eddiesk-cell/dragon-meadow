@@ -1,14 +1,17 @@
 // Lane springs — the hero's cloth: bandana tails and the shirt/vest hem hang off spring_<chain>_<n> bones
 // (tools/hero/springs.py). Each joint is a damped spring particle in world space: it trails the body (inertia), eases
 // back toward its rest direction, feels gravity, air drag and ctx.windAt (the same gusts that move the grass), and is
-// pushed out of the head, neck, shoulders, hips and thighs. Fixed-size substeps keep it stable from 20 to 144 fps.
+// pushed out of the head, neck, shoulders, hips and thighs. Fixed-size substeps keep it stable from 20 to 144 fps, and the
+// rest pose and colliders glide from last frame's pose to this one across them, so a slow frame lands where a fast one does.
 
 export const PART = {
-  // k: pull to rest (1/s²)  wind: air-drag coupling (1/s)  damp: internal (1/s)  max: swing cap (rad)  flutter: ripple on the
+  // k: pull to rest (1/s²)  air: body speed (m/s) at which that pull has halved, so the air of a run beats the knot's shape
+  // wind: air-drag coupling (1/s)  grav: share of gravity  damp: internal (1/s)  max: swing cap (rad)  flutter: ripple on the
   // wind  inertia: share of the body's own jolts (start, stop, jump) the cloth lags behind; the rest it is simply carried
-  bandana: { k: 380, wind: 3.2, damp: 12, max: 1.75, flutter: 1.6, inertia: 0.6 },
+  // The knot is starched cotton: standing, it holds the tails out to his side (as drawn) and only a third of their weight sags them.
+  bandana: { k: 380, air: 1.5, wind: 2.2, grav: 0.35, damp: 12, max: 1.75, flutter: 1.6, inertia: 0.6 },
   // leg: how far a hem panel's resting place follows its thigh (0 at the belt → leg at the hem), so it swings with the stride
-  hem: { k: 230, wind: 1.0, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3, leg: 0.55 },
+  hem: { k: 230, air: 0, wind: 1.0, grav: 1, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3, leg: 0.55 },
 }
 const STEP = 1 / 120, G = -9.8
 
@@ -24,7 +27,8 @@ export async function createSprings(ctx) {
   const wp = o => o.getWorldPosition(V())
 
   // Colliders: capsules A→B (a sphere when A = B) fixed to a body bone, written in the bind pose.
-  const cap = (on, A, B, r) => ({ on: bone(on), a: bone(on).worldToLocal(A.clone()), b: bone(on).worldToLocal(B.clone()), r, A: V(), B: V() })
+  // A, B: where it is this substep; A0/B0 last frame, A1/B1 this frame
+  const cap = (on, A, B, r) => ({ on: bone(on), a: bone(on).worldToLocal(A.clone()), b: bone(on).worldToLocal(B.clone()), r, A: V(), B: V(), A0: V(), B0: V(), A1: A.clone(), B1: B.clone() })
   const head = wp(bone('head')), top = wp(bone('HeadTop_End'))
   const headC = head.clone().lerp(top, 0.45)
   const UPPER = [
@@ -59,24 +63,27 @@ export async function createSprings(ctx) {
     if (!end) throw new Error(`spring_${m[1]} has no _end tip`)
     const nodes = [...bones, end], kind = m[1].startsWith('bandana') ? 'bandana' : 'hem'
     const rest = nodes.map(wp), cols = kind === 'bandana' ? UPPER : LOWER
-    for (const c of cols) { c.A.copy(c.on.localToWorld(c.a.clone())); c.B.copy(c.on.localToWorld(c.b.clone())) }
+    for (const c of cols) { c.A.copy(c.A1); c.B.copy(c.B1) }
     const restQ = bones.map(b => b.quaternion.clone())
     // The sculpt's tails stick out sideways and a little forward; aim them 35° back (about the head's up axis) so wind and
     // running sweep them behind the head, not over the face. From the front they still stream out to his side.
-    if (kind === 'bandana') restQ[0].premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.6 * Math.sign(rest[1].x - rest[0].x)))
+    // (which side: in the model's own frame, so a root already turned at load cannot flip it forward)
+    if (kind === 'bandana') restQ[0].premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.6 * Math.sign(model.worldToLocal(rest[1].clone()).x - model.worldToLocal(rest[0].clone()).x)))
     const leg = kind === 'hem' && bone(rest[0].x > 0 ? 'leftUpperLeg' : 'rightUpperLeg') // the thigh on this panel's side
     chains.push({
       name: m[1], p: PART[kind], cols, bones, nodes, restQ, leg, legLocal: leg && rest.map(r => leg.worldToLocal(r.clone())),
       len: rest.slice(1).map((r, i) => r.distanceTo(rest[i])),
       // per joint, per collider: never closer than the cloth sits at rest, so nothing is pushed while standing still
       rad: rest.map(r => cols.map(c => Math.min(c.r, 0.95 * r.distanceTo(closest(r, c, tmp2))))),
-      rest, x: rest.map(r => r.clone()), v: rest.map(V), root0: V(), phase: chains.length * 1.7, ready: false,
+      rest, prev: rest.map(V), rs: rest.map(V), x: rest.map(r => r.clone()), v: rest.map(V), spd: 0, phase: chains.length * 1.7, ready: false,
     })
   }
   if (!chains.length) throw new Error('hero.glb has no spring_ bones (rebuild with tools/hero/build.sh)')
 
   const q = new THREE.Quaternion(), wq = new THREE.Quaternion(), pq = new THREE.Quaternion(), sc = V(), hp = V()
-  const wind = V(), wj = V(), acc = V(), off = V(), d = V(), root = V(), cur = V(), vroot = V(), pOld = V(), carry = V(), vlag = V()
+  const wind = V(), wj = V(), acc = V(), off = V(), d = V(), cur = V(), vroot = V(), pOld = V(), carry = V(), vlag = V()
+  const COLS = [...UPPER, ...LOWER], nrm = V(), vcol = V()
+  let fresh = true
   let maxSwing = 0
   const nb = chains.reduce((a, c) => a + c.bones.length, 0)
   window.__probes.springs = () => ({ chains: chains.length, bones: nb, maxSwingDeg: Math.round(maxSwing * 57.3) })
@@ -89,31 +96,41 @@ export async function createSprings(ctx) {
       wind.set(w?.x ?? 0, 0, w?.y ?? 0)
       const n = Math.min(12, Math.ceil(dt / STEP)), h = dt / n
       maxSwing = 0
+      for (const k of COLS) {
+        k.A0.copy(k.A1); k.B0.copy(k.B1)
+        k.on.localToWorld(k.A1.copy(k.a)); k.on.localToWorld(k.B1.copy(k.b))
+        if (fresh || k.A0.distanceTo(k.A1) > 1) { k.A0.copy(k.A1); k.B0.copy(k.B1) }
+      }
+      fresh = false
       for (const c of chains) {
+        c.rest.forEach((r, i) => c.prev[i].copy(r)) // last frame's rest pose
         // the rest pose under this frame's animation: where every joint would be with no cloth physics
         c.bones.forEach((b, i) => b.quaternion.copy(c.restQ[i]))
         c.bones[0].updateMatrixWorld(true)
         c.nodes.forEach((o, i) => c.rest[i].setFromMatrixPosition(o.matrixWorld))
         if (c.leg) for (let j = 1; j < c.rest.length; j++) c.rest[j].lerp(tmp.copy(c.legLocal[j]).applyMatrix4(c.leg.matrixWorld), c.p.leg * j / (c.rest.length - 1))
-        for (const k of c.cols) { k.A.copy(k.on.localToWorld(tmp.copy(k.a))); k.B.copy(k.on.localToWorld(tmp.copy(k.b))) }
-        if (!c.ready || c.root0.distanceTo(c.rest[0]) > 1) { // first frame or a teleport: start at rest
-          c.rest.forEach((r, i) => { c.x[i].copy(r); c.v[i].set(0, 0, 0) })
-          c.root0.copy(c.rest[0]); c.ready = true
+        if (!c.ready || c.prev[0].distanceTo(c.rest[0]) > 1) { // first frame or a teleport: start at rest
+          c.rest.forEach((r, i) => { c.x[i].copy(r); c.v[i].set(0, 0, 0); c.prev[i].copy(r) })
+          c.ready = true
         }
-        const { k, wind: cw, damp, max, flutter, inertia } = c.p
-        vroot.subVectors(c.rest[0], c.root0).divideScalar(dt)
+        const { air, wind: cw, grav, damp, max, flutter, inertia } = c.p
+        vroot.subVectors(c.rest[0], c.prev[0]).divideScalar(dt)
+        c.spd += (Math.hypot(vroot.x, vroot.z) - c.spd) * (1 - Math.exp(-dt * 4)) // his travel speed, not the bob of a stride
+        const k = air ? c.p.k / (1 + (c.spd / air) ** 2) : c.p.k
         carry.copy(vroot).multiplyScalar(1 - inertia) // world velocity = simulated v + carry: drag sees all of it
         vlag.copy(vroot).multiplyScalar(inertia)       // internal damping pulls the simulated part toward this
         const fade = Math.exp(-damp * h)
         for (let s = 0; s < n; s++) {
           const ts = t - dt + (s + 1) * h
-          pOld.lerpVectors(c.root0, c.rest[0], s / n)
-          root.lerpVectors(c.root0, c.rest[0], (s + 1) / n) // the pinned root glides with the body across substeps
-          c.x[0].copy(root)
+          pOld.lerpVectors(c.prev[0], c.rest[0], s / n)
+          const f = (s + 1) / n // the rest pose, the pinned root and the colliders glide with the body across substeps
+          c.rs.forEach((r, i) => r.lerpVectors(c.prev[i], c.rest[i], f))
+          for (const col of c.cols) { col.A.lerpVectors(col.A0, col.A1, f); col.B.lerpVectors(col.B0, col.B1, f) }
+          c.x[0].copy(c.rs[0])
           for (let j = 1; j < c.x.length; j++) c.x[j].addScaledVector(carry, h) // carried with the body
           for (let j = 1; j < c.x.length; j++) {
             const x = c.x[j], v = c.v[j], prev = c.x[j - 1]
-            off.subVectors(c.rest[j], c.rest[j - 1])                                   // rest direction × length
+            off.subVectors(c.rs[j], c.rs[j - 1])                                       // rest direction × length
             // spring back toward it, measured against where the joint above was at the start of this substep: against
             // its moved position the body's own speed would read as a bend and cancel the drag of running
             acc.copy(pOld).add(off).sub(x).multiplyScalar(k)
@@ -122,9 +139,10 @@ export async function createSprings(ctx) {
             wj.copy(wind).multiplyScalar(1 + 0.3 * flutter * Math.sin(ts * 9 + j * 1.9 + c.phase))
             wj.y += ws * 0.35 * flutter * Math.sin(ts * 13.7 + j * 2.3 + c.phase)       // cloth flutters, it does not just lean
             acc.addScaledVector(tmp.subVectors(wj, v).sub(carry), cw)                  // air drag: wind, and running through still air
-            acc.y += G
+            acc.y += G * grav
             v.addScaledVector(acc, h).sub(vlag).multiplyScalar(fade).add(vlag)
             cur.copy(x).addScaledVector(v, h)
+            nrm.set(0, 0, 0)
             for (let pass = 0; pass < 2; pass++) {
               d.subVectors(cur, prev)
               // swing cap: never further than `max` from the rest direction (guards against anything wild)
@@ -136,17 +154,21 @@ export async function createSprings(ctx) {
                 const r = c.rad[j][ci], p = closest(cur, col, hp), dd = cur.distanceTo(p)
                 if (dd >= r) return
                 // out on the side the cloth rests on: a joint flung past the axis is not pushed out through the body
-                const side = tmp2.subVectors(c.rest[j], closest(c.rest[j], col, d)) // (closest() reuses tmp: read it first)
+                const side = tmp2.subVectors(c.rs[j], closest(c.rs[j], col, d)) // (closest() reuses tmp: read it first)
                 tmp.subVectors(cur, p)
                 if (tmp.dot(side) <= 0) tmp.copy(side)
                 cur.copy(p).addScaledVector(tmp.normalize(), r)
+                nrm.copy(tmp); vcol.subVectors(col.A1, col.A0).add(col.B1).sub(col.B0).divideScalar(2 * dt)
               })
             }
             v.subVectors(cur, x).divideScalar(h)
+            // a push-out is a contact, not a kick: keep at most the body's own outward speed, or the depth of one graze
+            // (which depends on where the substeps fall) would fling the cloth and send a slow frame down another path
+            const vn = v.dot(nrm), cn = Math.max(0, vcol.dot(nrm))
+            if (vn > cn) v.addScaledVector(nrm, cn - vn)
             x.copy(cur)
           }
         }
-        c.root0.copy(c.rest[0])
         // write back: turn each bone so its child lands on the simulated joint (bone 0's matrices are fresh from the rest pass)
         for (let i = 0; i < c.bones.length; i++) {
           const b = c.bones[i]
