@@ -151,8 +151,8 @@ export async function createCombat(ctx) {
   function endSwing() { if (swing?.trail) swing.trail.stop(); if (swing && !swing.a.heavy) comboUntil = ctx.time + 0.6; swing = null }
   function strike(dt) { // after the arms have moved this frame
     const s = swing, a = s.a, f = s.t / a.dur
-    if (s.trail === null && f > a.hit[0] - 0.06) s.trail = ctx.vfx?.trail(sword, { base: BLADE[1], tip: BLADE[4] }) // the cut, not the wind-up
-    if (s.trail && f > a.hit[1] + 0.05) { s.trail.stop(); s.trail = false }
+    if (s.trail === null && f > a.hit[0] - 0.1) s.trail = ctx.vfx?.trail(sword, { base: BLADE[0], tip: BLADE[4] }) // the cut, not the wind-up
+    if (s.trail && f > a.hit[1] + 0.08) { s.trail.stop(); s.trail = false }
     sword.updateWorldMatrix(true, false)
     sword.localToWorld(tip.copy(BLADE[4]))
     if (f > a.hit[0] && f < a.hit[1]) {
@@ -396,10 +396,11 @@ export async function createCombat(ctx) {
       // Until it has come out into the open, wait for it there.
       const far = d > 6 && lure
       const sx = (far ? lure.x : m.pos.x) - hero.x, sz = (far ? lure.z : m.pos.z + m.radius + 1.3) - hero.z, sd = Math.hypot(sx, sz)
-      if (sd > 0.6 && (far || d > m.radius + 1.6)) { // in reach already: fight from where he stands
-        camera.getWorldDirection(W); W.y = 0; W.normalize()
+      camera.getWorldDirection(W); W.y = 0; W.normalize()
+      const ahead = (W.x * dx + W.z * dz) / d // in reach and in front of the camera: fight from where he stands
+      if (sd > 0.6 && (far || d > m.radius + 1.6 || ahead < 0.8)) {
         const fwd = (W.x * sx + W.z * sz) / sd, right = (-W.z * sx + W.x * sz) / sd
-        steer([fwd > 0.38 && 'w', fwd < -0.38 && 's', right > 0.38 && 'd', right < -0.38 && 'a', sd > 4 && 'shift'])
+        steer([fwd > 0.38 && 'w', fwd < -0.38 && 's', right > 0.38 && 'd', right < -0.38 && 'a', sd > (far ? 4 : 1.2) && 'shift'])
         return
       }
       steer()
