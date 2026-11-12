@@ -16,7 +16,7 @@ trail, they are pushed to about ×1.8 HDR so they bloom.
 | # | id | family | found in | reach | speed | light | heavy | defence | what it changes | trail |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | `broadsword` | sword | Dragon Meadow (start) | 1.2 m | medium | 10·10·14 | 26 | guard 70 %, parry | the all-rounder: parry, then a riposte | gold `#FF9E38` (exists) |
-| 2 | `lanternstring` | bow | Lanternwood | 40 m | slow | 6 | 20 full draw, ×2 on the head | backstep, kick | fights from range; the only weapon that hits fliers | firefly `#C8FF5A` |
+| 2 | `lanternstring` | bow | Lanternwood | 40 m | slow | 6 | 20 full draw, ×2 on the head | backstep, kick | fights from range: reaches what melee cannot (across a spore cloud, a flier the moment it lands) | firefly `#C8FF5A` |
 | 3 | `reedholt-leister` | spear | Mirrormere | 2.4 m | fast pokes | 8, ×1.3 at the tines | 22 lunge over 5–8 m | block 40 % | spacing: a sweet spot at the tip; the lunge crosses gaps | lake turquoise `#72D9D1` |
 | 4 | `tidebell-maul` | hammer | Bellholm | 1.5 m | very slow | 26, always staggers | 18 in a 4 m ring | guard 90 % | trades hits: cannot be flinched mid-swing; breaks stone and armour | verdigris `#4CC79E` |
 | 5 | `wreckers-axe` | axe | The Undercliff | 0.9 m | fast | 11·11 | 30, thrown up to 18 m | hook-parry | throw it, fight bare-handed, fetch it back; hooks guards open | sea foam `#C4F2FF` |
@@ -56,7 +56,7 @@ clip. I also compared each clip's bone rotations at the same fraction of the way
   spellcasting. It does not read as a bow draw (no side-on stance, no hand at the jaw) or as a throw (the arm never
   goes behind the head).
 - **These clips are distinct and fine as they are:** `Slash (Horizontal)` (a real sweep across the body; the head
-  turns with it), `Stab` (a real lunge: the head drops 0.55 m forward and the lead hand reaches 0.81 m),
+  turns with it), `Stab` (a real lunge: the head moves 0.55 m forward and 0.2 m down, and the lead hand reaches 0.81 m),
   `Parry`, `Block`, `Greatsword Guard`, `Greatsword Idle`, `Dash`, `Roll`, `Backstep`, `Kick (Front)` (the
   left foot goes 0.92 m forward at 1.18 m high) and `Punch (Cross)` (the right fist goes 0.46 m forward).
 
@@ -133,9 +133,9 @@ differently, trail and hit, which monsters it answers, and the build note.
   in sword space.
 - **answers:** `chalk-hob` (the roll and the parry against one attacker at a time) and the `barrow-troll` (a parried
   punch opens a riposte).
-- **build:** already built. In `sword.glb` the blade runs along +Y: guard at y 0.105, tip at 1.13, pommel bottom at
-  −0.19. The blade is 0.08 m wide at the guard and the grip is 0.22 m long. In `scabbard.glb` the mouth is at 0 and
-  the chape at −1.075. Seat: the sword points down into the scabbard, guard at the mouth. Nothing to do in 5b
+- **build:** already built. In `sword.glb` the blade runs along +Y: guard at y 0.105 m, tip at 1.13 m, pommel
+  bottom at −0.19 m, so 1.32 m in all. The blade is 0.08 m wide at the guard and the grip is 0.22 m long. In
+  `scabbard.glb` the mouth is at 0 and the chape at −1.075 m. Seat: the sword points down into the scabbard, guard at the mouth. Nothing to do in 5b
   except copy both files into `public/models/weapons/broadsword.glb` as the `weapon` and `carrier` nodes, so all
   seven load the same way.
 
@@ -162,14 +162,15 @@ differently, trail and hit, which monsters it answers, and the build note.
   - Light `J` with a foe within 1.5 m: `Kick (Front)` instead of a shot. Damage 4; it pushes the foe 3 m back
     (the left foot lands at 0.67 s).
   - `L` rolls.
-- **plays differently:** this is the only ranged weapon besides the staff, and it is the only one that hits a foe in
-  the air. Arrows fly at 30 m/s with half gravity, and the most range it is any good at is 40 m. **Headshots (the
+- **plays differently:** this is the only ranged weapon besides the staff. It reaches what melee cannot: across a
+  cloud, up a ledge, wherever a flier lands. Arrows fly at 30 m/s with half gravity, and the most range it is any good at is 40 m. **Headshots (the
   top 20 % of a monster's `height`) do ×2**: a full-draw headshot is 40 and staggers the troll. Ammunition is
   unlimited. Low damage when close: you win by spacing, the backstep and the kick.
 - **trail / hit:** the arrow carries a thin firefly-green streak (`#C8FF5A`), a `trail` from the nock to the head.
   On a hit the arrow sticks in the target for 10 s and puffs a few gold-green motes (`sparks`, n 6).
-- **answers:** `lantern-cap` (shoot the caps from range before their clouds deny you the ground) and `gapshrike`
-  in the Greyspine (an air foe that no melee weapon reaches).
+- **answers:** `lantern-cap` (its spore clouds deny the ground and two hits kill it: shoot it from outside the cloud)
+  and `gapshrike` in the Greyspine (it can only be hit on the ground, mantled for 2 s after a stoop; wherever you
+  rolled to, an arrow reaches it inside that window).
 - **build:**
   - Limbs: along ±Y from the grip, 0.80 m each, so 1.60 m from tip to tip. Each is a lofted ellipse 0.032 × 0.022 m
     at the grip, tapering to 0.012 × 0.009 m at the tip. The tips curve back 0.15 m toward −X (the strung bow
@@ -182,8 +183,8 @@ differently, trail and hit, which monsters it answers, and the build note.
     radius 0.004; three fletches 0.10 m long; an iron leaf head 0.05 m long.
   - Carrier: a quiver, a leather tube 0.62 m long, radius 0.06 at the top and 0.05 at the bottom, with 8 fletchings
     standing 0.12 m out of the top. Top anchor at the quiver mouth. Seat: the bow's origin sits at (0.08, −0.30, 0)
-    with its limbs along the carrier's Y, so the upper tip rises 0.5 m above the top anchor and the lower tip runs
-    0.2 m past the hips anchor.
+    with its limbs along the carrier's Y, so the upper tip rises 0.50 m above the top anchor and the lower tip runs
+    0.13 m past the hips anchor.
 
 ## 3. Reedholt Leister
 
@@ -208,8 +209,9 @@ differently, trail and hit, which monsters it answers, and the build note.
   The lunge crosses gaps: the jump between Reedholt's stilt-walks and boats, or the space a ranged foe keeps.
 - **trail / hit:** a milky lake-turquoise trail (`#72D9D1`) from the ribbon to the tine tips. A sweet-spot hit adds
   a spray of turquoise droplets (`sparks`, n 10).
-- **answers:** `stiltstalker` (a reach duel: the leister out-reaches its 2.0 m wind-up) and `old-glim` (strike down
-  into the water from the stilts; the lunge carries him from platform to platform).
+- **answers:** `stiltstalker` (a reach duel: its spear strikes from 3.5 m and sticks in the mud for 1 s; the lunge
+  covers that gap and lands with the tines) and `old-glim` (strike down into the water from the stilts; the lunge
+  carries him from platform to platform).
 - **build:**
   - The origin is the rear-hand grip, 0.50 m from the butt. Butt cap at y −0.50 (an iron cone 0.05 m long). The
     tine tips are at +1.60, so the total is 2.10 m.
@@ -250,8 +252,9 @@ differently, trail and hit, which monsters it answers, and the build note.
 - **trail / hit:** a wide verdigris trail (`#4CC79E`) across the head only, heavy and short (it fades in 0.15 s).
   On a hit: bronze sparks (`sparks`, n 16), `shake` 0.3 for 0.25 s, `hitstop` 90 ms. The ground slam adds a white
   `blast` ring.
-- **answers:** `tolling-warden` (it attacks on the bell's beat; the maul's ring answers on the same beat and
-  staggers it) and `rime-warden` at Wyrmcrown (armour that only heavy hits crack).
+- **answers:** `tolling-warden` (its anchor stays down 1.2 s after Anchor fall; a smash at ×2.0 lands inside that,
+  since its hit window is 0.42–1.0 s in real time, and every hit staggers it off its beat) and `rime-warden` at
+  Wyrmcrown (light hits bounce off its armour; heavy hits crack it and shatter its ice wall).
 - **build:**
   - The origin is the lower grip, 0.25 m above the butt. Butt at y −0.25; head centre at +0.95; the top of the ring
     at +1.08. Total 1.33 m.
@@ -292,8 +295,8 @@ differently, trail and hit, which monsters it answers, and the build note.
   that time lands in full. It also chops wood (barricades, thorn thickets).
 - **trail / hit:** a short sea-foam trail (`#C4F2FF`) on the edge. The thrown axe trails a spinning ring of the
   same colour. A stuck axe adds a thunk: `hitstop` 60 ms and wood chips (`dust`, size 0.3).
-- **answers:** `wreckback` (its front is armour: hook it open, or flank it) and `driftwight` (deadly at range: a
-  thrown axe interrupts its cast while you close in).
+- **answers:** `wreckback` (its shelled front turns every hit: hook it open, or flank it) and `driftwight` (deadly
+  at range: a thrown axe during its 1.1 s net gather interrupts the cast while you close in).
 - **build:**
   - The origin is the grip centre, 0.18 m above the butt. Butt knob at y −0.18 (a sphere of radius 0.022). The top
     of the head is at +0.62, so the total is 0.80 m.
@@ -334,8 +337,9 @@ differently, trail and hit, which monsters it answers, and the build note.
 - **trail / hit:** a long, wide snow-blue trail (`#B4D8FF`, lasting 0.3 s instead of 0.2). While charging, the
   blade emits a slow drift of snow motes (`sparks`, n 2 every 0.1 s). On a hit: a granite-grey dust puff
   (`dust`, size 0.6), and a full charge adds `shake` 0.4 and `hitstop` 120 ms.
-- **answers:** `scarhorn` (charges along a path with a drop: block it, do not roll) and `ribmite-swarm` in the
-  Redwaste below the Thousand Steps (crowds: the sweep hits them all).
+- **answers:** `scarhorn` (its ram charge throws you 4 m off the path; behind this guard it pushes you only 1 m, so
+  you can stand with your back to the drop) and `ribmite-swarm` in the Redwaste below the Thousand Steps (one hit
+  kills a mite, and the sweep hits them all).
 - **build:**
   - The origin is the upper grip, just below the guard. Pommel bottom at y −0.31: a disc of radius 0.045, 0.03 m
     thick, at −0.27. Grip from −0.22 to +0.16, a ring of radius 0.017 wrapped in pine `#2A4030`.
@@ -377,13 +381,14 @@ differently, trail and hit, which monsters it answers, and the build note.
   - `L` rolls.
 - **plays differently:** the only weapon with a resource. It has **6 ember charges that refill at one every 1.5 s**,
   shown as six pips on the health bar. You plan, kite and spend. It is weak up close and strong at range, and the
-  ring of ribs sets up hits for the bolt. **The ember's light reveals the real one**: within 12 m of the crystal,
-  real bodies cast a shadow and illusions do not.
+  ring of ribs sets up hits for the bolt. **The ember is a light**: within 12 m of the crystal, real bodies cast a
+  shadow even in shade, and illusions do not.
 - **trail / hit:** bolts are pure effects with no model: a small emissive sphere (`#FF7A30` with a salt-white core)
   carrying a `trail`. A hit bursts into ember sparks (`sparks`, n 12) and a heat shimmer puff (`dust`, size 0.4,
   warm tint). The jet is a stream of sparks along its length.
-- **answers:** `marrowkeeper` (which one is real? Its shadows give it away under the ember's light) and
-  `ribmite-swarm` (the jet burns a lane through the crowd).
+- **answers:** `marrowkeeper` (its copies die to one hit, so bolts pop them from range; in the Ribs' shade, where the
+  sun casts no shadow, the ember's light gives the real one its shadow back) and `ribmite-swarm` (the jet burns a
+  lane through the crowd).
 - **build:**
   - The origin is the grip centre, 0.70 m above the foot. Foot at y −0.70 (an iron ferrule cone 0.06 m long). The
     crystal's centre is at +1.00, and the tops of the tines are at +1.05. Total 1.75 m.
