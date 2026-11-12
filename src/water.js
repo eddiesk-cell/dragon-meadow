@@ -9,16 +9,18 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import {
   reflector, texture, uniform, vec2, vec3, vec4, float, positionWorld, positionView, cameraPosition, cameraWorldMatrix,
   cameraNear, cameraFar, viewportDepthTexture, perspectiveDepthToViewZ, mx_noise_float, normalize, length, mix, max,
-  smoothstep, pow, step,
+  smoothstep, pow, step, viewportSharedTexture, getScreenPosition, cameraViewMatrix, cameraProjectionMatrix,
 } from 'three/tsl'
 
-// The pond: an organic ellipse in the low meadow ahead-right of the start (x, z, half-axes, turn), filled up to TOP m;
+// The pond: an organic ellipse (centre if landmarks has no rock island, half-axes, turn) in the low meadow ahead-right, filled up to TOP m;
 // the water stands BANK below that, so its shore is a low turf bank. GRASS: the tallest blade field.js grows.
 const POND = { x: 48, z: -55, ax: 52, az: 27, rot: 0.35, TOP: 0.45, BANK: 0.45 }, GRASS = 1.3
 
 export async function createWater(ctx) {
-  const { THREE, scene, params } = ctx
-  const { x: cx, z: cz, ax, az, rot, TOP, BANK } = POND, level = TOP - BANK
+  const { THREE, scene } = ctx
+  const isle = ctx.landmarks?.rockisle // src/landmarks.js: the pond lies at its south foot, toward the start
+  const { ax, az, rot, TOP, BANK } = POND, level = TOP - BANK
+  const cx = isle ? isle.x - 2 : POND.x, cz = isle ? isle.z + isle.r + 6 : POND.z
   const c = Math.cos(rot), s = Math.sin(rot)
   const blob = (x, z) => { // metres inside the outline (< 0 outside)
     const u = (x - cx) * c + (z - cz) * s, v = (z - cz) * c - (x - cx) * s, a = Math.atan2(v / az, u / ax)
@@ -57,14 +59,38 @@ export async function createWater(ctx) {
   const shallow = smoothstep(9, 0, e)
   const body = mix(vec3(0.012, 0.045, 0.04), vec3(0.05, 0.1, 0.06), shallow).mul(uSky.mul(1.4))
   const sheen = mix(float(0.62), float(1), fres) // stylised: a strong mirror even looking down
-  const col = mix(body, mirror.rgb.mul(vec3(0.82, 0.9, 0.88)), sheen)
+  // Nothing is carved and the mirror hides the grass, so the bank and the far meadow's grass have nothing to reflect: march
+  // the reflected ray over the pond map, and where it leaves the pond below the grass tops it sees turf, not sky.
+  const r = normalize(positionWorld.sub(cameraPosition)).mul(vec3(1, -1, 1))
+  // The turf it hits is drawn on screen already (bank grass): sample that, so the reflection matches it, day or night.
+  let hitAt = vec3(0), found = float(0)
+  for (const t of [1, 2.5, 4.5, 7, 10, 14, 19, 26]) {
+    const p = positionWorld.add(r.mul(t)), g = pond(p.xz)
+    const hit = step(g.x, 0).mul(step(p.y, g.y.add(0.9))).mul(float(1).sub(found))
+    hitAt = hitAt.add(vec3(p.x, max(p.y, g.y.add(0.3)), p.z).mul(hit))
+    found = found.add(hit)
+  }
+  const turf = viewportSharedTexture(getScreenPosition(cameraViewMatrix.mul(vec4(hitAt, 1)).xyz, cameraProjectionMatrix).clamp(0, 1)).rgb
+  const seen = mix(mirror.rgb, turf.mul(0.7), found).mul(vec3(0.82, 0.9, 0.88))
+  const col = mix(body, seen, sheen)
+
+  // The mirror never shows grass: blades standing in the pond are painted out below, so their reflections would be ghosts.
+  // shortcut: finds field.js's blade meshes by their `aOffset` lattice attribute; upgrade when field publishes ctx.grass.
+  const grass = []
+  scene.traverse(o => o.geometry?.attributes?.aOffset && grass.push(o))
+  const base = mirror.reflector, render = base.updateBefore
+  base.updateBefore = frame => {
+    for (const g of grass) g.visible = false
+    try { return render.call(base, frame) } finally { for (const g of grass) g.visible = true }
+  }
 
   // What is in front of this water pixel? If it is turf or grass inside the pond (what a carve would remove), paint over it.
   const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture(), cameraNear, cameraFar)
   const q = cameraWorldMatrix.mul(vec4(positionView.xyz.mul(sceneZ.div(positionView.z)), 1)).xyz, there = pond(q.xz)
   const carved = step(0, there.x).mul(step(q.y, there.y.add(GRASS)))
   const hidden = step(positionView.z.add(0.05), sceneZ).mul(float(1).sub(carved)) // occluder nearer and not carved
-  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false })
+  // fog off: the mirror image already carries the haze of the whole path, eye → water → object
+  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, fog: false })
   m.colorNode = col
   m.opacityNode = smoothstep(0, 1.5, e).mul(float(1).sub(hidden))
   const surface = new THREE.Mesh(new THREE.PlaneGeometry(S, S).rotateX(-Math.PI / 2), m)
@@ -78,9 +104,11 @@ export async function createWater(ctx) {
   const kit = await new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'models/world/town-kit.glb')
   const proto = kit.scene.getObjectByName('lantern')
   const lanterns = []
-  for (const a of [0.85, 1.3, 1.75, 2.2, 4.35, 5.0]) { // four on the near (south) shore, two on the far side
-    const u = Math.cos(a) * (ax + 3.5), v = Math.sin(a) * (az + 3.5), x = cx + u * c - v * s, z = cz + u * s + v * c
-    if (inside(x, z) > -1) continue
+  for (const a of [1.05, 1.57, 2.09, 2.62, 3.4, 3.67, 5.9, 6.02]) { // world bearings from the centre: near shore, then far ends
+    let r = 0
+    while (inside(cx + Math.cos(a) * r, cz + Math.sin(a) * r) > 0) r += 0.25
+    const x = cx + Math.cos(a) * (r + 2.5), z = cz + Math.sin(a) * (r + 2.5)
+    if (isle && Math.hypot(x - isle.x, z - isle.z) < isle.r + 3) continue // not inside the island's apron
     const l = proto.clone()
     l.traverse(o => { if (o.isMesh) { o.castShadow = true; if (o.material.name === 'window') o.material = glass } })
     l.position.set(x, ctx.heightAt(x, z) + 0.3, z)
@@ -91,7 +119,7 @@ export async function createWater(ctx) {
 
   ctx.pond = { x: cx, z: cz, level, inside } // inside(x, z) > 0: water there
   for (const t of [-0.55, 0, 0.55]) ctx.keepClear.push({ x: cx + c * ax * t, z: cz + s * ax * t, r: az + 4 })
-  window.__probes.water = () => ({ level, area: Math.round(area), lanterns: lanterns.length, mirror: surface.visible })
+  window.__probes.water = () => ({ level, area: Math.round(area), lanterns: lanterns.length, unmirrored: grass.length })
 
   return {
     update(dt, t) {
