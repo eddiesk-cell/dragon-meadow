@@ -9,7 +9,13 @@ export const PART = {
   // wind: air-drag coupling (1/s)  grav: share of gravity  lift: tails raised above the sculpt (rad)  damp: internal (1/s)  max: swing cap (rad)  flutter: ripple on the
   // wind  inertia: share of the body's own jolts (start, stop, jump) the cloth lags behind; the rest it is simply carried
   // The knot is starched cotton: standing, it holds the tails out to his side (as drawn) and only a third of their weight sags them.
-  bandana: { k: 380, air: 1.5, wind: 2.6, grav: 0.35, lift: 0.3, damp: 12, max: 1.75, flutter: 1.6, inertia: 0.6 },
+  // Running, the knot turns them back and out (`stream`: out, back in his frame; each tail keeps its sculpted rise or droop, so
+  // the two fan apart), the loose ends straighten,
+  // and the knot's pull grows (×1 + taut), so the tails trail behind and out past his hair instead of being blown flat onto
+  // his skull; the air bends only the loose ends. lee: share of the ambient gust a run hides (an art call — the run sets
+  // where the tails point, gusts only stir them; at full strength a crosswind wraps them round the back of his head).
+  // max per bone: the knot swings at most 1.1 rad, the loose ends take the rest of the bend.
+  bandana: { k: 380, air: 1.5, wind: 2.6, grav: 0.35, lift: 0.3, damp: 12, max: [1.1, 1.75, 1.75], flutter: 1.6, inertia: 0.6, stream: [0.55, 0.81], taut: 2, lee: 0.6 },
   // leg: how far a hem panel's resting place follows its thigh (0 at the belt → leg at the hem), so it swings with the stride
   hem: { k: 230, air: 0, wind: 1.0, grav: 1, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3, leg: 0.55 },
 }
@@ -69,13 +75,24 @@ export async function createSprings(ctx) {
     // (about the head's up axis) so wind and running sweep them behind the head, not over the face. From the front they
     // still stream out to his side, as in art/hero/hero-front-nosword.png. (Which side: in the model's own frame, so a root
     // already turned at load cannot flip it forward.)
+    let runQ
     if (kind === 'bandana') {
       const sg = Math.sign(model.worldToLocal(rest[1].clone()).x - model.worldToLocal(rest[0].clone()).x)
+      // streaming rest: bone 0 turned (in world, at bind) from its sculpted direction to `stream` in his frame, out to his side
+      const [o, b] = PART.bandana.stream, rot = model.getWorldQuaternion(new THREE.Quaternion())
+      const u = model.worldToLocal(rest[1].clone()).sub(model.worldToLocal(rest[0].clone())).normalize().y
+      const to = new THREE.Vector3(o * sg, u, -b).normalize().applyQuaternion(rot), hq = bones[0].parent.getWorldQuaternion(new THREE.Quaternion())
+      const R = new THREE.Quaternion().setFromUnitVectors(rest[1].clone().sub(rest[0]).normalize(), to)
+      runQ = [hq.clone().invert().multiply(R).multiply(hq).multiply(restQ[0])]
+      for (let i = 1; i < bones.length; i++) { // the loose ends run straight on from the bone above (same twist, no curl)
+        const cd = nodes[i + 1].position.clone().normalize().applyQuaternion(restQ[i])
+        runQ.push(new THREE.Quaternion().setFromUnitVectors(cd, bones[i].position.clone().normalize()).multiply(restQ[i]))
+      }
       restQ[0].premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.6 * sg, PART.bandana.lift * sg, 'YXZ')))
     }
     const leg = kind === 'hem' && bone(rest[0].x > 0 ? 'leftUpperLeg' : 'rightUpperLeg') // the thigh on this panel's side
     chains.push({
-      name: m[1], p: PART[kind], cols, bones, nodes, restQ, leg, legLocal: leg && rest.map(r => leg.worldToLocal(r.clone())),
+      name: m[1], p: PART[kind], cols, bones, nodes, restQ, runQ, leg, legLocal: leg && rest.map(r => leg.worldToLocal(r.clone())),
       len: rest.slice(1).map((r, i) => r.distanceTo(rest[i])),
       // per joint, per collider: never closer than the cloth sits at rest, so nothing is pushed while standing still
       rad: rest.map(r => cols.map(c => Math.min(c.r, 0.95 * r.distanceTo(closest(r, c, tmp2))))),
@@ -85,7 +102,7 @@ export async function createSprings(ctx) {
   if (!chains.length) throw new Error('hero.glb has no spring_ bones (rebuild with tools/hero/build.sh)')
 
   const q = new THREE.Quaternion(), wq = new THREE.Quaternion(), pq = new THREE.Quaternion(), sc = V(), hp = V()
-  const wind = V(), wj = V(), acc = V(), off = V(), d = V(), cur = V(), vroot = V(), pOld = V(), carry = V(), vlag = V()
+  const wind = V(), wc = V(), rel = V(), wj = V(), acc = V(), off = V(), d = V(), cur = V(), vroot = V(), pOld = V(), carry = V(), vlag = V()
   const COLS = [...UPPER, ...LOWER], nrm = V(), vcol = V()
   let fresh = true
   let maxSwing = 0
@@ -109,7 +126,9 @@ export async function createSprings(ctx) {
       for (const c of chains) {
         c.rest.forEach((r, i) => c.prev[i].copy(r)) // last frame's rest pose
         // the rest pose under this frame's animation: where every joint would be with no cloth physics
+        const air = c.p.air, a = air ? c.spd ** 2 / (c.spd ** 2 + air ** 2) : 0 // 0 standing → 1 running (last frame's speed)
         c.bones.forEach((b, i) => b.quaternion.copy(c.restQ[i]))
+        if (c.runQ) c.bones.forEach((b, i) => b.quaternion.slerp(c.runQ[i], a))
         c.bones[0].updateMatrixWorld(true)
         c.nodes.forEach((o, i) => c.rest[i].setFromMatrixPosition(o.matrixWorld))
         if (c.leg) for (let j = 1; j < c.rest.length; j++) c.rest[j].lerp(tmp.copy(c.legLocal[j]).applyMatrix4(c.leg.matrixWorld), c.p.leg * j / (c.rest.length - 1))
@@ -117,13 +136,15 @@ export async function createSprings(ctx) {
           c.rest.forEach((r, i) => { c.x[i].copy(r); c.v[i].set(0, 0, 0); c.prev[i].copy(r) })
           c.ready = true
         }
-        const { air, wind: cw, grav, damp, max, flutter, inertia } = c.p
+        const { wind: cw, grav, damp, max, flutter, inertia } = c.p
         vroot.subVectors(c.rest[0], c.prev[0]).divideScalar(dt)
         c.spd += (Math.hypot(vroot.x, vroot.z) - c.spd) * (1 - Math.exp(-dt * 4)) // his travel speed, not the bob of a stride
-        const k = air ? c.p.k / (1 + (c.spd / air) ** 2) : c.p.k
+        const kAir = c.p.k * (1 - a), kKnot = c.p.k * (1 + (c.p.taut || 0) * a) // loose ends give way to the air; the knot holds
         carry.copy(vroot).multiplyScalar(1 - inertia) // world velocity = simulated v + carry: drag sees all of it
         vlag.copy(vroot).multiplyScalar(inertia)       // internal damping pulls the simulated part toward this
         const fade = Math.exp(-damp * h)
+        wc.copy(wind).multiplyScalar(1 - (c.p.lee || 0) * a)
+        rel.subVectors(wc, vroot) // the air he moves through: flutter grows with it, standing in a breeze or running
         for (let s = 0; s < n; s++) {
           const ts = t - dt + (s + 1) * h
           pOld.lerpVectors(c.prev[0], c.rest[0], s / n)
@@ -137,11 +158,10 @@ export async function createSprings(ctx) {
             off.subVectors(c.rs[j], c.rs[j - 1])                                       // rest direction × length
             // spring back toward it, measured against where the joint above was at the start of this substep: against
             // its moved position the body's own speed would read as a bend and cancel the drag of running
-            acc.copy(pOld).add(off).sub(x).multiplyScalar(k)
+            acc.copy(pOld).add(off).sub(x).multiplyScalar(j === 1 ? kKnot : kAir)
             pOld.copy(x)
-            const ws = wind.length()
-            wj.copy(wind).multiplyScalar(1 + 0.3 * flutter * Math.sin(ts * 9 + j * 1.9 + c.phase))
-            wj.y += ws * 0.35 * flutter * Math.sin(ts * 13.7 + j * 2.3 + c.phase)       // cloth flutters, it does not just lean
+            wj.copy(wc).addScaledVector(rel, 0.3 * flutter * Math.sin(ts * 9 + j * 1.9 + c.phase))
+            wj.y += rel.length() * 0.35 * flutter * Math.sin(ts * 13.7 + j * 2.3 + c.phase) // cloth flutters, it does not just lean
             acc.addScaledVector(tmp.subVectors(wj, v).sub(carry), cw)                  // air drag: wind, and running through still air
             acc.y += G * grav
             v.addScaledVector(acc, h).sub(vlag).multiplyScalar(fade).add(vlag)
@@ -151,7 +171,8 @@ export async function createSprings(ctx) {
               d.subVectors(cur, prev)
               // swing cap: never further than `max` from the rest direction (guards against anything wild)
               const ang = d.angleTo(off)
-              if (ang > max) d.applyQuaternion(q.setFromUnitVectors(tmp.copy(d).normalize(), tmp2.copy(off).normalize()).slerp(wq.identity(), max / ang))
+              const mx = max[j - 1] ?? max
+              if (ang > mx) d.applyQuaternion(q.setFromUnitVectors(tmp.copy(d).normalize(), tmp2.copy(off).normalize()).slerp(wq.identity(), mx / ang))
               cur.copy(prev).addScaledVector(d.normalize(), c.len[j - 1])            // inextensible
               if (pass) break
               c.cols.forEach((col, ci) => {

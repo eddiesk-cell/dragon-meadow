@@ -1,13 +1,14 @@
 """Add spring-bone chains for the hero's cloth: two bandana tails (on `head`) and six hem panels below the belt (on `hips`).
   blender -b --python-exit-code 1 -P tools/hero/springs.py -- <rigged-vrm.glb> <out.glb>
 Cloth is found by position + the base-colour texture (bandana = green above the neck, hem = anything not the olive
-trousers between the belt and the hem). Weights fall off smoothly from the headband / belt line, which stay on head / body.
+trousers between the belt and the hem). Bandana weights grow along each ribbon from the knot, which stays on the head;
+hem weights fall off smoothly from the belt line, which stays on the body.
 The generated mesh welds the two bandana ribbons together in places; they are ripped apart (vertices split) so each tail
 moves on its own chain, and every bandana vertex is weighted along ONE chain in order: head -> 0 -> 1 -> 2.
 Bones: spring_<chain>_<n> (simulated by src/springs.js) and spring_<chain>_end (the last bone's tip, no weights).
 Prints one line per chain (name, bones, vertices); a chain with 0 vertices is a failure.
 """
-import bpy, bmesh, sys, math
+import bpy, bmesh, sys, math, heapq
 import numpy as np
 
 src, out = sys.argv[sys.argv.index("--") + 1:][:2]
@@ -116,42 +117,41 @@ for lb in (0, 1):  # a vertex on ribbon faces only takes that ribbon's label
 cross = tail[ed[:, 0]] & tail[ed[:, 1]] & (lab[ed[:, 0]] != lab[ed[:, 1]])
 print(f"SPRINGS bandana: ripped {n_seam} seam edges ({N - N0} vertices split), upper-lower edges left {cross.sum()}")
 
-
-def spread(f, region, iters, fixed=None):
-    """Average f over mesh neighbours inside region only (outside neighbours do not count); `fixed` vertices keep f."""
-    e = ed[region[ed[:, 0]] & region[ed[:, 1]]]
-    cnt = np.maximum(np.bincount(e.ravel(), minlength=N), 1)
-    for _ in range(iters):
-        acc = np.zeros(N); np.add.at(acc, e[:, 0], f[e[:, 1]]); np.add.at(acc, e[:, 1], f[e[:, 0]])
-        g = np.where(np.bincount(e.ravel(), minlength=N) > 0, 0.5 * f + 0.5 * acc / cnt, f)
-        f = np.where(region if fixed is None else region & ~fixed, g, f)
-    return f
-
-
 # Weights as one number per vertex, mb: 0 = head, 1 = bone 0, 2 = bone 1, 3 = bone 2, and a vertex between two whole
-# numbers blends just those two bones, so every bandana vertex is weighted along ONE chain, in order. mb is smoothed over
-# the surface with the headband held at 0 and the tips at 3, so neighbours never differ much and a swing spreads over the
-# ribbon. The knot near the tails is cloth too and gives a little (the mesh sews it to the ribbons with long slivers that
-# tear when the knot stays rigid); the band round his head rides the head.
+# numbers blends just those two bones, so every bandana vertex is weighted along ONE chain, in order. mb grows with the
+# distance along the ribbon from where it is sewn to the knot (0) to its tip (3); the knot and the band round his head ride
+# the head.
 dK = np.linalg.norm(co - K, axis=1)
 band = bd & ~tail & (dK > 0.07)
 free = bd & ~tail & ~band
-mb, own, fix, uu = np.zeros(N), np.full(N, -1), band.copy(), np.zeros(N)
-ind = []
+mb, own, uu = np.zeros(N), np.full(N, -1), np.zeros(N)
 for lb in (0, 1):
     m = tail & (lab == lb)
-    ind.append(spread(m.astype(float), m | free, 12, fixed=m))  # which tail a knot vertex hangs nearer to
     e = ed[(m[ed[:, 0]] & free[ed[:, 1]]) | (m[ed[:, 1]] & free[ed[:, 0]])]
     A = co[np.unique(e[free[e]])].mean(0)  # pivot: where the ribbon is sewn to the knot
-    dist = np.linalg.norm(co - A, axis=1); dmax = np.percentile(dist[m], 98)
-    uu[m] = dist[m] / dmax; mb[m] = 3 * np.minimum(uu[m], 1); fix |= m & (uu > 0.9); own[m] = lb
+    # How far along the ribbon each vertex is: shortest path from where it is sewn to the knot, over the tail's own surface
+    # and between vertices within 1 cm (its layers and loose strips, which the mesh does not join). Through the air, a fold
+    # that doubles back near the knot weighs like the ribbon beside it and tears; by harmonic spread alone, a strip sewn only
+    # to the knot sinks to the head's 0 and stays put when its tail swings away (the thin dark spike past his cheek).
+    mi = np.nonzero(m)[0]
+    P = np.linalg.norm(co[mi, None] - co[None, mi], axis=2)
+    g = np.full(N, np.inf); g[np.unique(e[m[e]])] = 0
+    adj = {}
+    for a, b in np.concatenate([ed[m[ed[:, 0]] & m[ed[:, 1]]], np.stack(mi[np.array(np.nonzero(np.triu(P < 0.01, 1)))], 1)]):
+        w = float(np.linalg.norm(co[a] - co[b])); adj.setdefault(a, []).append((b, w)); adj.setdefault(b, []).append((a, w))
+    hq = [(0.0, int(i)) for i in np.nonzero(g == 0)[0]]
+    while hq:
+        dd, i = heapq.heappop(hq)
+        if dd > g[i]: continue
+        for j, w in adj.get(i, ()):
+            if dd + w < g[j]: g[j] = dd + w; heapq.heappush(hq, (dd + w, j))
+    lost = m & ~np.isfinite(g)
+    g[lost] = np.linalg.norm(co[lost] - A, axis=1)  # unreachable (none expected): distance through the air
+    dmax = np.percentile(g[m], 98)
+    print(f"SPRINGS bandana tail {lb}: {len(mi)} verts, {(g[m] == 0).sum()} sewn to the knot, {lost.sum()} unreachable, {dmax:.3f} m along")
+    uu[m] = g[m] / dmax; mb[m] = 3 * np.minimum(uu[m], 1); own[m] = lb
     chains[("bandana_upper", "bandana_lower")[lb]] = dict(parent="head", A=A, m=m, nb=3)
-own[free] = np.argmax(ind, 0)[free]
-# where the knot switches from hanging off one tail to the other it gives with neither: neighbours there would otherwise
-# follow different tails and split apart
-seam_k = free & (np.abs(ind[0] - ind[1]) < 0.25 * (ind[0] + ind[1]))
-mb = spread(mb, bd, 150, fixed=fix | seam_k)
-print(f"SPRINGS bandana: band {band.sum()} verts on the head, knot {free.sum()} verts give with the tails (max mb {mb[free].max():.2f}), {seam_k.sum()} between the tails hold still")
+print(f"SPRINGS bandana: band {band.sum()} + knot {free.sum()} verts ride the head")
 for lb, nm in enumerate(("bandana_upper", "bandana_lower")):
     ch = chains[nm]; m = ch["m"]
     J = [ch["A"]] + [co[m & (np.abs(mb - c) < 0.25)].mean(0) for c in (1.5, 2.5)] + [co[m & (uu > 0.9)].mean(0)]  # joints mid-blend
