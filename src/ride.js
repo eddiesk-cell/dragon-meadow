@@ -19,17 +19,17 @@ export function createRide(ctx, d) {
   let mode = 'foot', mt = 0, lean = 0 // foot | mount | ride | dismount; mt: seconds in this mode
   const from = new THREE.Vector3(), to = new THREE.Vector3(), fromQ = new THREE.Quaternion(), toQ = new THREE.Quaternion()
   const seatW = new THREE.Vector3(), v = new THREE.Vector3(), M0 = new THREE.Matrix4(), up = new THREE.Vector3(0, 1, 0)
-  const camPos = new THREE.Vector3(), look = new THREE.Vector3(), camWas = new THREE.Vector3(), qWas = new THREE.Quaternion(), qMine = new THREE.Quaternion()
-  const down = new THREE.Vector3() // where the hop off lands
+  const camPos = new THREE.Vector3(), look = new THREE.Vector3(), camWas = new THREE.Vector3(), qWas = new THREE.Quaternion(), qMine = new THREE.Quaternion(), qCam = new THREE.Quaternion()
+  const down = new THREE.Vector3(), away = new THREE.Vector3() // where the hop off lands; his camera's side of him at the mount
   const sideCam = params.get('ridecam') === 'side' // proof view: from beside the saddle
   const log = [], note = e => log.push([e, +ctx.time.toFixed(1)])
   const track = [] // [t, x, y, z, state] once a second off the ground: where it really flew
 
   const seat = () => d.seat.getWorldPosition(seatW)
   const reach = () => { seat(); return Math.hypot(heroPos.x - seatW.x, heroPos.z - seatW.z) }
-  const flank = out => { // ground 5 m out from the seat, on his side of it
+  const flank = (out, sx, sz) => { // ground 5 m out from the seat, on the side (sx, sz) points to
     seat(); v.set(1, 0, 0).applyQuaternion(d.holder.quaternion).setY(0).normalize()
-    if (v.x * (heroPos.x - seatW.x) + v.z * (heroPos.z - seatW.z) < 0) v.negate()
+    if (v.x * sx + v.z * sz < 0) v.negate()
     out.set(seatW.x + v.x * 5, 0, seatW.z + v.z * 5)
     return out.setY(ctx.heightAt(out.x, out.z))
   }
@@ -46,7 +46,7 @@ export function createRide(ctx, d) {
       if (d.land(p.x + Math.sin(h) * 45, p.z + Math.cos(h) * 45, h)) note('land')
     } else if (mode === 'foot' && d.state === 'landed' && reach() < 7) {
       mode = 'mount'; mt = 0; note('mount')
-      from.copy(root.position); fromQ.copy(root.quaternion); camPos.copy(camera.position)
+      from.copy(root.position); fromQ.copy(root.quaternion); camWas.copy(camera.position); qWas.copy(camera.quaternion); away.subVectors(camera.position, heroPos)
       seat(); ctx.heroAct.face(seatW.x - from.x, seatW.z - from.z)
       ctx.heroAct.play('Mount', { lockMove: true })
     } else if (mode === 'foot' && (d.state === 'free' || d.state === 'rejoin')) { // call it down ahead-right of his view
@@ -66,7 +66,7 @@ export function createRide(ctx, d) {
     if (ap === 'call' && ctx.time > 1 && d.state === 'free') { press('e'); press('e', false); ap = 'wait' }
     if (ap === 'wait' && d.state === 'landed') { note('landed'); ap = 'walk' }
     if (ap === 'walk') { // run to his flank of it, camera-relative like the keys, then E
-      const s = flank(to), f = camera.getWorldDirection(v).setY(0).normalize(), dx = s.x - heroPos.x, dz = s.z - heroPos.z
+      const s = flank(to, heroPos.x - seatW.x, heroPos.z - seatW.z), f = camera.getWorldDirection(v).setY(0).normalize(), dx = s.x - heroPos.x, dz = s.z - heroPos.z
       const fw = dx * f.x + dz * f.z, rt = dx * -f.z + dz * f.x
       hold('w', fw > 0.6); hold('s', fw < -0.6); hold('d', rt > 0.6); hold('a', rt < -0.6); hold('shift', reach() > 10)
       if (reach() < 6.5) { for (const c of ['w', 's', 'a', 'd', 'shift']) hold(c, false); press('e'); press('e', false); ap = 'mounting' }
@@ -121,7 +121,7 @@ export function createRide(ctx, d) {
         if (!ctx.heroAct.busy()) ctx.heroAct.play('Ride Idle', { loop: true, lockMove: true })
         if (d.state === 'landed') { // touched down: hop off on the near side
           mode = 'dismount'; mt = 0; note('dismount')
-          from.copy(root.position); fromQ.copy(root.quaternion); flank(down)
+          from.copy(root.position); fromQ.copy(root.quaternion); flank(down, away.x, away.z) // the side his camera was on, so it comes back clear of the dragon
           ctx.heroAct.play('Jump', { lockMove: true, speed: 1.5 })
         }
       } else { // dismount: 0.9 s hop from the saddle to the ground beside it
@@ -135,19 +135,22 @@ export function createRide(ctx, d) {
       if (rig.sheath.parent === ctx.scene) rig.sheath.applyMatrix4(M0.premultiply(root.matrixWorld)) // same move for the scabbard
       if (mode === 'foot') return
 
-      if (ctx.time - (track.at(-1)?.[0] ?? -9) >= 1) { const p = d.holder.position; track.push([+ctx.time.toFixed(1), Math.round(p.x), Math.round(p.y), Math.round(p.z), d.state]) }
-      // Chase camera just behind and above the rider, looking past him between the wings as the reference clip does, leaning a little into turns; blended in over the mount and out over the hop down.
-      lean += (clamp(d.yawRate() / 0.5, -1, 1) * 0.35 - lean) * Math.min(1, dt * 1.5)
-      const h = d.heading() + lean, w = mode === 'mount' ? smoothstep(mt / 1.3, 0, 1) : mode === 'dismount' ? 1 - smoothstep(mt / 0.9, 0, 1) : 1
+      if (ctx.time - (track.at(-1)?.[0] ?? -9) >= 1) { const p = d.holder.position; track.push([+ctx.time.toFixed(1), Math.round(p.x), Math.round(p.y), Math.round(p.z), d.state]); if (track.length > 120) track.shift() }
+      // Chase camera behind and above the rider, half-following its bank and climb so the wings keep their place in the frame;
+      // blended in from where the walking camera was over the mount (arcing over the wing), and back out over the hop down.
+      lean += (clamp(d.yawRate() / 0.5, -1, 1) * 0.3 - lean) * Math.min(1, dt * 1.5)
+      const w = mode === 'mount' ? smoothstep(mt / 1.3, 0, 1) : mode === 'dismount' ? 1 - smoothstep(mt / 0.9, 0, 1) : 1
+      qCam.setFromAxisAngle(up, d.heading() + lean).slerp(d.holder.quaternion, 0.6)
       seat()
-      v.set(seatW.x - Math.sin(h) * 5.5, seatW.y + 3, seatW.z - Math.cos(h) * 5.5)
-      look.set(seatW.x + Math.sin(h) * 12, seatW.y + 0.5, seatW.z + Math.cos(h) * 12)
+      v.set(0, 2.8, -4.5).applyQuaternion(qCam).add(seatW)
+      look.set(0, 0.6, 12).applyQuaternion(qCam).add(seatW)
       if (sideCam) { v.set(1, 0, 0).applyQuaternion(d.holder.quaternion).multiplyScalar(9).add(seatW); v.y += 1.5; look.copy(seatW) }
       v.y = Math.max(v.y, ctx.heightAt(v.x, v.z) + 2)
       camPos.lerp(v, mode === 'mount' ? 1 : 1 - Math.exp(-dt * 10)) // on the ground it sits on its mark; w alone blends it in
-      camWas.copy(camera.position); qWas.copy(camera.quaternion)
-      camera.position.copy(camPos); camera.lookAt(look); qMine.copy(camera.quaternion)
-      camera.position.lerpVectors(camWas, camPos, w).y += 4 * Math.sin(Math.PI * w); // over the wing, not through it
+      if (mode !== 'mount') camWas.copy(camera.position), qWas.copy(camera.quaternion) // the hop down hands back to hero.js's camera
+      camera.up.set(0, 1, 0).applyQuaternion(qCam); camera.position.copy(camPos); camera.lookAt(look); camera.up.set(0, 1, 0)
+      qMine.copy(camera.quaternion)
+      camera.position.lerpVectors(camWas, camPos, w).y += 4 * Math.sin(Math.PI * w) // over the wing, not through it
       camera.quaternion.slerpQuaternions(qWas, qMine, w)
     },
   }

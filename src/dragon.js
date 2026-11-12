@@ -33,7 +33,7 @@ export async function createDragon(ctx) {
   const ri = ctx.landmarks?.rockisle
   const trees = ctx.flora?.trees ?? []
   const towers = ctx.settlements?.towers ?? [{ x: -122, z: -390, r: 62, top: ctx.heightAt(-122, -396) + 60 }]
-  const lifted = [...trees, ...towers]
+  const lifted = [...trees, ...towers], solids = ri ? [ri, ...lifted] : lifted
   const gap = (o, x, y, z) => Math.max(Math.hypot(x - o.x, z - o.z) - o.r, y - o.top) // metres outside its cylinder (< 0 inside)
   // Lowest a flyer may be here: 6 m over a tree or tower within 12 m of it, falling off at 45° beyond, so it climbs over in time.
   const floorAt = (x, z) => { let f = -1e9; for (const o of lifted) f = Math.max(f, o.top + 6 - Math.max(0, Math.hypot(x - o.x, z - o.z) - o.r - 12)); return f }
@@ -123,7 +123,7 @@ export async function createDragon(ctx) {
     const h = ctx.heightAt(sx, sz)
     if (h < -3) return false
     for (const c of ctx.keepClear) if (Math.hypot(sx - c.x, sz - c.z) < c.r + 9) return false
-    for (const o of [...lifted, ...(ri ? [ri] : [])]) if (Math.hypot(sx - o.x, sz - o.z) < o.r + 12) return false
+    for (const o of solids) if (Math.hypot(sx - o.x, sz - o.z) < o.r + 12) return false
     for (let a = 0; a < 6.28; a += 0.785) {
       const ax = sx + 9 * Math.cos(a), az = sz + 9 * Math.sin(a)
       if ((ctx.pond?.inside(ax, az) ?? -1) > 0 || Math.abs(ctx.heightAt(ax, az) - h) > 2.5) return false
@@ -163,7 +163,6 @@ export async function createDragon(ctx) {
       return true
     },
     takeoff() { if (state === 'landed') { go('takeoff'); setClip('takeoff', true) } },
-    ride: null, // set below: true while someone sits on it
   }
 
   const ride = createRide(ctx, dragon)
