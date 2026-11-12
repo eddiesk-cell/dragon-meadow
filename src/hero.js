@@ -173,7 +173,7 @@ export async function createHero(ctx) {
     ray.set(from, seg.divideScalar(len)); ray.far = len + pad
     return ray.intersectObjects(list, false)[0]?.distance
   }
-  let scanT = 0, pulled = 0, frames = 0, behind = 0, inside = 0, trunkN = 0, rayMs = 0
+  let scanT = 0, pulled = 0, frames = 0, behind = 0, inside = 0, trunkN = 0, rayMs = 0, rayMax = 0
   // Grove trunks block like flagged meshes, as their real shape: the vinetree's own bark below 16.5 m (the buttress fins and
   // the open ground between them; its hanging vines, mask 1, left out), cut into 4 m cells so a short ray walks only the few
   // dozen triangles near it (three has no BVH), each tree placed by its own matrix. Only trees whose trunk is within 30 m of
@@ -218,7 +218,7 @@ export async function createHero(ctx) {
   const tt = camtest === 'tree' && trees.reduce((a, t) => !a || Math.hypot(t.x, t.z) < Math.hypot(a.x, a.z) ? t : a, null)
   const real = tt && new THREE.InstancedMesh(new THREE.BufferGeometry().setAttribute('position', flora.geometry.attributes.position).setIndex(keep), barkMat, 1)
   if (real) { real.instanceMatrix = flora.instanceMatrix; real.matrixWorld = flora.matrixWorld; real.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity) } // instances re-order every frame
-  let spots = null, spotT = 0, spotI = -1, cut = false
+  let spots = null, spotT = 0, spotI = -1, cut = false, one = params.get('spot') // ?spot=N holds spot N, camera straight at the trunk (for a still)
   const park = (x, z) => { pos.set(x, ctx.heightAt(x, z), z); cut = true }
   if (tt) park(tt.x + tt.r * 0.6 + 6, tt.z) // beyond every fin until its bark is placed
   const findSpots = () => {
@@ -241,14 +241,14 @@ export async function createHero(ctx) {
   }
 
   window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), strapSkin: strap?.skin.length ?? 0, strapLift: strap?.lift.map(x => +x.toFixed(3)),
-    cam: { blocks: blocks.length, trunks: trunkN, barkCells: barkCells.length, rayMs: +(rayMs / Math.max(frames, 1)).toFixed(3), pulled, frames, // frames: pulled in front of a block, goal behind one, camera inside one
+    cam: { blocks: blocks.length, trunks: trunkN, barkCells: barkCells.length, rayMs: +(rayMs / Math.max(frames, 1)).toFixed(3), rayMax: +rayMax.toFixed(2), pulled, frames, // frames: pulled in front of a block, goal behind one, camera inside one
       ...(camtest && { secs: +ctx.time.toFixed(1) }), ...(camtest && (tt ? { tree: [tt.x, tt.z].map(Math.round), trunkTris: keep.length / 3, spots: spots?.length, radii: spots && [Math.min(...spots.map(s => s[2])), Math.max(...spots.map(s => s[2]))], parked: spotI + 1, behind, inTrunk: inside } : { rocks: rocks.length, behind, inStone: inside })) },
     hold: held && { secs: +(ctx.time - held.t).toFixed(2), drift: +Math.max(...snap().map((q, i) => Math.abs(q - held.pose[i]))).toFixed(5) } })
 
   return {
     update(dt) {
       const [dx, dz] = act?.lockMove ? [0, 0] : dirOf()
-      if (spots?.length && (spotT -= dt) <= 0) { spotT = THREE.MathUtils.clamp(20 / spots.length, 0.1, 0.5); spotI++; park(...spots[spotI % spots.length]) } // every spot within ~20 s
+      if (spots?.length && (spotT -= dt) <= 0) { spotT = THREE.MathUtils.clamp(20 / spots.length, 0.1, 0.5); spotI++; park(...spots[(one ?? spotI) % spots.length]) } // 0.1 s a spot: all 353 in ~35 s
       const len = Math.hypot(dx, dz), moving = len > 0.01
       const speed = keys.has('shift') ? 5 : 1.6
       if (moving) {
@@ -295,7 +295,7 @@ export async function createHero(ctx) {
         const p = o.getWorldPosition(corner), d = Math.hypot(p.x - pos.x, p.z - pos.z)
         if (d < near) { near = d; R = Math.min(d + 2.5, 16); aimAt.copy(p) }
       }
-      if (near < Infinity) { yaw = Math.atan2(aimAt.x - pos.x, aimAt.z - pos.z) + (tt ? Math.sin(ctx.time * 2.3) : 0.5 * Math.sin(ctx.time * 0.9)); pitch = 0.05 + 0.1 * Math.abs(Math.sin(ctx.time * 0.6)) }
+      if (near < Infinity) { yaw = Math.atan2(aimAt.x - pos.x, aimAt.z - pos.z) + (tt ? (one ? 0 : Math.sin(ctx.time * 2.3)) : 0.5 * Math.sin(ctx.time * 0.9)); pitch = 0.05 + 0.1 * Math.abs(Math.sin(ctx.time * 0.6)) }
       const cp = Math.cos(pitch)
       camGoal.set(camTarget.x + Math.sin(yaw) * cp * R, camTarget.y + Math.sin(pitch) * R, camTarget.z + Math.cos(yaw) * cp * R)
       camGoal.y = Math.max(camGoal.y, ctx.heightAt(camGoal.x, camGoal.z) + 0.4)
@@ -329,11 +329,11 @@ export async function createHero(ctx) {
         if (f >= 1 || c <= 0.2) break
         camera.position.lerp(camTarget, 1 - Math.max(f * c, 0.2) / c); camera.lookAt(camTarget.x, camTarget.y + 0.3, camTarget.z)
       }
-      rayMs += performance.now() - t0
+      const ms = performance.now() - t0; rayMs += ms; rayMax = Math.max(rayMax, ms) // the camera rays' cost per frame: mean and worst
       frames++
       if (counting) { // independent check: the camera and its near-plane corners all on his side of every stone / trunk
         camera.updateMatrixWorld()
-        let hit = hitAt(checks, camTarget, camera.position, 0) !== undefined // against the real meshes, not the hulls or lathes
+        let hit = hitAt(checks, camTarget, camera.position, 0) !== undefined // against the real meshes, not the hulls or bark cells
         for (const [x, y] of CORNERS) hit ||= hitAt(checks, camTarget, corner.set(x, y, -1).unproject(camera), 0) !== undefined
         inside += hit
       }
