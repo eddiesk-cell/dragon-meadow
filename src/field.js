@@ -52,8 +52,8 @@ export async function createField(ctx) {
     let g = float(0)
     for (let i = 0; i < RINGS; i++) {
       const R = uRings.element(i), v = float(1).sub(saturate(uTime.sub(R.z).div(2))) // 1 at the step → 0 two seconds later
-      const k = length(w.sub(R.xy)).sub(float(1).sub(v.mul(v)).mul(2.9).add(0.15)).mul(3.5) // distance to the spreading edge, in ring widths
-      g = g.add(exp(k.mul(k).negate()).mul(v.mul(v)).mul(R.w))
+      const k = length(w.sub(R.xy)).sub(float(1).sub(v.mul(v)).mul(2.9).add(0.15)).mul(5) // distance to the spreading edge, in ring widths
+      g = g.add(exp(k.mul(k).negate()).mul(v.mul(1.6)).mul(R.w))
     }
     return g
   }
@@ -78,14 +78,16 @@ export async function createField(ctx) {
   }
 
   // One grass layer: `side`² blades on a `cell` lattice round the camera, alive between fadeIn and fadeOut metres.
-  function layer({ side, cell, segs, width, fadeIn, fadeOut, flowers, head, salt }) {
+  // With `head` it is a flower layer instead: a sparser lattice where a cell holds a thin stem + star head with chance
+  // `flowers`, so the 312k plain blades never pay for head vertices.
+  function layer({ side, cell, segs, width, fadeIn, fadeOut, flowers = 0, head = 0, salt }) {
     const t = [], s = [], hd = []
     for (let i = 0; i <= segs; i++) t.push(i / segs, i / segs), s.push(-1, 1), hd.push(0, 0)
-    // five-point star flower head (centre + 10 rim points); collapses to nothing on plain blades
-    for (let a = -1; a < 10; a++) { const rr = a < 0 ? 0 : a % 2 ? 0.42 : 1, an = a * Math.PI / 5 + Math.PI / 2; s.push(Math.cos(an) * rr), t.push((Math.sin(an) * rr + 1) / 2), hd.push(1) }
+    // five-point star head: centre + 10 rim points
+    if (head) for (let a = -1; a < 10; a++) { const rr = a < 0 ? 0 : a % 2 ? 0.42 : 1, an = a * Math.PI / 5 + Math.PI / 2; s.push(Math.cos(an) * rr), t.push((Math.sin(an) * rr + 1) / 2), hd.push(1) }
     const n = t.length, c0 = n - 11, idx = []
     for (let i = 0; i < segs; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2)
-    for (let a = 0; a < 10; a++) idx.push(c0, c0 + 1 + a, c0 + 1 + (a + 1) % 10)
+    if (head) for (let a = 0; a < 10; a++) idx.push(c0, c0 + 1 + a, c0 + 1 + (a + 1) % 10)
     const geo = new THREE.InstancedBufferGeometry() // must be Instanced: plain BufferGeometry ignores instanceCount
     geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3))
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => i % 3 === 1), 3))
@@ -110,10 +112,10 @@ export async function createField(ctx) {
       .mul(smoothstep(-36, -30, ground)).mul(float(1).sub(smoothstep(0.02, 0.2, g.y))) // no grass in the sea or down the cliff
     const alive = step(r(3), keep)
     const patch = lowNoise(world, 0.11, 0.07), bloom = lowNoise(world.add(57), 0.045, 0.06)
-    const under = step(r(4), 0.35) // short under-mat closes the gaps between tall crowns
-    const fl = step(r(6), bloom.mul(1.4).add(0.2).mul(flowers).mul(pt.y.mul(pt.y))).mul(float(1).sub(under)) // patchy wildflowers, few on trampled turf
+    const under = head ? float(0) : step(r(4), 0.35) // short under-mat closes the gaps between tall crowns
+    const fl = head ? step(r(6), bloom.mul(1.4).add(0.2).mul(flowers).mul(pt.y.mul(pt.y))) : float(0) // patchy wildflowers, few on trampled turf
     const H = mix(r(5).mul(0.45).add(0.6).mul(patch.mul(0.4).add(0.75)), r(5).mul(0.2).add(0.25), under)
-      .mul(mix(float(1), r(13).mul(0.3).add(0.75), fl)).mul(alive).mul(pt.y) // flower heads sit at mixed depths in the grass; pt.y tramples
+      .mul(mix(float(1), r(13).mul(0.3).add(0.75), fl)).mul(alive).mul(pt.y).mul(head ? fl : 1) // flower heads sit at mixed depths in the grass; pt.y tramples
 
     // --- wind: two travelling fronts (not a uniform wobble) + a light per-blade flutter; push away from the hero
     const along = dot(world, WIND), across = dot(world, vec2(-0.34, 0.94))
@@ -145,9 +147,9 @@ export async function createField(ctx) {
 
     // --- colour, per vertex: dark teal root → jade or fresh yellow-green blade (in broad drifts) → pale gold tip
     const drift = lowNoise(world.add(31), 0.06, 0.04)
-    const tipCol = mix(vec3(0.46, 0.42, 0.1), vec3(0.36, 0.44, 0.12), r(10).mul(patch))
-    const bodyCol = mix(vec3(0.025, 0.13, 0.08), vec3(0.08, 0.21, 0.025), smoothstep(0.3, 0.75, drift))
-    const grassCol = mix(vec3(0.012, 0.045, 0.04), mix(bodyCol, tipCol, smoothstep(0.55, 1, tt)), smoothstep(0, 0.5, tt).max(smoothstep(15, 60, dist)))
+    const tipCol = mix(vec3(0.36, 0.33, 0.07), vec3(0.27, 0.34, 0.08), r(10).mul(patch))
+    const bodyCol = mix(vec3(0.012, 0.09, 0.06), vec3(0.045, 0.15, 0.025), smoothstep(0.3, 0.75, drift))
+    const grassCol = mix(vec3(0.012, 0.045, 0.04), mix(bodyCol, tipCol, smoothstep(0.62, 1, tt)), smoothstep(0, 0.5, tt).max(smoothstep(15, 60, dist)))
       .mul(r(11).mul(0.3).add(0.85)).mul(lowNoise(world.add(13), 0.035, 0.05).mul(0.35).add(0.8)).mul(pt.w) // broad darker / lighter patches
     // small star flowers: mostly pale (white, blush pink, lilac), some warm gold and poppy red as in mix-day.png; gold heart
     const r12 = r(12)
@@ -159,8 +161,9 @@ export async function createField(ctx) {
     // --- glow: by day a gold sheen through the tips against the sun; by night the tips give back the day's light (teal → cyan),
     // a soft pool wakes round the hero's feet, and each footstep sends a ring of light out through the grass
     const tipW = smoothstep(0.45, 1, tt), sparkle = r(14)
-    const nightTip = mix(vec3(0.03, 0.5, 0.4), vec3(0.25, 1.0, 0.9), sparkle).mul(tipW.mul(tipW).mul(pow(sparkle, 3).mul(0.85).add(0.12)))
-    const wake = ringGlow(world).add(float(1).sub(smoothstep(0.3, 2.2, pd)).mul(0.28).mul(uNight)).mul(tt.mul(0.8).add(0.2))
+    const nightTip = mix(vec3(0.03, 0.5, 0.4), vec3(0.25, 1.0, 0.9), sparkle).mul(tipW.mul(tipW).mul(pow(sparkle, 4).mul(1.3).add(0.1)))
+    // rings and the pool only reach the near layers (a ring lives ≤ 2 s, so it never leaves the first 18 m)
+    const wake = fadeIn ? float(0) : ringGlow(world).add(float(1).sub(smoothstep(0.3, 2.2, pd)).mul(0.3).mul(uNight)).mul(tt.mul(tt)) // light runs along the tips
     const wakeCol = mix(vec3(0.75, 0.68, 0.35), vec3(0.25, 1.0, 0.8), uNight)
     const glow = mix(
       vec3(1, 0.8, 0.38).mul(back).mul(sparkle.mul(0.3).add(0.12)).mul(float(1).sub(uNight)).add(nightTip.mul(uNight).mul(0.55)).add(wakeCol.mul(wake)),
@@ -180,9 +183,14 @@ export async function createField(ctx) {
   }
 
   const layers = [
-    layer({ side: 400, cell: 0.09, segs: 5, width: 0.028, fadeIn: 0, fadeOut: 18, flowers: 0.05, head: 0.036, salt: 0 }),
-    layer({ side: 320, cell: 0.2, segs: 3, width: 0.07, fadeIn: 18, fadeOut: 32, flowers: 0.065, head: 0.06, salt: 100 }),
-    layer({ side: 224, cell: 0.7, segs: 2, width: 0.15, fadeIn: 32, fadeOut: 80, flowers: 0.08, head: 0.11, salt: 200 }),
+    layer({ side: 400, cell: 0.09, segs: 5, width: 0.028, fadeIn: 0, fadeOut: 18, salt: 0 }),
+    layer({ side: 320, cell: 0.2, segs: 3, width: 0.07, fadeIn: 18, fadeOut: 32, salt: 100 }),
+    layer({ side: 224, cell: 0.7, segs: 2, width: 0.15, fadeIn: 32, fadeOut: 80, salt: 200 }),
+  ]
+  const flowerLayers = [
+    layer({ side: 92, cell: 0.4, segs: 3, width: 0.028, fadeIn: 0, fadeOut: 18, flowers: 0.55, head: 0.036, salt: 300 }),
+    layer({ side: 110, cell: 0.6, segs: 2, width: 0.05, fadeIn: 18, fadeOut: 32, flowers: 0.6, head: 0.06, salt: 400 }),
+    layer({ side: 104, cell: 1.6, segs: 1, width: 0.1, fadeIn: 32, fadeOut: 80, flowers: 0.35, head: 0.11, salt: 500 }),
   ]
 
   // --- terrain: one mesh from heightAt; meadow green, rock on the cliff, darker under the near grass
@@ -217,7 +225,8 @@ export async function createField(ctx) {
 
   const blades = layers.reduce((a, l) => a + l.geometry.instanceCount, 0)
   const r2 = v => Math.round(v * 100) / 100
-  window.__probes.field = () => ({ blades, h0: r2(heightAt(0, 0)), crest: r2(heightAt(0, -200)), sea: r2(heightAt(0, -320)),
+  const flowerCells = flowerLayers.reduce((a, l) => a + l.geometry.instanceCount, 0)
+  window.__probes.field = () => ({ blades, flowerCells, h0: r2(heightAt(0, 0)), crest: r2(heightAt(0, -200)), sea: r2(heightAt(0, -320)),
     night: r2(uNight.value), rings: ringSlots.filter(s => uTime.value - s.z < 2).length, stepRings })
 
   // A ring for every ~0.8 m walked (a footfall), a brighter one on landing, and at night a slow pulse while standing.
