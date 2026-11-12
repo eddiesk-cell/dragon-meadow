@@ -341,9 +341,6 @@ export async function createCombat(ctx) {
   function autoFight() {
     dispatchEvent(new KeyboardEvent('keyup', { key: 'w' })) // hero.js holds W for any ?auto=; the script steers itself
     const key = (k, down) => dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { key: k }))
-    // When each troll attack lands, game seconds after it starts (monster.js ATTACKS: windT + (h0 - wind) / fast).
-    // shortcut: reads the attack's name from the monster's probe; ask the monster lane for ctx.monster.attack.name if it moves.
-    const LANDS = { smash: 1.38, slam: 1.38, kick: 0.82, punch: 0.63 }
     let placed = false, rest = null, won = null, atkN = 0, atkT = 0, lands = 0.8, plan = null, prev = ''
     const walkKeys = new Set()
     const steer = (on = []) => { for (const k of ['w', 'a', 's', 'd', 'shift']) if (on.includes(k) !== walkKeys.has(k)) { key(k, on.includes(k)); on.includes(k) ? walkKeys.add(k) : walkKeys.delete(k) } }
@@ -376,7 +373,7 @@ export async function createCombat(ctx) {
       // Each troll attack: the first rolled through just before it lands, the rest blocked and punished.
       if (m.state === 'attack' && prev !== 'attack') {
         atkN++; atkT = 0; plan = atkN === 1 ? 'roll' : 'guard' // roll through the first, then block and punish
-        lands = LANDS[window.__probes.monster?.().attack] ?? 0.8
+        lands = m.attack.lands || 0.8 // game seconds from its start to its hit window (monster.js publishes it)
       }
       prev = m.state
       if (m.state === 'attack') {
