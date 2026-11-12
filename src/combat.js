@@ -3,7 +3,7 @@
 // his feet on the ground). Keys: R draw/sheathe · J or click attack (3-hit combo; hold = heavy swing) · K block · L roll.
 // ?auto=fight plays a scripted fight against the troll through the same entry points the keys use.
 export async function createCombat(ctx) {
-  const { THREE, scene, camera, params, heroAct, heroRig, heroPos: hero } = ctx
+  const { THREE, camera, params, heroAct, heroRig, heroPos: hero } = ctx
   if (!heroAct || !heroRig) throw new Error('needs ctx.heroAct and ctx.heroRig (sword props missing?)')
   const { sword, sheath, rightHand, model } = heroRig
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
@@ -235,7 +235,7 @@ export async function createCombat(ctx) {
   function knock(dx, dz, d) { const l = Math.hypot(dx, dz) || 1; hero.x += dx / l * d; hero.z += dz / l * d }
   function die() {
     dead = true
-    act('dead', 'Death (Collapse)', { fade: 0.1, lockMove: true, speed: 0.75 }).then(() => setTimeout(respawn, 1200))
+    act('dead', 'Death (Collapse)', { fade: 0.1, lockMove: true, speed: 0.6 }).then(respawn) // heroAct cannot hold a pose: up again at the rim
   }
   function respawn() {
     const r = ctx.ring, m = ctx.monster
