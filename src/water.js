@@ -9,7 +9,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import {
   reflector, texture, uniform, vec2, vec3, vec4, float, positionWorld, positionView, cameraPosition, cameraWorldMatrix,
   cameraNear, cameraFar, viewportDepthTexture, perspectiveDepthToViewZ, mx_noise_float, normalize, length, mix, max,
-  smoothstep, pow, exp, step, viewportSharedTexture, getScreenPosition, cameraViewMatrix, cameraProjectionMatrix,
+  smoothstep, pow, exp, viewportSharedTexture, getScreenPosition, cameraViewMatrix, cameraProjectionMatrix,
 } from 'three/tsl'
 
 // C, S: the patch square over the hollow below the rock island (field.js's ground dips to −1.9 m round (20, −60)).
@@ -122,10 +122,12 @@ export async function createWater(ctx) {
   let hitAt = vec3(0), found = float(0)
   for (const t of [1, 2.5, 4.5, 7, 10, 14, 19, 26]) {
     const p = positionWorld.add(r.mul(t)), g = pond(p.xz)
-    const hit = step(g.x, 0).mul(step(p.y, g.y.add(0.9))).mul(float(1).sub(found))
+    // soft at the shore and at the grass tops, so the band's edge never steps with the march
+    const hit = smoothstep(-0.5, 0.5, g.x.negate()).mul(smoothstep(0, 0.35, g.y.add(0.9).sub(p.y))).mul(float(1).sub(found))
     hitAt = hitAt.add(vec3(p.x, max(p.y, g.y.add(0.3)), p.z).mul(hit))
     found = found.add(hit)
   }
+  hitAt = hitAt.div(max(found, 1e-3))
   const turf = viewportSharedTexture(getScreenPosition(cameraViewMatrix.mul(vec4(hitAt, 1)).xyz, cameraProjectionMatrix).clamp(0, 1)).rgb
   const seen = mix(mirror.rgb, turf.mul(0.7), found).mul(vec3(0.82, 0.9, 0.88))
   // fog off: the mirror image already carries the haze of the whole path, eye → water → object
@@ -152,7 +154,7 @@ export async function createWater(ctx) {
   const kit = await new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'models/world/town-kit.glb')
   const proto = kit.scene.getObjectByName('lantern')
   const lanterns = []
-  for (const a of [1.05, 1.57, 2.09, 2.62, 3.4, 3.67, 5.9, 6.02]) { // world bearings from the deepest water: near shore, then far ends
+  for (const a of [1.05, 1.57, 2.62, 3.4, 3.67, 5.9, 6.02]) { // world bearings from the deepest water: near shore (none on the walk north from the start), far ends
     let r = 0
     while (inside(deep.x + Math.cos(a) * r, deep.z + Math.sin(a) * r) > 0) r += 0.25
     const x = deep.x + Math.cos(a) * (r + 2.5), z = deep.z + Math.sin(a) * (r + 2.5)
@@ -169,7 +171,7 @@ export async function createWater(ctx) {
   ctx.pond = { x: deep.x, z: deep.z, level: LEVEL, inside } // inside(x, z) > 0: water there
   let wade = 0, frames = 0, lastNow = 0, hitch = 0 // wade: deepest the hero's feet have been under the surface
   const r1 = v => Math.round(v * 10) / 10
-  window.__probes.water = () => ({ level: LEVEL, area: Math.round(area), edge, lanterns: lanterns.length, circles: circles.length,
+  window.__probes.water = () => ({ level: LEVEL, area: Math.round(area), edge, lanterns: lanterns.map(l => [r1(l.position.x), r1(l.position.z)]), circles: circles.length,
     deep: [r1(deep.x), r1(deep.z)], wade: Math.round(wade * 100) / 100, hitchMs: Math.round(hitch), heroIn: r1(inside(ctx.heroPos.x, ctx.heroPos.z)) })
 
   return {
