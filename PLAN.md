@@ -632,3 +632,28 @@ From the monster and combat reviews:
 
 Contract additions (2026-11-13): `combat` also writes `ctx.heroPos` (rolls, lunges, knock-backs, respawn) — hero.js reads the
 same Vector3. Any mesh the camera must not pass through sets `userData.cameraBlock = true`.
+
+## Wave B follow-ups (2026-11-13, from the field6 / landmarks / water / skyisles reviews)
+
+Contract rows added: `landmarks` (writer: landmarks) = `{ rockisle {x, z, y, r, top}, egg {x, z, y}, crestStone {x, z, y} }`;
+`pond` (writer: water) = `{ x, z, level, inside(x, z) }`, inside > 0 means water there. The dragon's figure-eight now
+slides sideways off the rock island and skirts its apron (orchestrator, src/dragon.js; probe `dragon.isleGap` ≥ 8 m).
+Skyisles keeps the islands in the open sky left of the rock (option a); no move needed.
+
+### Lane field-carve — `src/field.js` (Opus)
+Today the field has ONE ground patch (ring owns it), so water cannot lower the ground and paints its surface over the
+turf and grass instead (`shortcut:` in water.js), and it finds the grass by guessing its `aOffset` attribute.
+- `ctx.addGroundPatch(x0, z0, sizeM)` → `{ tex, size }`, same texel layout as `ctx.groundPatch` (metres added, grass
+  height ×, bare 0..1, light ×). Callable after field's create (water loads later). Up to 4 patches; terrain, grass,
+  flowers and `heightAt` all read every patch. `ctx.groundPatch` keeps working unchanged for ring.
+- Publish `ctx.grass = { blades, flowers }` (the two meshes).
+- **CHECK:** `?carvetest=1` makes field itself add a 20 m patch at (0, −30) holding −2 m and grass ×0 inside r 6:
+  probe `field.patches` = 2 and `heightAt(0,-30)` 2 m below its value without carvetest; the shot shows a bare dip with
+  no blades; the ring's trampled circle still shows (`auto=fight`); `controls-check` 7/7; fps ≥ 50.
+
+### Lane water2 — `src/water.js` (Opus, after field-carve passes)
+- Carve the pond with `ctx.addGroundPatch` (bed −1.2 m, grass ×0 under water, damp bank) and draw the water as a plain
+  depth-tested surface; remove the paint-over and the `aOffset` search (use `ctx.grass` for the mirror pass).
+- **CHECK:** `shots/water2-shore-{day,night}.png` from the shore camera: the bank meets the water without a painted
+  edge, no upside-down grass in the reflection, the lanterns doubled; the hero walking in (`auto=walk` into the pond)
+  sinks to the knees at most; errors []; fps ≥ 50.
