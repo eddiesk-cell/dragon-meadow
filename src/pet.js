@@ -3,7 +3,7 @@
 // strands are cut per fragment from a hashed 3-D cell of the UNdisplaced surface point, so when the shells comb with
 // motion, wind and gravity the strands lean together instead of smearing.
 import {
-  uniform, attribute, varying, vec3, float, color, floor, fract, sin, dot, length, normalize, mix, smoothstep, step, max, pow, abs,
+  uniform, attribute, varying, vec3, float, color, floor, fract, sin, dot, length, normalize, mix, smoothstep, step, max, pow, abs, fwidth,
   positionGeometry, normalGeometry, normalView, positionViewDirection,
 } from 'three/tsl'
 
@@ -30,10 +30,11 @@ export async function createPet(ctx) {
   const ft = f.sub(nb.mul(dot(f, nb))) // offset from the strand centre, in the surface plane
   const tuft = sin(pb.x.mul(70).add(sin(pb.y.mul(55)).mul(2))).mul(sin(pb.z.mul(64).add(sin(pb.x.mul(48)).mul(1.7)))).mul(0.18).add(0.82)
   const len = h.mul(0.45).add(0.55).mul(tuft) // per-strand length, clumped into tufts → ragged fluffy outline
-  fur.opacityNode = max(step(length(ft), float(0.56).mul(float(1).sub(pow(kv.div(len), 1.6)))), step(kv, 0.001)) // full strands that taper late; shell 0 is solid skin
+  const fill = smoothstep(0.35, 1.2, length(fwidth(q))) // strands thinner than a pixel → fatten them into a soft volume instead of sparkling
+  fur.opacityNode = max(step(length(ft), float(0.56).mul(float(1).sub(pow(kv.div(len), 1.6))).add(fill.mul(0.22))), step(kv, 0.001)) // full strands that taper late; shell 0 is solid skin
   fur.alphaTest = 0.5
   const coat = mix(color(0xfbf2e4), color(0xf9b49c), varying(attribute('aTint', 'float'))) // cream, peach blush
-  fur.colorNode = mix(coat.mul(color(0xc4ab92)), coat, max(smoothstep(0, 0.7, kv), float(1).sub(varying(L).mul(25)))).mul(h.mul(0.12).add(0.94)) // warm shaded roots → light tips (short fur stays light)
+  fur.colorNode = mix(coat.mul(color(0xc4ab92)), coat, max(max(smoothstep(0, 0.7, kv), float(1).sub(varying(L).mul(25))), fill)).mul(h.mul(0.12).add(0.94)) // warm shaded roots → light tips (short fur stays light)
   fur.emissiveNode = coat.mul(pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 3).mul(kv).mul(0.3)) // soft halo where light skims the tips
 
   const aK = new THREE.InstancedBufferAttribute(Float32Array.from({ length: SHELLS }, (_, i) => i / (SHELLS - 1)), 1)
@@ -168,10 +169,9 @@ export async function createPet(ctx) {
       const dx = p.x - heroPos.x, dz = p.z - heroPos.z, dh = Math.hypot(dx, dz), lim = Math.min(Math.max(dh, 0.9), 2.8)
       if (dh !== lim && dh > 1e-4) { p.x = heroPos.x + (dx / dh) * lim; p.z = heroPos.z + (dz / dh) * lim }
 
-      // face where it goes, glancing back at him now and then; when slow, look at him (or at the flower)
+      // face where it goes; when slow, look at him (or at the flower)
       const sp = Math.hypot(v.x, v.z), look = mode === 'sniff' ? sniffAt : heroPos
-      const atLook = Math.atan2(look.x - p.x, look.z - p.z), go = Math.atan2(v.x, v.z), glance = Math.max(0, Math.sin(t * 0.9) - 0.6) * 2
-      const want = sp > 0.35 ? go + wrap(atLook - go) * (mode === 'sniff' ? 0 : glance) : atLook
+      const want = sp > 0.35 ? Math.atan2(v.x, v.z) : Math.atan2(look.x - p.x, look.z - p.z)
       const dy = wrap(want - yaw) * Math.min(1, dt * 5)
       yaw += dy
       root.position.copy(p)
@@ -185,7 +185,7 @@ export async function createPet(ctx) {
       const atSpot = mode === 'sniff' && p.distanceTo(sniffAt) < 0.35
       sniffDip += ((atSpot ? 1 : 0) - sniffDip) * Math.min(1, dt * 4)
       body.rotation.x = Math.max(-0.25, Math.min(0.35, fwdV * 0.12)) + sniffDip * (0.45 + 0.05 * Math.sin(t * 22))
-      body.rotation.z = -dy / Math.max(dt, 1e-3) * 0.06
+      body.rotation.z = Math.max(-0.3, Math.min(0.3, -dy / Math.max(dt, 1e-3) * 0.06)) // bank into turns
       body.position.y = sniffDip * 0.02 * Math.sin(t * 22)
 
       // ears flap gently to stay aloft, trail back with speed, droop as it nose-dives, twitch on cue
