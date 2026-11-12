@@ -1,6 +1,7 @@
 #!/bin/bash
-# The lantern-cap's rig step: tools/bestiary/studio-rig.sh <id> rig, but with autorig-py.sh as the autorig's python.
-# Run from the repo root on the desk (needs ssh to guru-studio). Then: tools/bestiary/studio-rig.sh lantern-cap clips ...
+# The lantern-cap, end to end: tools/bestiary/studio-rig.sh's rig step with autorig-py.sh as the autorig's python, then
+# its clips step. Offsets: forearms and hands swing out (the long hands met in front of the groin), head and neck nod
+# 22 deg (the borrowed Idle tipped the head 16 deg back). Run from anywhere on the desk (needs ssh to guru-studio).
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 A=art/bestiary/lantern-cap; R="~/dm-rig/bestiary/lantern-cap"; B=/Applications/Blender.app/Contents/MacOS/Blender
@@ -15,3 +16,5 @@ ssh -4 guru-studio "cd $R && cp ../../hero/{fbx2blend,skel_tex,overlay_draw}.py 
 rsync -a guru-studio:dm-rig/bestiary/lantern-cap/rig.markers.png $A/markers.png
 rsync -a guru-studio:dm-rig/bestiary/lantern-cap/skel-small.png $A/skeleton.png
 rsync -a guru-studio:dm-rig/bestiary/lantern-cap/rig.markers.json $A/markers-auto.json
+tools/bestiary/studio-rig.sh lantern-cap clips "Idle" "Walk" "Crouch Walk" "Conjure" "Throw" "Punch (Cross)" "Hit (Front)" "Death (Collapse)" -- \
+  leftUpperArm=Y,-8 rightUpperArm=Y,8 leftLowerArm=Y,-22 rightLowerArm=Y,22 leftHand=Y,-15 rightHand=Y,15 neck=X,8 head=X,14

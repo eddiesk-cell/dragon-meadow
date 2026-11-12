@@ -3,7 +3,8 @@
 # instead of 0.16 m. The cap hangs 0.12 m above the arms and reaches 0.66 m behind the neck, so the stock window
 # averaged cap into the shoulder and pulled it 0.18 m behind the body (and its weights onto the cap). And the finger
 # finder takes every triangle past the wrist, so the cap rim above the hand became a 'pinky': only the hand's own
-# height band (wrist z +-0.126 m) goes to it.
+# height band (wrist z +-0.126 m) goes to it. Last, the weight net gave ~45% of the cap to Hips (it is 0.6 m from any
+# bone), so the cap folded in Crouch Walk and Hit: the cap is all Head, and the face blends to Head over 4 cm above it.
 # Run on the Studio: AUTORIG_PY=$PWD/autorig-py.sh ~/dm-rig/tools/rig/autorig.sh clean.glb rig.fbx --markers markers-fixed.json
 # shortcut: the 0.03 (of height) window fits limbs thinner than ~0.1 m only; drop this shim if core.py learns to skip a hat.
 exec ~/dm-rig/venv/bin/python - "$@" <<'PY'
@@ -16,5 +17,11 @@ core.find_digits = lambda V, T, J, side, s: fd(V, T[(abs(V[T][:, :, 2] - J[side 
 src, dst, mk = sys.argv[2:5]
 d = np.load(src)
 r = core.solve(d["verts"], d["tris"], json.load(open(mk)) if mk != "-" else None, png=os.path.splitext(dst)[0] + "_markers.png")
+V, J, W = d["verts"], r["joints"], r["weights"]; hz = J["Head"][2]
+far = np.hypot(V[:, 0] - J["Neck"][0], V[:, 1] - J["Neck"][1]) > 0.13
+f = np.where(far & (V[:, 2] > hz + 0.005), 1.0, core.smoothstep((V[:, 2] - hz) / 0.04))[:, None]
+head = np.zeros_like(W); head[:, r["bones"].index("Head")] = 1
+r["weights"] = core.top4((1 - f) * W + f * head)
+print("autorig shim: cap+face on Head:", int((f[:, 0] > 0.99).sum()), "verts")
 np.savez(dst, weights=r["weights"], meta=np.array(json.dumps({k: r[k] for k in ("joints", "markers", "notes", "frame", "bones")})))
 PY
