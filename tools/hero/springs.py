@@ -147,8 +147,11 @@ for lb in (0, 1):
     uu[m] = dist[m] / dmax; mb[m] = 3 * np.minimum(uu[m], 1); fix |= m & (uu > 0.9); own[m] = lb
     chains[("bandana_upper", "bandana_lower")[lb]] = dict(parent="head", A=A, m=m, nb=3)
 own[free] = np.argmax(ind, 0)[free]
-mb = spread(mb, bd, 150, fixed=fix)
-print(f"SPRINGS bandana: band {band.sum()} verts on the head, knot {free.sum()} verts give with the tails (max mb {mb[free].max():.2f})")
+# where the knot switches from hanging off one tail to the other it gives with neither: neighbours there would otherwise
+# follow different tails and split apart
+seam_k = free & (np.abs(ind[0] - ind[1]) < 0.25 * (ind[0] + ind[1]))
+mb = spread(mb, bd, 150, fixed=fix | seam_k)
+print(f"SPRINGS bandana: band {band.sum()} verts on the head, knot {free.sum()} verts give with the tails (max mb {mb[free].max():.2f}), {seam_k.sum()} between the tails hold still")
 for lb, nm in enumerate(("bandana_upper", "bandana_lower")):
     ch = chains[nm]; m = ch["m"]
     J = [ch["A"]] + [co[m & (np.abs(mb - c) < 0.25)].mean(0) for c in (1.5, 2.5)] + [co[m & (uu > 0.9)].mean(0)]  # joints mid-blend
