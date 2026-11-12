@@ -51,10 +51,9 @@ def relief(X, Y):
     ym = -.535 + .02 * (ax / .3) ** 2  # the mouth's line: corners lifted a hair, at peace
     d += .25 * g((Y - ym - .065) / .04) * ss(.34, .24, ax) + .3 * g((Y - ym + .07) / .05) * ss(.3, .2, ax)  # lips
     d += .55 * g(sqrt((X / .3) ** 2 + ((Y + .83) / .12) ** 2))                              # chin
-    ex, ey, ea, eb = (ax - .36) * FACE_W, (Y - .17) * FACE_H, .25 * FACE_W, .1 * FACE_H  # in metres
-    e = sqrt((ex / ea) ** 2 + (ey / eb) ** 2) + 1e-6
-    rim = abs(e - 1) / (sqrt((ex / ea ** 2) ** 2 + (ey / eb ** 2) ** 2) / e + 1e-6)  # ~ metres from the almond's edge
-    line = max(ss(.2, .1, rim),                                                                # almond eye rims
+    ex, ey, ea = (ax - .36) * FACE_W, (Y - .16) * FACE_H, .2 * FACE_W  # in metres
+    lid = abs(ey + .25 * (1 - (ex / ea) ** 2)) if abs(ex) < ea else 9.  # the closed lid: a sagging arc
+    line = max(ss(.17, .08, lid) * ss(1., .8, abs(ex) / ea),                                    # closed eyes
                ss(.065, .03, abs(sqrt(X * X + (Y - .68) ** 2) - .12)), ss(.05, .02, sqrt(X * X + (Y - .68) ** 2)),  # brow sigil
                ss(.05, .025, abs(Y - ym)) * ss(.3, .24, ax))                                # the mouth
     d -= .5 * g((Y - ym) / .02) * ss(.34, .26, ax)                                             # mouth groove
@@ -138,7 +137,7 @@ vs = np.array(V)
 tris = sum(len(p.vertices) - 2 for p in me.polygons)
 print(f"CRESTSTONE stone {np.ptp(vs[:, 0]):.1f} wide x {np.ptp(vs[:, 2]):.1f} deep, y {vs[:, 1].min():+.1f}..{vs[:, 1].max():.1f} m, "
       f"tris {tris}, carved-line verts {sum(a > .5 for a in A)}, nose out {vs[:, 2].max() - 3.6:.2f} m past the slab")
-assert 20 <= vs[:, 1].max() <= 23 and sum(a > .5 for a in A) > 300
+assert 20 <= vs[:, 1].max() <= 23 and sum(a > .5 for a in A) > 150  # the cut lines exist
 
 os.makedirs(out_dir, exist_ok=True)
 ob.select_set(True)
