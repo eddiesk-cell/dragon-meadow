@@ -9,7 +9,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import {
   reflector, texture, uniform, vec2, vec3, vec4, float, positionWorld, positionView, cameraPosition, cameraWorldMatrix,
   cameraNear, cameraFar, viewportDepthTexture, perspectiveDepthToViewZ, mx_noise_float, normalize, length, mix, max,
-  smoothstep, pow, exp,
+  smoothstep, pow, exp, step, viewportSharedTexture, getScreenPosition, cameraViewMatrix, cameraProjectionMatrix,
 } from 'three/tsl'
 
 // C, S: the patch square over the hollow below the rock island (field.js's ground dips to −1.9 m round (20, −60)).
@@ -18,6 +18,7 @@ const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
 
 export async function createWater(ctx) {
   const { THREE, scene } = ctx
+  if (ctx.params.get('water') === '0') return null // A/B for fps and look
   const P = ctx.addGroundPatch(C.x - S / 2, C.z - S / 2, S), N = P.size, NN = N * N, cell = S / N, x0 = C.x - S / 2, z0 = C.z - S / 2
   const X = o => x0 + (o % N + 0.5) * cell, Z = o => z0 + (Math.floor(o / N) + 0.5) * cell
 
@@ -51,17 +52,17 @@ export async function createWater(ctx) {
   const din = chamfer(1), dout = chamfer(0), e = new Float32Array(NN)
   for (let o = 0; o < NN; o++) e[o] = (wet[o] ? din[o] - 0.5 : 0.5 - dout[o]) * cell
 
-  // --- the carve: bed deepens fast from the shore (natural depth n → BED), so the contour stays the shoreline;
-  // no grass under water; a damp, short-grassed bank for the first metre or two
+  // --- the carve: the shallows keep the meadow's own gentle slope (so the shoreline is its smooth contour, not the
+  // terrain mesh's 2 m triangles), then the bed falls away to BED m; no grass under water; a dark damp bank
   const put = THREE.DataUtils.toHalfFloat, pd = P.tex.image.data
   let area = 0
   for (let o = 0; o < NN; o++) {
     const n = LEVEL - h[o], out = -e[o], k = o * 4
     if (wet[o]) area += cell * cell
-    pd[k] = put(wet[o] ? Math.min(0, n - BED * (1 - Math.exp(-n / 0.15))) : 0)
+    pd[k] = put(wet[o] ? Math.min(0, n - BED * ss(0.4, 7, e[o])) : 0)
     pd[k + 1] = put(wet[o] ? 0 : ss(0.2, 1.6, out))
-    pd[k + 2] = put(wet[o] ? 0.55 : 0.2 * (1 - ss(0, 1, out)))
-    pd[k + 3] = put(wet[o] ? 0.55 : 0.68 + 0.32 * ss(0, 2.5, out))
+    pd[k + 2] = put(0)
+    pd[k + 3] = put(wet[o] ? 0.45 : 0.7 + 0.3 * ss(0, 2.5, out))
   }
   P.tex.needsUpdate = true
 
@@ -84,21 +85,23 @@ export async function createWater(ctx) {
   }
   const deep = circles[0] || { x: C.x, z: C.z }
 
-  // the shader's map: metres inside the shore
+  // the shader's map: (metres inside the shore, ground height)
   const md = new Uint16Array(NN * 4)
-  for (let o = 0; o < NN; o++) md[o * 4] = put(e[o])
+  for (let o = 0; o < NN; o++) md[o * 4] = put(e[o]), md[o * 4 + 1] = put(h[o])
   const map = new THREE.DataTexture(md, N, N, THREE.RGBAFormat, THREE.HalfFloatType)
   map.magFilter = map.minFilter = THREE.LinearFilter
   map.needsUpdate = true
 
   // --- the surface
   const uTime = uniform(0), uSky = uniform(new THREE.Color()), uNight = uniform(0)
-  const wp = positionWorld.xz, wetAt = texture(map, wp.sub(vec2(x0, z0)).div(S)).level(0).x
+  const pond = xz => texture(map, xz.sub(vec2(x0, z0)).div(S)).level(0), wp = positionWorld.xz
   const ripple = vec2( // slow, faint: the pond is a mirror that breathes
     mx_noise_float(vec3(wp.mul(0.45), uTime.mul(0.35))), mx_noise_float(vec3(wp.mul(0.45).add(31.7), uTime.mul(0.35))),
   ).add(vec2(mx_noise_float(vec3(wp.mul(1.6), uTime.mul(0.9))), mx_noise_float(vec3(wp.mul(1.6).add(7.3), uTime.mul(0.9)))).mul(0.4))
   const toCam = cameraPosition.sub(positionWorld), dist = length(toCam)
-  const mirror = reflector({ resolutionScale: 0.5 })
+  // Same samples and depth attachment as post.js's scene pass, so the mirror pass reuses its render pipelines instead of
+  // compiling a second set for everything it sees (that compile stalled the page for seconds after load).
+  const mirror = reflector({ resolutionScale: 0.5, samples: ctx.renderer.samples, depth: true })
   mirror.target.rotateX(-Math.PI / 2)
   mirror.target.position.set(deep.x, LEVEL, deep.z)
   scene.add(mirror.target)
@@ -112,10 +115,23 @@ export async function createWater(ctx) {
   const T = exp(length(under.sub(positionWorld)).mul(-2.5))
   const body = vec3(0.012, 0.045, 0.04).mul(uSky.mul(1.4))
   const alpha = float(1).sub(float(1).sub(R).mul(T))
+  // The mirror leaves out the grass (below), so a reflected ray that would end in the far bank's grass sees sky instead,
+  // a bright seam at the waterline: march it over the map, and where it leaves the water below the grass tops, show the
+  // bank as it is on screen (blurred grass colour, never upside-down blades).
+  const r = normalize(positionWorld.sub(cameraPosition)).mul(vec3(1, -1, 1))
+  let hitAt = vec3(0), found = float(0)
+  for (const t of [1, 2.5, 4.5, 7, 10, 14, 19, 26]) {
+    const p = positionWorld.add(r.mul(t)), g = pond(p.xz)
+    const hit = step(g.x, 0).mul(step(p.y, g.y.add(0.9))).mul(float(1).sub(found))
+    hitAt = hitAt.add(vec3(p.x, max(p.y, g.y.add(0.3)), p.z).mul(hit))
+    found = found.add(hit)
+  }
+  const turf = viewportSharedTexture(getScreenPosition(cameraViewMatrix.mul(vec4(hitAt, 1)).xyz, cameraProjectionMatrix).clamp(0, 1)).rgb
+  const seen = mix(mirror.rgb, turf.mul(0.7), found).mul(vec3(0.82, 0.9, 0.88))
   // fog off: the mirror image already carries the haze of the whole path, eye → water → object
   const m = new THREE.MeshBasicNodeMaterial({ transparent: true, fog: false })
-  m.colorNode = mirror.rgb.mul(vec3(0.82, 0.9, 0.88)).mul(R).add(body.mul(float(1).sub(T)).mul(float(1).sub(R))).div(alpha)
-  m.opacityNode = alpha.mul(smoothstep(0, 0.05, float(LEVEL).sub(under.y))).mul(smoothstep(-0.3, 0.3, wetAt))
+  m.colorNode = seen.mul(R).add(body.mul(float(1).sub(T)).mul(float(1).sub(R))).div(alpha)
+  m.opacityNode = alpha.mul(smoothstep(0, 0.05, float(LEVEL).sub(under.y))).mul(smoothstep(-0.3, 0.3, pond(wp).x))
   const surface = new THREE.Mesh(new THREE.PlaneGeometry(S, S).rotateX(-Math.PI / 2), m)
   surface.position.set(C.x, LEVEL, C.z)
   surface.renderOrder = -1 // first among the see-through things, so motes, fur and effects still draw over it
@@ -151,13 +167,16 @@ export async function createWater(ctx) {
 
   for (const c of circles) ctx.keepClear.push({ x: c.x, z: c.z, r: c.r + 2 })
   ctx.pond = { x: deep.x, z: deep.z, level: LEVEL, inside } // inside(x, z) > 0: water there
-  let wade = 0 // deepest the hero's feet have been under the surface
+  let wade = 0, frames = 0, lastNow = 0, hitch = 0 // wade: deepest the hero's feet have been under the surface
   const r1 = v => Math.round(v * 10) / 10
   window.__probes.water = () => ({ level: LEVEL, area: Math.round(area), edge, lanterns: lanterns.length, circles: circles.length,
-    deep: [r1(deep.x), r1(deep.z)], wade: Math.round(wade * 100) / 100, heroIn: r1(inside(ctx.heroPos.x, ctx.heroPos.z)) })
+    deep: [r1(deep.x), r1(deep.z)], wade: Math.round(wade * 100) / 100, hitchMs: Math.round(hitch), heroIn: r1(inside(ctx.heroPos.x, ctx.heroPos.z)) })
 
   return {
     update(dt, t) {
+      const now = performance.now()
+      if (++frames > 30) hitch = Math.max(hitch, now - lastNow) // after load: does the mirror ever stall the page?
+      lastNow = now
       uTime.value = t
       uSky.value.copy(ctx.fogColor)
       uNight.value = ctx.night
