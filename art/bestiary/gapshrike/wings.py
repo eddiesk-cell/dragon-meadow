@@ -155,12 +155,16 @@ elif MODE == "attach":
               f"{[int(((w[:, None] * B)[:, k] > 0.25).sum()) for k in range(len(bones))]}")
     for n in names[len(me.vertex_groups):]:
         me.vertex_groups.new(name=n)
-    for v in me.data.vertices:                      # 4 strongest, normalised
-        i = v.index; top = np.argsort(W[i])[-4:]; top = top[W[i, top] > 1e-4]; tot = W[i, top].sum()
-        for g in list(v.groups):
-            me.vertex_groups[g.group].remove([i])
-        for j in top:
-            me.vertex_groups[int(j)].add([i], float(W[i, j] / tot), "REPLACE")
+    everyone = list(range(len(P)))
+    for g in me.vertex_groups:                      # clear first: removing inside a v.groups loop skips every other one
+        g.remove(everyone)
+    top = np.argsort(W, 1)[:, -4:]                  # 4 strongest, normalised
+    Wt = np.take_along_axis(W, top, 1); Wt[Wt < 1e-4] = 0; Wt /= Wt.sum(1, keepdims=True)
+    for i in everyone:
+        for j, x in zip(top[i], Wt[i]):
+            if x:
+                me.vertex_groups[int(j)].add([i], float(x), "REPLACE")
+    assert all(len(v.groups) == int((Wt[v.index] > 0).sum()) for v in me.data.vertices), "stale weights left behind"
     me.data.vertices.foreach_set("co", Pr.ravel()); me.data.update()
 
     ad = arm.animation_data; acts = list(bpy.data.actions)     # one NLA track per clip, as retarget.py exports them
