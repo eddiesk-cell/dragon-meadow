@@ -242,22 +242,26 @@ export async function createVfx(ctx) {
   }
 
   // ── Hit flash: the struck meshes' emissive goes white and decays (colour only, so nothing recompiles) ─────────
-  const FLASH_T = 0.12, WARM = new THREE.Color(1.0, 0.6, 0.25), tc = new THREE.Color(), flashing = new Map()
+  const FLASH_T = 0.12, WARM = new THREE.Color(1.0, 0.6, 0.25) // albedo × (1 + k·(2.4·WARM−1)): ×1.14 red … ×0.99 blue at k=.35, tc = new THREE.Color(), flashing = new Map()
   function flash(obj) {
     fired.flash++
     obj.traverse(o => {
       if (o.isMesh) for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-        if (!m.emissive) continue
-        m.userData.vfxEmissive ??= m.emissive.clone() // its own colour, kept once, restored after
+        if (!m.emissive || !m.color) continue
+        m.userData.vfxEmissive ??= m.emissive.clone() // its own colours, kept once, restored after
+        m.userData.vfxColor ??= m.color.clone()
         flashing.set(m, FLASH_T)
       }
     })
   }
   function stepFlashes(dt) {
     for (const [m, t] of flashing) {
-      const left = t - dt, orig = m.userData.vfxEmissive
-      if (left <= 0) { m.emissive.copy(orig); flashing.delete(m); continue }
-      m.emissive.copy(orig).add(tc.copy(WARM).multiplyScalar(0.35 * (left / FLASH_T) / Math.max(m.emissiveIntensity, 1e-3))) // additive warm glow, 35% at most: the texture stays
+      const left = t - dt, orig = m.userData.vfxEmissive, base = m.userData.vfxColor
+      if (left <= 0) { m.emissive.copy(orig); m.color.copy(base); flashing.delete(m); continue }
+      // A warm lift of the albedo (it multiplies the texture, so the texture stays) plus a faint emissive: 35% at most.
+      const k = 0.35 * left / FLASH_T
+      m.color.copy(base).multiply(tc.copy(WARM).multiplyScalar(2.4).addScalar(-1).multiplyScalar(k).addScalar(1))
+      m.emissive.copy(orig).add(tc.copy(WARM).multiplyScalar(0.25 * k / Math.max(m.emissiveIntensity, 1e-3)))
       flashing.set(m, left)
     }
   }
@@ -299,7 +303,7 @@ export async function createVfx(ctx) {
   ctx.vfx = { trail, slash, sparks, flash, shake, dust, blast, hitstop }
   window.__probes.vfx = () => ({
     glow: glow.n, soft: soft.n, dropped: glow.dropped + soft.dropped, trails: trails.filter(t => t.obj).length,
-    slashes: [...aS.array].filter(p => p < 1).length, flashing: flashing.size, timeScale: ctx.timeScale, fired, worstMs: Math.round(worstMs),
+    slashes: [...aS.array].filter(p => p < 1).length, flashing: flashing.size, timeScale: ctx.timeScale, fired, worstMs: Math.round(worstMs), maxFrameMs: Math.round(worstMs),
   })
 
   const demo = params.get('vfx') === 'demo' && makeDemo()
