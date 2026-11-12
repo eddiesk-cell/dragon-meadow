@@ -228,9 +228,9 @@ no roofs. Dark at night — no window is lit there, which is how you know nobody
 
 1. **Dragon Meadow ↔ the Undercliff — a cave: the Whistling Chimney** (−300, −190). A shaft drops from the meadow turf through the chalk into a sea cave at beach level. From the top it is a sheer, roaring hole; from the bottom an old chain ladder climbs it. *Why:* rain soaks into chalk and dissolves a pipe downward; the waves undercut the cliff and hollow a cave inward; the two met. The sea breeze blowing up the pipe makes it whistle.
 2. **The Undercliff ↔ Bellholm — a tide causeway.** At low tide a shingle bar rises out of the sea and you walk across; at high tide it is gone. When the bells start, the tide is turning — run. *Why:* Bellholm was the tip of the meadow's headland until the sea broke through; waves running along the coast pile shingle in the island's shelter into a bar (a tombolo).
-3. **Dragon Meadow ↔ Lanternwood — a sunken lane: the Holloway.** The meadow's south path sinks deeper between banks until the trees close over it, and you step out at Springwell (−75, 500). *Why:* the chalk tips gently south (the cliff is its broken north edge), and centuries of feet and rain wore the lane down into it. Rain soaks through the chalk and comes out as springs where chalk meets clay — that line is where the village sits and the forest begins.
+3. **Dragon Meadow ↔ Lanternwood — a sunken lane: the Holloway.** The meadow's south path sinks deeper between banks until the trees close over it, and you step out at Springwell (−75, 500). *Why:* the chalk tips gently south (the cliff is its broken north edge), and centuries of feet and rain wore the lane down into it. Rain soaks through the chalk and comes out as springs where chalk meets clay — that line is where the town sits and the forest begins.
 4. **Lanternwood ↔ Mirrormere — a river: raft down the Brightwater.** From Springwell, raft downstream over two gentle weirs into the lake. *Why:* water runs downhill, and the whole wet west drains into one lake basin.
-5. **Mirrormere ↔ Bellholm — a ferry.** The Reedholt eel-boat runs down the Spill to the sea and north along the west coast to Bellholm. *Why:* the lake's only outlet is the Spill on the west coast, and the north shore is all cliff, so the boat is how lake and sea trade.
+5. **Mirrormere ↔ Bellholm — a ferry.** The Reedholt eel-boat runs down the Spill to the sea, calls at Asterhaven's quay, and goes on north along the west coast to Bellholm. *Why:* the lake's only outlet is the Spill on the west coast, and the north shore is all cliff, so the boat is how lake and sea trade.
 6. **Lanternwood ↔ the Greyspine — a bridge: the Rootbridge** (950, 850). A living bridge of tree roots across the Coldrun gorge, then switchbacks up through the pines. *Why:* the glacier river cut a deep gorge through the foothills. It is the wettest spot on the island (the westerlies drop their rain on the mountain front), so its trees are the biggest, and the old woodfolk trained their roots across.
 7. **The Greyspine ↔ the Redwaste — a pass and a stair: the Windgap and the Thousand Steps.** The switchbacks top out at the Windgap Gate; beyond it the east face is a cliff, and the Thousand Steps zig-zag down to the sand. *Why:* the Greyspine is a tilted block — gentle west, sheer east. The wind pours through its one notch, and standing in the Gate you see green behind you and red ahead: the rain shadow in a single view.
 8. **Anywhere ↔ Wyrmcrown — the dragon.** No path: the summit is ringed by ice cliffs the glacier keeps carving steeper. The only way up is on the dragon's back. Once it trusts you, it also carries you between landmarks (fast travel).
@@ -239,11 +239,11 @@ no roofs. Dark at night — no window is lit there, which is how you know nobody
 
 ## The travel loop
 
-1. **Dragon Meadow** — walk, watch the dragon. The Chimney whistles; it is too sheer to climb down.
+1. **Dragon Meadow** — walk, watch the dragon; Castle Crestwatch on the cliff ahead-left, the rock island by its pond. The Chimney whistles; it is too sheer to climb down.
 2. **The Old Ring** — the first fight.
-3. **The Holloway** → Springwell and **Lanternwood**.
+3. **The Holloway** → the town of Springwell and **Lanternwood**.
 4. **Raft** down the Brightwater → **Mirrormere**.
-5. **Ferry** → **Bellholm**.
+5. **Ferry** → Asterhaven's harbour → **Bellholm**.
 6. Wait for low tide, cross the **causeway** → **the Undercliff** → up the Chimney's chain ladder → out into the meadow. The first loop closes where it began: the mystery hole from step 1 was the way home.
 7. Back through Lanternwood → **the Rootbridge** → **the Greyspine** → the Windgap Gate.
 8. **The Thousand Steps** → **the Redwaste** and the Dragon's Ribs.
@@ -257,11 +257,12 @@ no roofs. Dark at night — no window is lit there, which is how you know nobody
 - **Open ground:** grass trampled short inside the ring, so footwork, rolls, slash arcs and dust all read clearly.
 - **Cover:** the fallen stones are waist-high; roll behind one and the club smashes it (chips, sparks, dust).
 - **A clean stage:** the bowl's rim hides the far haze, and the stone circle bounds the fight without an invisible wall.
+- **At night** (`refs/world/ring-night.png`): cyan-green moss veins glow on the stones, gold light spills from the barrow door, teal mist lies in the bowl. By day the same moss is soft green.
 - **The visual moment:** mist pools in the bowl, and the troll's first roar blows it outward in a ring. When the troll falls, the sea breeze clears the last of it, the sun breaks through, and the dragon passes low overhead.
 
 ## The dragon's home
 
-Wyrmcrown, 1.9 km east of the start, visible from the crest on clear days. The winter dragon nests in the frozen bowl inside the Crown. Its day: leave the nest, hunt seals and fish in the cold north sea, then ride the sea breeze where it hits the meadow cliff — rising air it can circle in without a wingbeat. That is why it is always over Dragon Meadow.
+Wyrmcrown, 1.9 km east of the start, visible from the crest on clear days; at night the aurora hangs over it. The winter dragon nests in the frozen bowl inside the Crown. Its day: leave the nest, hunt seals and fish in the cold north sea, then ride the sea breeze where it hits the meadow cliff — rising air it can circle in without a wingbeat. That is why it is always over Dragon Meadow.
 
 ## Build order — one module per land, the way `src/field.js` is the meadow
 
@@ -277,3 +278,5 @@ Each module adds its own patch of ground to `ctx.heightAt` (wrapping the one bef
 | 5 | `src/greyspine.js` — rock, pines, the Rootbridge, the Windgap | Opens the east; the first steep land. |
 | 6 | `src/redwaste.js` — dunes, mesas, the Ribs | The strongest colour change, and a natural second arena. |
 | 7 | `src/wyrmcrown.js` — summit, nest, glacier | Last: it needs riding the dragon. |
+
+**Phase 6 modules run across every land, not one land each:** `src/settlements.js` (Crestwatch, Springwell, Asterhaven), `src/landmarks.js` (the rock island, the Crest Stone's face), `src/water.js` (the pond), `src/flora.js` (bell flowers, ferns, vine trees), `src/skyisles.js`, `src/motes.js` (seed lights), `src/birds.js`. A land module, when it comes, places its own share of them.
