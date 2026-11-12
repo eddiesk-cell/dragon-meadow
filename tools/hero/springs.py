@@ -114,19 +114,39 @@ fv = np.empty(len(me.polygons) * 3, np.int64); me.polygons.foreach_get("vertices
 for lb in (0, 1):  # a vertex on ribbon faces only takes that ribbon's label
     on = np.zeros(N, bool); on[fv[fl == lb].ravel()] = True; off_ = np.zeros(N, bool); off_[fv[fl == 1 - lb].ravel()] = True
     lab[tail & on & ~off_] = lb
-cross = tail[ed[:, 0]] & tail[ed[:, 1]] & (lab[ed[:, 0]] != lab[ed[:, 1]])
-print(f"SPRINGS bandana: ripped {n_seam} seam edges ({N - N0} vertices split), upper-lower edges left {cross.sum()}")
+# A few slivers still join the two ribbons corner to corner (no seam edge to rip): when the tails part they stretch into a
+# long spike between them. Drop the edges from one ribbon to the other, and the faces on them; no vertex is removed.
+cross = np.nonzero(tail[ed[:, 0]] & tail[ed[:, 1]] & (lab[ed[:, 0]] != lab[ed[:, 1]]))[0]
+bm = bmesh.new(); bm.from_mesh(me); bm.edges.ensure_lookup_table()
+nf = len({f.index for i in cross for f in bm.edges[i].link_faces})
+bmesh.ops.delete(bm, geom=[bm.edges[i] for i in cross], context="EDGES")
+bm.to_mesh(me); bm.free()
+assert len(me.vertices) == N
+ed, deg = topo()
+print(f"SPRINGS bandana: ripped {n_seam} seam edges ({N - N0} vertices split), dropped {len(cross)} upper-lower edges and their {nf} faces")
+
+def spread(f, region, iters, fixed):
+    """Average f over mesh neighbours inside region only (outside neighbours do not count); `fixed` vertices keep f."""
+    e = ed[region[ed[:, 0]] & region[ed[:, 1]]]
+    cnt = np.bincount(e.ravel(), minlength=N)
+    for _ in range(iters):
+        acc = np.zeros(N); np.add.at(acc, e[:, 0], f[e[:, 1]]); np.add.at(acc, e[:, 1], f[e[:, 0]])
+        f = np.where(region & ~fixed & (cnt > 0), 0.5 * f + 0.5 * acc / np.maximum(cnt, 1), f)
+    return f
+
 
 # Weights as one number per vertex, mb: 0 = head, 1 = bone 0, 2 = bone 1, 3 = bone 2, and a vertex between two whole
 # numbers blends just those two bones, so every bandana vertex is weighted along ONE chain, in order. mb grows with the
-# distance along the ribbon from where it is sewn to the knot (0) to its tip (3); the knot and the band round his head ride
-# the head.
+# distance along the ribbon from where it is sewn to the knot (0.5) to its tip (3); the band round his head rides the head
+# and the knot between them blends (smoothed over its surface), so the bend where a tail leaves the knot spreads over the
+# knot instead of tearing its seam into fins.
 dK = np.linalg.norm(co - K, axis=1)
 band = bd & ~tail & (dK > 0.07)
 free = bd & ~tail & ~band
-mb, own, uu = np.zeros(N), np.full(N, -1), np.zeros(N)
+mb, own, uu, ind = np.zeros(N), np.full(N, -1), np.zeros(N), []
 for lb in (0, 1):
     m = tail & (lab == lb)
+    ind.append(spread(m.astype(float), m | free, 12, fixed=m))  # which tail a knot vertex hangs nearer to
     e = ed[(m[ed[:, 0]] & free[ed[:, 1]]) | (m[ed[:, 1]] & free[ed[:, 0]])]
     A = co[np.unique(e[free[e]])].mean(0)  # pivot: where the ribbon is sewn to the knot
     # How far along the ribbon each vertex is: shortest path from where it is sewn to the knot, over the tail's own surface
@@ -149,9 +169,17 @@ for lb in (0, 1):
     g[lost] = np.linalg.norm(co[lost] - A, axis=1)  # unreachable (none expected): distance through the air
     dmax = np.percentile(g[m], 98)
     print(f"SPRINGS bandana tail {lb}: {len(mi)} verts, {(g[m] == 0).sum()} sewn to the knot, {lost.sum()} unreachable, {dmax:.3f} m along")
-    uu[m] = g[m] / dmax; mb[m] = 3 * np.minimum(uu[m], 1); own[m] = lb
+    # The first 2 cm out of the knot finish the blend from the head to bone 0, so the ribbon swings whole: blended slowly,
+    # the long slivers it is sewn on with stay half behind as fins pointing out of the knot when the tail sweeps back.
+    uu[m] = g[m] / dmax; u0 = 0.02 / dmax; own[m] = lb
+    mb[m] = np.where(uu[m] < u0, 0.5 + 0.5 * uu[m] / u0, 1 + 2 * np.minimum((uu[m] - u0) / (1 - u0), 1))
     chains[("bandana_upper", "bandana_lower")[lb]] = dict(parent="head", A=A, m=m, nb=3)
-print(f"SPRINGS bandana: band {band.sum()} + knot {free.sum()} verts ride the head")
+own[free] = np.argmax(ind, 0)[free]
+# where the knot switches from hanging off one tail to the other it gives with neither: neighbours there would otherwise
+# follow different tails and split apart
+seam_k = free & (np.abs(ind[0] - ind[1]) < 0.25 * (ind[0] + ind[1]))
+mb = spread(mb, bd, 150, fixed=band | tail | seam_k)
+print(f"SPRINGS bandana: band {band.sum()} verts ride the head, knot {free.sum()} verts give with the tails (max mb {mb[free].max():.2f}), {seam_k.sum()} between the tails hold still")
 for lb, nm in enumerate(("bandana_upper", "bandana_lower")):
     ch = chains[nm]; m = ch["m"]
     J = [ch["A"]] + [co[m & (np.abs(mb - c) < 0.25)].mean(0) for c in (1.5, 2.5)] + [co[m & (uu > 0.9)].mean(0)]  # joints mid-blend
