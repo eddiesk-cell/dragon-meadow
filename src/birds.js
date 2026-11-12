@@ -1,17 +1,17 @@
 // Lane birds — 3 instanced flocks wheeling over the meadow by day; they thin out and vanish into roost as ctx.night rises.
 // Each bird = body + 2×(inner wing, outer wing) instanced meshes; wings flap on the CPU (≈40 birds, negligible).
+// every circle (r+9) stays >=10 m outside the rock island (50,-105 r40) or flies above 40 m of the hero start
 const FLOCKS = [ // cx, cz: circle centre; r: radius; alt: height; w: angular speed (rad/s, sign = direction); n: birds
-  { cx: -5, cz: -80, r: 45, alt: 28, w: 0.085, n: 14, ph: 0 },
-  { cx: -45, cz: -60, r: 38, alt: 20, w: -0.10, n: 10, ph: 2.1 },
-  { cx: 30, cz: -110, r: 60, alt: 38, w: 0.07, n: 12, ph: 4.0 },
+  { cx: -60, cz: -90, r: 28, alt: 46, w: 0.085, n: 14, ph: 0 },
+  { cx: -30, cz: -170, r: 40, alt: 30, w: -0.10, n: 10, ph: 2.1 },
+  { cx: 150, cz: -40, r: 40, alt: 50, w: 0.07, n: 12, ph: 4.0 },
 ]
 const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k) }
 
 export async function createBirds(ctx) {
   const { THREE, scene } = ctx
   const mat = new THREE.MeshStandardNodeMaterial({ color: 0x4a4560, roughness: 0.9, side: THREE.DoubleSide }) // slate-violet: reads against pale haze
-  const tipMat = new THREE.MeshStandardNodeMaterial({ color: 0xf4e7d0, roughness: 0.9, side: THREE.DoubleSide }) // cream wingtips
-  // geometry (metres, +x = right wing, body points −z)
+    // geometry (metres, +x = right wing, body points −z)
   const tri = (...p) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p.flat(), 3)); g.computeVertexNormals(); return g }
   const quad = (a, b, c, d) => tri(a, b, c, a, c, d)
   const geoInner = quad([0, 0, 0.3], [0, 0, -0.3], [0.7, 0, -0.15], [0.7, 0, 0.25])
@@ -19,16 +19,16 @@ export async function createBirds(ctx) {
   const geoBody = tri([0, 0.08, -0.45], [-0.09, -0.04, 0.2], [0.09, -0.04, 0.2], [0, 0.08, -0.45], [0, 0.1, 0.2], [-0.09, -0.04, 0.2], [0, 0.08, -0.45], [0.09, -0.04, 0.2], [0, 0.1, 0.2])
   const total = FLOCKS.reduce((s, f) => s + f.n, 0)
   const mk = (g, m) => { const im = new THREE.InstancedMesh(g, m, total); im.frustumCulled = false; im.castShadow = false; scene.add(im); return im }
-  const body = mk(geoBody, mat), inR = mk(geoInner, mat), inL = mk(geoInner, mat), outR = mk(geoOuter, tipMat), outL = mk(geoOuter, tipMat)
+  const body = mk(geoBody, mat), inR = mk(geoInner, mat), inL = mk(geoInner, mat), outR = mk(geoOuter, mat), outL = mk(geoOuter, mat)
 
   const birds = []
-  FLOCKS.forEach((f, fi) => { for (let i = 0; i < f.n; i++) birds.push({ f, a: i / f.n * 0.9 + Math.random() * 0.1, dr: (Math.random() - 0.5) * 18, dy: (Math.random() - 0.5) * 9, ph: Math.random() * 6.3, hz: 2.4 + Math.random() * 0.8, sc: 1.7 + Math.random() * 0.8 }) })
+  FLOCKS.forEach((f, fi) => { for (let i = 0; i < f.n; i++) birds.push({ f, a: i / f.n * 0.9 + Math.random() * 0.1, dr: (Math.random() - 0.5) * 18, dy: (Math.random() - 0.5) * 9, ph: Math.random() * 6.3, hz: 2.4 + Math.random() * 0.8, sc: 0.55 + Math.random() * 0.25 }) })
 
   const base = new THREE.Matrix4(), m = new THREE.Matrix4(), t = new THREE.Matrix4(), r = new THREE.Matrix4()
   const q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ'), p = new THREE.Vector3(), v = new THREE.Vector3(), s = new THREE.Vector3()
-  let vis = 0, minY = 1e9, maxY = -1e9
+  let vis = 0, day = 1, minY = 1e9, maxY = -1e9
   const update = (dt, time) => {
-    const day = 1 - ss(0.35, 0.8, ctx.night)
+    day = 1 - ss(0.35, 0.8, ctx.night)
     vis = 0
     birds.forEach((b, i) => {
       const f = b.f, ang = f.ph + b.a * 0.5 + time * f.w, R = f.r + b.dr
@@ -58,6 +58,6 @@ export async function createBirds(ctx) {
     for (const im of [body, inR, inL, outR, outL]) { im.instanceMatrix.needsUpdate = true; im.visible = day > 0.01 }
   }
   update(0, 0)
-  window.__probes.birds = () => ({ flocks: FLOCKS.length, birds: total, visibleByDay: vis, flapping: true, inView: birds.filter(b => { v.copy(b.p).project(ctx.camera); return Math.abs(v.x) < 1 && Math.abs(v.y) < 1 && v.z < 1 }).length, altRange: [+minY.toFixed(1), +maxY.toFixed(1)] })
+  window.__probes.birds = () => ({ flocks: FLOCKS.length, birds: total, visibleByDay: vis, flapping: true, inView: birds.filter(b => day > 0.01 && (() => { v.copy(b.p).project(ctx.camera); return Math.abs(v.x) < 1 && Math.abs(v.y) < 1 && v.z < 1 })()).length, altRange: [+minY.toFixed(1), +maxY.toFixed(1)] })
   return { update }
 }
