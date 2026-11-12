@@ -24,6 +24,9 @@ wood = (ax > 0.33) & (co[:, 2] >= 1.37)                                     # th
 # the rest of the arm keeps only arm weights: a knot that kept a little hips weight is dragged back to the T-pose
 # and sticks out of the lowered forearm like a fin
 G = {g.index: g.name for g in ob.vertex_groups}
+# the right shin bulges past |x| 0.30 below the knee: it is leg, not net (on a net column it pulled a rod out of the shin)
+shin = np.array([sum(g.weight for g in v.groups if "LowerLeg" in G[g.group] or "Foot" in G[g.group]) > 0.5 for v in ob.data.vertices])
+print(f"NETS {int((net & shin).sum())} shin vertices left on the leg"); net &= ~shin
 ARMY = ("Shoulder", "UpperArm", "LowerArm", "Hand", "Thumb", "Index", "Middle", "Ring", "Little")
 fixed = left = 0
 for i in np.flatnonzero(wood):
