@@ -239,7 +239,7 @@ export async function createField(ctx) {
     if (!(d < 3)) walked = 0 // first frame or a teleport: no trail of rings across the map
     else if ((walked += d) >= 0.8) walked = still = 0, spawn(t, amp)
     if (air && !up) spawn(t, amp * 1.6), still = 0
-    if (d < 0.01 && !up && (still += dt) > 2.4) still = 0, ctx.night > 0.1 && spawn(t, 0.6 * ctx.night)
+    if (d < 0.3 * dt && !up && (still += dt) > 2.4) still = 0, ctx.night > 0.1 && spawn(t, 0.6 * ctx.night)
     air = up
     last.copy(h)
   }
