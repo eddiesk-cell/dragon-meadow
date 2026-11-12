@@ -27,6 +27,7 @@ const ctx = {
   sunDir: new THREE.Vector3(-0.45, 0.42, -0.78).normalize(), // writer: main (fixed) — sun low, ahead of the hero: backlit grass
   fogColor: new THREE.Color(0xd9dcdf),                       // writer: main (fixed) — field, sky and post all match it
   time: 0,                                                   // writer: main
+  timeScale: 1,                                              // writer: vfx (hitstop); main scales every dt by it
 }
 window.__ctx = ctx
 
@@ -37,11 +38,16 @@ async function load(name, fn) {
     if (sys) systems.push(sys)
   } catch (e) { fail(name, e) }
 }
-// Order matters: field publishes heightAt, sky sets lights + fog, hero stands on heightAt, springs hang off the hero's bones, pet follows heroPos, dragon last.
+// Order matters: field publishes heightAt and ring carves its bowl into it before anything stands on it; sky sets
+// lights + fog; springs hang off the hero's bones; vfx before the fighters that call it; pet follows heroPos; dragon last.
 await load('field', 'createField')
+await load('ring', 'createRing')
 await load('sky', 'createSky')
 await load('hero', 'createHero')
 await load('springs', 'createSprings') // cloth on the hero: needs ctx.heroRig
+await load('vfx', 'createVfx')
+await load('monster', 'createMonster')
+await load('combat', 'createCombat')
 await load('pet', 'createPet')
 await load('dragon', 'createDragon')
 let post = null
@@ -56,7 +62,7 @@ addEventListener('resize', () => {
 let last = performance.now(), frames = 0
 renderer.setAnimationLoop(() => {
   const now = performance.now()
-  const dt = Math.min((now - last) / 1000, 0.1)
+  const dt = Math.min((now - last) / 1000, 0.1) * ctx.timeScale
   last = now
   ctx.time += dt
   for (const s of systems) {

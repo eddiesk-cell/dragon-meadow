@@ -86,6 +86,28 @@ export async function createHero(ctx) {
     if (name === 'Jump') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true }
   }
 
+  // Actions for other lanes (combat): a clip plays on top of locomotion until it ends (or stop()), and walking
+  // keys are ignored while it holds lockMove. Contract: PLAN.md Phase 3, ctx.heroAct.
+  let act = null // { action, lockMove, resolve }
+  const endAct = () => { const r = act?.resolve; act = null; r?.() }
+  mixer.addEventListener('finished', e => { if (e.action === act?.action) endAct() })
+  ctx.heroAct = {
+    play(name, { loop = false, fade = 0.15, speed = 1, lockMove = false } = {}) {
+      const a = actions[name.toLowerCase()]
+      if (!a) return Promise.reject(new Error(`hero has no clip "${name}"`))
+      endAct()                                        // a new action cuts the one before it
+      a.reset().setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity)
+      a.clampWhenFinished = !loop; a.timeScale = speed
+      a.fadeIn(fade).play()
+      if (cur !== a) cur?.fadeOut(fade)
+      cur = a; clip = name
+      return new Promise(resolve => { act = { action: a, lockMove, resolve } })
+    },
+    stop: endAct,                                     // hand the body back to walk / run / idle
+    busy: () => !!act,
+    face(x, z) { face = Math.atan2(x, z) },          // turn to face a world direction at once
+  }
+
   // Input flags; ?auto= sets the same ones the keys do.
   const keys = new Set()
   let jumpQueued = false // latched on keydown: a tap shorter than one frame still jumps
@@ -128,7 +150,7 @@ export async function createHero(ctx) {
 
   return {
     update(dt) {
-      const [dx, dz] = dirOf()
+      const [dx, dz] = act?.lockMove ? [0, 0] : dirOf()
       const len = Math.hypot(dx, dz), moving = len > 0.01
       const speed = keys.has('shift') ? 5 : 1.6
       if (moving) {
@@ -146,7 +168,7 @@ export async function createHero(ctx) {
         if (pos.y <= gy && vy < 0) { pos.y = gy; grounded = true; vy = 0 }
       } else pos.y = gy
 
-      play(!grounded && actions.jump ? 'Jump' : !moving ? 'Idle' : keys.has('shift') ? 'Run' : 'Walk')
+      if (!act) play(!grounded && actions.jump ? 'Jump' : !moving ? 'Idle' : keys.has('shift') ? 'Run' : 'Walk')
       mixer.update(dt)
       root.position.copy(pos)
       root.rotation.y = face

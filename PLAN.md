@@ -224,3 +224,79 @@ Checks that exist now: `tools/shot.mjs` (picture + probes + fps), `tools/control
 Not in this pass: touch walking on phones (drag-to-look works, walking needs a joystick), a quality
 switch for weak devices, the sea is hidden by haze from the crest (`refs/ref-dragon.png` wants it
 blue), Higgsfield models.
+
+### Phase 3 — the fight (Eddie: *"a monster so we could do a fight scene, where our hero can pull out his sword and fight (full special effects)"*; cap raised to 60 credits: *"yes, raise the cap"*)
+
+Design source: `WORLD.md` → "The first monster — the Barrow Troll in the Old Ring". Concept picture:
+`art/troll/troll-front.png`. Every lane below reads both.
+
+**Pipeline (each phase's trigger is the one before it landing — armed now):**
+
+| # | phase | trigger | worker | CHECK |
+|---|---|---|---|---|
+| 0 | troll model: concept → Hunyuan3D → weld/prep → autorig (shoulders checked on the skeleton overlay) → 13 clips → `public/models/troll.glb` | now | orchestrator (paid credits) | 3.0 m tall, clips listed below, skeleton overlay shows joints where the body bends |
+| 0 | Lane ring, Lane vfx | now | Opus | their CHECKs |
+| 1 | hero action API in `src/hero.js`, `ctx.timeScale` in `src/main.js` | now | orchestrator | controls-check 7/7, strap-check passes |
+| 2 | Lane monster | troll.glb landed | Opus | its CHECK |
+| 2 | Lane combat | hero API landed | Opus | its CHECK |
+| 3 | `?auto=fight` demo clip → final review → Eddie | monster + combat passed | Opus reviewer | the fight reads start to finish in one clip |
+
+**Contract additions (writer → readers):**
+- `ctx.heroAct` (hero): `play(clip, {loop, fade, speed, lockMove}) → Promise` (resolves when the clip ends; while
+  it plays, locomotion does not override it), `busy()`, `face(x, z)`. Clips are the hero's 51 (see `hero.glb`):
+  combat uses `Greatsword Idle`, `Greatsword Guard`, `Slash (Diagonal)`, `Slash (Horizontal)`, `Stab`,
+  `Greatsword Swing`, `Roll`, `Backstep`, `Hit (Front)`, `Stagger`, `Death (Collapse)`.
+- `ctx.timeScale` (main multiplies every dt by it; vfx owns hitstop).
+- `ctx.ring` (ring): `{ center, radius, stones: [{ pos, radius, height, fallen }], barrow }`.
+- `ctx.vfx` (vfx): `trail(obj3d, {base, tip}) → {stop()}`, `slash(pos, dir)`, `sparks(pos, normal, n)`,
+  `flash(obj3d)`, `shake(amp, secs)`, `dust(pos, size)`, `blast(pos, radius)` (the roar's mist ring),
+  `hitstop(ms)`.
+- `ctx.monster` (monster): `{ pos, radius, height, hp, maxHp, alive, state, takeHit({ dmg, dir, point }),
+  attack: { active, center, radius, dmg } }` — combat reads `attack` to hurt the hero.
+
+### Lane ring — `src/ring.js`, plus only a trampled-grass circle hook in `src/field.js` (Opus)
+The Old Ring at (325, 180): a shallow chalk bowl ~60 m across carved into `ctx.heightAt` (wrap the field's
+function; blend smoothly at the rim), a grassy barrow mound in the middle with a dark low entrance, eleven
+weathered standing stones (≈2.5–4 m, lichen and chalk) on a ring of ~22 m radius — three of them lying fallen
+and half-sunk. Stones built in code (displaced, bevelled, never boxes) and lit like the meadow. Grass inside the
+ring trampled short (a circle uniform the field's grass reads) so footwork reads. Mist pools in the bowl.
+`?ring=1` puts the camera on the rim looking in. Publishes `ctx.ring`. Probe `{ stones, fallen, bowlDepth }`.
+- **CHECK:** `node tools/shot.mjs shots/ring-rim.png "ring=1" 6000` → no `ring:` error, stones 11, fallen 3;
+  picture: an ancient stone circle in a misty bowl in the same meadow light — reads at a glance, no boxes, no
+  floating stones, grass short inside. `node tools/controls-check.mjs` 7/7.
+
+### Lane vfx — `src/vfx.js`, plus only `ctx.timeScale` use for hitstop (Opus)
+Full special effects for the fight, all in TSL, pooled (no allocation per hit), each a one-liner for the
+callers in the contract: a bright tapering sword trail ribbon that follows a moving blade; slash arcs; sparks
+with gravity on stone and steel; a white hit flash on a struck mesh; camera shake; dust puffs that drift with
+`ctx.windAt`; the roar's ring of mist blowing outward; hitstop (`ctx.timeScale` dips for a few ms). Bloom
+already exists in `post.js` — make the hot parts glow through it. `?vfx=demo` fires every effect in a loop in
+front of the camera for proof.
+- **CHECK:** `node tools/shot.mjs shots/vfx-demo.png "vfx=demo" 4000` and `node tools/clip.mjs shots/vfx-demo.mp4
+  "vfx=demo" 8` → no `vfx:` error, fps within 5 of the plain scene; LOOK at 6 frames: each effect visible,
+  readable, game-quality (trail tapers and fades, sparks arc and die, dust drifts, flash is brief).
+
+### Lane monster — `src/monster.js`, `tools/monster/club.py` (Opus)
+The Barrow Troll from `WORLD.md`, using `public/models/troll.glb` (3 m, clips: `Idle`, `Walk`, `Run`,
+`Sit` (asleep), `Stand Up`, `Channel (Two-Handed)` (roar), `Hammer Overhead Smash`, `AoE Ground Slam`,
+`Punch (Cross)`, `Kick (Front)`, `Hit (Front)`, `Stagger`, `Death (Collapse)`). Club: a standing stone ripped
+from the ring, made in Blender from code (`tools/monster/club.py` → `public/models/club.glb`), held in the right
+hand. States: asleep in the barrow → wakes when the hero comes within ~25 m (stands, roars: `ctx.vfx.blast`)
+→ stalks → telegraphed attacks with clear wind-ups (smash, ground slam with dust ring, punch, kick) whose hit
+windows set `ctx.monster.attack` → reacts to hits (flash, stagger on heavy hits) → dies (collapse, mist clears).
+Never walks through standing stones. Publishes `ctx.monster`. `?fight=1` starts the hero 12 m from the waking
+troll. Probe `{ state, hp, dist }`.
+- **CHECK:** `node tools/clip.mjs shots/monster-fight.mp4 "fight=1" 12` → no `monster:` error; 8 frames: it
+  wakes, roars, approaches, swings with a readable wind-up, the club stays in its hand, feet on the ground.
+
+### Lane combat — `src/combat.js` (Opus)
+The hero draws the sword from his back (`R`, or on first attack): re-attach `ctx.heroRig.sword` to
+`rightHand` mid-`Greatsword` draw, back to the sheath on `R` again. Attack `J` or a left click without drag: a
+3-hit combo (`Slash (Diagonal)` → `Slash (Horizontal)` → `Stab`), hold for `Greatsword Swing`; block `K`
+(`Greatsword Guard`, sparks on a blocked hit); roll `L` (`Roll`, brief invulnerability). Sword hits test the
+blade against `ctx.monster` and call `takeHit`, fire `ctx.vfx` (trail on every swing, sparks, flash, hitstop,
+shake on heavy hits). Monster hits hurt the hero (hit reaction, stagger, death and respawn at the ring's edge).
+A small health bar for each. `?auto=fight` plays a scripted fight end-to-end for the demo clip.
+- **CHECK:** `node tools/clip.mjs shots/combat-fight.mp4 "auto=fight" 20` → no `combat:` error; 10 frames: sword
+  drawn from the back into the hand, a 3-hit combo with trails, sparks and hit flashes on the troll, a roll
+  through an attack, the troll falls. `node tools/controls-check.mjs` 7/7 (walking still works sword drawn).
