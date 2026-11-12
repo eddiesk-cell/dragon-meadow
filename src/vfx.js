@@ -242,7 +242,7 @@ export async function createVfx(ctx) {
   }
 
   // ── Hit flash: the struck meshes' emissive goes white and decays (colour only, so nothing recompiles) ─────────
-  const FLASH_T = 0.12, WARM = new THREE.Color(1.0, 0.6, 0.25) // albedo × (1 + k·(2.4·WARM−1)): ×1.14 red … ×0.99 blue at k=.35, tc = new THREE.Color(), flashing = new Map()
+  const FLASH_T = 0.12, WARM = new THREE.Color(1.0, 0.6, 0.25), tc = new THREE.Color(), flashing = new Map() // albedo × (1 + k·(2.4·WARM−1)): about ×1.2 red … ×0.85 blue at k=.35
   function flash(obj) {
     fired.flash++
     obj.traverse(o => {
