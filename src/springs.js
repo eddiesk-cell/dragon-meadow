@@ -7,7 +7,8 @@ export const PART = {
   // k: pull to rest (1/s²)  wind: air-drag coupling (1/s)  damp: internal (1/s)  max: swing cap (rad)  flutter: ripple on the
   // wind  inertia: share of the body's own jolts (start, stop, jump) the cloth lags behind; the rest it is simply carried
   bandana: { k: 380, wind: 3.2, damp: 12, max: 1.75, flutter: 1.6, inertia: 0.6 },
-  hem: { k: 230, wind: 1.0, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3 },
+  // leg: how far a hem panel's resting place follows its thigh (0 at the belt → leg at the hem), so it swings with the stride
+  hem: { k: 230, wind: 1.0, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3, leg: 0.55 },
 }
 const STEP = 1 / 120, G = -9.8
 
@@ -63,8 +64,9 @@ export async function createSprings(ctx) {
     // The sculpt's tails stick out sideways and a little forward; aim them 35° back (about the head's up axis) so wind and
     // running sweep them behind the head, not over the face. From the front they still stream out to his side.
     if (kind === 'bandana') restQ[0].premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.6 * Math.sign(rest[1].x - rest[0].x)))
+    const leg = kind === 'hem' && bone(rest[0].x > 0 ? 'leftUpperLeg' : 'rightUpperLeg') // the thigh on this panel's side
     chains.push({
-      name: m[1], p: PART[kind], cols, bones, nodes, restQ,
+      name: m[1], p: PART[kind], cols, bones, nodes, restQ, leg, legLocal: leg && rest.map(r => leg.worldToLocal(r.clone())),
       len: rest.slice(1).map((r, i) => r.distanceTo(rest[i])),
       // per joint, per collider: never closer than the cloth sits at rest, so nothing is pushed while standing still
       rad: rest.map(r => cols.map(c => Math.min(c.r, 0.95 * r.distanceTo(closest(r, c, tmp2))))),
@@ -92,6 +94,7 @@ export async function createSprings(ctx) {
         c.bones.forEach((b, i) => b.quaternion.copy(c.restQ[i]))
         c.bones[0].updateMatrixWorld(true)
         c.nodes.forEach((o, i) => c.rest[i].setFromMatrixPosition(o.matrixWorld))
+        if (c.leg) for (let j = 1; j < c.rest.length; j++) c.rest[j].lerp(tmp.copy(c.legLocal[j]).applyMatrix4(c.leg.matrixWorld), c.p.leg * j / (c.rest.length - 1))
         for (const k of c.cols) { k.A.copy(k.on.localToWorld(tmp.copy(k.a))); k.B.copy(k.on.localToWorld(tmp.copy(k.b))) }
         if (!c.ready || c.root0.distanceTo(c.rest[0]) > 1) { // first frame or a teleport: start at rest
           c.rest.forEach((r, i) => { c.x[i].copy(r); c.v[i].set(0, 0, 0) })
@@ -133,8 +136,8 @@ export async function createSprings(ctx) {
                 const r = c.rad[j][ci], p = closest(cur, col, hp), dd = cur.distanceTo(p)
                 if (dd >= r) return
                 // out on the side the cloth rests on: a joint flung past the axis is not pushed out through the body
+                const side = tmp2.subVectors(c.rest[j], closest(c.rest[j], col, d)) // (closest() reuses tmp: read it first)
                 tmp.subVectors(cur, p)
-                const side = tmp2.subVectors(c.rest[j], closest(c.rest[j], col, d))
                 if (tmp.dot(side) <= 0) tmp.copy(side)
                 cur.copy(p).addScaledVector(tmp.normalize(), r)
               })
