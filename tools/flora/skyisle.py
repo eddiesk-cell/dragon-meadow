@@ -74,7 +74,8 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
     drift = (12 * cos(ph[0]), 12 * sin(ph[0]))  # the underside's point hangs off-centre
 
     def under(th, t):
-        r = R(th) * 0.93 * (1 - t) ** 0.7 * (1 + 0.35 * t * (lob(th) - 0.5) + 0.09 * sin(7 * th + 6 * t + ph[4]) + 0.06 * sin(13 * th - 9 * t + ph[8]))
+        r = R(th) * 0.93 * (1 - t) ** 0.7 * (1 + 0.35 * t * (lob(th) - 0.5) + 0.09 * sin(7 * th + 6 * t + ph[4]) + 0.06 * sin(13 * th - 9 * t + ph[8])
+                                             + 0.07 * abs(sin(9.5 * th + 2 * t + ph[2])) ** 3 - 0.03)  # rock ribs running down
         z = -Hc - (Hd - Hc) * t * (1 - 0.15 * lob(th) * t)
         return P(th, r, z, (drift[0] * t * t, drift[1] * t * t))
 
@@ -131,12 +132,13 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
             for k in range(sides):
                 bm.faces.new((r0[k], r0[(k + 1) % sides], r1[(k + 1) % sides], r1[k]))
 
-    def ribbon(pts, outs, widths, c0, c1, a):  # a strip hanging down pts, facing outs
+    def ribbon(pts, outs, widths, c0, c1, a):  # a strip hanging down pts, facing outs; glow a·(0.5→1) brightening to the tip
         prev = None
         for i, (p, o, w) in enumerate(zip(pts, outs, widths)):
             s = Vector((-o.y, o.x, 0)).normalized() * (w / 2)
             c = mix(c0, c1, i / (len(pts) - 1))
-            cur = (V(p - s, c, a), V(p + s, c, a))
+            g = a * (0.5 + 0.5 * i / (len(pts) - 1))
+            cur = (V(p - s, c, g), V(p + s, c, g))
             if prev:
                 bm.faces.new((prev[0], prev[1], cur[1], cur[0]))
             prev = cur
@@ -165,10 +167,10 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
             d = L * i / n
             t = d / Hc
             r = cliffr(th, t, -1.5 - d) + 0.9
-            pts.append(P(th, r, -1.5 - d))
+            pts.append(P(th + 0.012 * sin(0.9 * i + th * 40), r, -1.5 - d))
             outs.append(Vector((cos(th) / stretch, sin(th) * stretch, 0)).normalized())
             ws.append(w0 * (1 - 0.75 * (i / n) ** 2))
-        ribbon(pts, outs, ws, mix(VINE, (0.70, 0.80, 0.24), rnd.random() * 0.6), (0.38, 0.62, 0.16), 1.0)
+        ribbon(pts, outs, ws, mix(VINE, (0.70, 0.80, 0.24), rnd.random() * 0.6), (0.38, 0.62, 0.16), rnd.uniform(0.4, 1.0))
 
     # --- underside: stone spikes, roots (dark), hanging vines (glow) ---
     for _ in range(int(16 * Hd / 100)):
@@ -190,7 +192,7 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
             tube(pts, [0.9 * (1 - 0.8 * i / n) + 0.1 for i in range(n + 1)], 5, ROOT, mix(ROOT, UNDER_D, 0.5))
         else:
             out = Vector((cos(th), sin(th), 0))
-            ribbon(pts, [out] * len(pts), [1.4 * (1 - 0.6 * i / n) for i in range(n + 1)], VINE, (0.38, 0.62, 0.16), 1.0)
+            ribbon(pts, [out] * len(pts), [1.4 * (1 - 0.6 * i / n) for i in range(n + 1)], VINE, (0.38, 0.62, 0.16), rnd.uniform(0.5, 1.0))
 
     # --- trees: umbrella canopies on a pale trunk; bushes on the rim break the silhouette ---
     placed = []
@@ -242,7 +244,7 @@ def isle(name, seed, Hc, Hd, stretch, nfalls, ntrees, ncurtains):
     zs = [v.co.z for v in me.vertices]
     xs = [v.co.x for v in me.vertices]
     tris = sum(len(p.vertices) - 2 for p in me.polygons)
-    glow = sum(1 for d in me.color_attributes["Col"].data if d.color[3] > .5)
+    glow = sum(1 for d in me.color_attributes["Col"].data if d.color[3] > .05)
     print(f"{name}: across={max(xs) - min(xs):.0f} m top={max(zs):.1f} bottom={min(zs):.1f} tris={tris} trees={len(placed)} curtains={curtains} falls={len(falls)} glow_loops={glow}")
     return tris
 
