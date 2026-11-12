@@ -10,11 +10,10 @@ export const PART = {
   // wind  inertia: share of the body's own jolts (start, stop, jump) the cloth lags behind; the rest it is simply carried
   // The knot is starched cotton: standing, it holds the tails out to his side (as drawn) and only a third of their weight sags them.
   // Running, the knot turns them back and out (`stream`: out, back in his frame; each tail keeps its sculpted rise or droop, so
-  // the two fan apart), the loose ends straighten,
-  // and the knot's pull grows (×1 + taut), so the tails trail behind and out past his hair instead of being blown flat onto
-  // his skull; the air bends only the loose ends. lee: share of the ambient gust a run hides (an art call — the run sets
-  // where the tails point, gusts only stir them; at full strength a crosswind wraps them round the back of his head).
-  // max per bone: the knot swings at most 1.1 rad, the loose ends take the rest of the bend.
+  // the two fan apart), the loose ends straighten and the knot's pull grows (×1 + taut), so the tails trail behind and out
+  // past his hair instead of being blown flat onto his skull; the air bends only the loose ends. lee: share of the ambient
+  // gust a run hides (an art call: the run sets where the tails point, gusts only stir them; at full strength a crosswind
+  // wraps them round the back of his head). max per bone: the knot swings at most 1.1 rad, the loose ends take the rest.
   bandana: { k: 380, air: 1.5, wind: 2.6, grav: 0.35, lift: 0.3, damp: 12, max: [1.1, 1.75, 1.75], flutter: 1.6, inertia: 0.6, stream: [0.7, 0.71], taut: 2, lee: 0.6 },
   // leg: how far a hem panel's resting place follows its thigh (0 at the belt → leg at the hem), so it swings with the stride
   hem: { k: 230, air: 0, wind: 1.0, grav: 1, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3, leg: 0.55 },
