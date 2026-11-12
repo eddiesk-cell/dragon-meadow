@@ -50,9 +50,16 @@ hat = lambda u, n: np.maximum(0, 1 - np.abs(u[:, None] * n - (np.arange(n) + 0.5
 
 chains = {}  # name -> dict(parent, joints[list of xyz], verts idx, weights [len(idx) x bones], s [len(idx)])
 
-# --- bandana: green above the neck; the knot sits on the side of the head the tails stick out from
-head = B["head"]
-bd = (hue > 60) & (hue < 95) & (sat > 0.2) & (co[:, 2] > B["neck"].head_local.z)
+# --- bandana: green from just under the neck joint up (the lower tail's tip hangs 2 cm under it; lower still is the
+# vest, whose folds read olive); the knot sits on the side of the head the tails stick out from. Hue 48+ catches the
+# ribbon's darker folds.
+above = co[:, 2] > B["neck"].head_local.z - 0.03
+bd = (hue > 48) & (hue < 95) & (sat > 0.2) & above
+# Shaded folds of the ribbon read off-green: let the mesh neighbours vote, or those vertices stay on the head and the tail
+# tears into spikes around them when it swings.
+vote = smooth(bd.astype(np.float32), above, 6)
+print(f"SPRINGS bandana by hue {bd.sum()}, after neighbour vote {(bd | (vote > 0.45)).sum()}")
+bd = bd | (vote > 0.45)
 side = np.sign(co[bd, 0].mean())
 lat = co[:, 0] * side
 K = co[bd & (lat > 0.09) & (lat < 0.14)].mean(0)
@@ -158,6 +165,19 @@ for i, acc in new.items():
         acc[k] = acc.get(k, 0) + (1 - sp) * v / tot
 for i in bset - set(new):  # the knot and the headband ride the head only
     new[i] = {"head": 1.0}
+# The two ribbons are welded where they cross near the knot: average each bandana vertex's weights with its bandana
+# neighbours so that weld stretches smoothly instead of tearing into shards when the tails part.
+cols = ["head"] + [f"spring_{nm}_{k}" for nm in ("bandana_upper", "bandana_lower") for k in range(3)]
+Wd = np.zeros((N, len(cols)), np.float32)
+for i in bset:
+    Wd[i] = [new[i].get(c_, 0) for c_ in cols]
+eb_ = ed[bd[ed[:, 0]] & bd[ed[:, 1]]]
+dg = np.maximum(np.bincount(eb_.ravel(), minlength=N), 1)[:, None]
+for _ in range(4):
+    acc = np.zeros_like(Wd); np.add.at(acc, eb_[:, 0], Wd[eb_[:, 1]]); np.add.at(acc, eb_[:, 1], Wd[eb_[:, 0]])
+    Wd = np.where(bd[:, None], 0.5 * Wd + 0.5 * acc / dg, Wd)
+for i in bset:
+    new[i] = {c_: float(w) for c_, w in zip(cols, Wd[i] / Wd[i].sum()) if w > 1e-4}
 vg = {g.name: g for g in body.vertex_groups}
 for nm in chains:
     for k in range(chains[nm]["nb"]):
