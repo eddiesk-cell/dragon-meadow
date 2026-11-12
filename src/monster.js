@@ -4,21 +4,24 @@
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 const S = 3 / 1.8                  // troll.glb is rigged at 1.80 m; the Barrow Troll stands 3 m
-const R = 1.0, WAKE = 25, LEASH = 38, STIR = 2.5
+const R = 1.0, WAKE = 25, LEASH = 38, STIR = 1.5
 const WALK = 1.6, RUN = 3.6        // m/s; the clips' own stride speeds (measured from their feet) are 1.21 and 3.44
 const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k) }
-// Attacks in CLIP seconds: anticipation [0, wind] plays slowed to `windT` game seconds (the telegraph), the rest at
-// `fast`; the hit window is [h0, h1]; `end` cuts a long clip short. `reach` = centre distance it is chosen within.
-// `swing` lays a procedural overhead arc on the arms (the source clips barely lift them): see armArc().
+// Attacks in CLIP seconds: the anticipation [0, wind] is slowed to last `windT` game seconds (the telegraph), the
+// rest plays at `fast`; the hit window is [h0, h1]; `end` cuts a long clip short. Chosen when the hero is within
+// `reach` (centre to centre). `at`: what hurts — the left foot, the club's length, or the ground round the impact.
+// `swing` lays the overhead arc on one or both arms (the source clips barely lift them): see arc().
 const ATTACKS = {
-  kick:  { clip: 'Kick (Front)', wind: 0.35, windT: 0.75, fast: 1.1, h0: 0.42, h1: 0.7, reach: 2.8, radius: 1.1, dmg: 12, at: 'foot' },
-  punch: { clip: 'Punch (Cross)', wind: 0.2, windT: 0.6, fast: 1.2, h0: 0.24, h1: 0.4, reach: 3.6, radius: 1.1, dmg: 15, at: 'club' },
-  smash: { clip: 'Hammer Overhead Smash', wind: 1.25, windT: 1.25, fast: 1, h0: 1.38, h1: 1.52, end: 2.8, reach: 4.4, radius: 1.5, dmg: 28, at: 'club', swing: 1 },
-  slam:  { clip: 'AoE Ground Slam', wind: 1.25, windT: 1.25, fast: 1, h0: 1.38, h1: 1.52, end: 2.8, reach: 5.2, radius: 4.2, dmg: 22, at: 'ground', swing: 2 },
+  kick:  { clip: 'Kick (Front)', wind: 0.35, windT: 0.75, fast: 1.1, h0: 0.42, h1: 0.7, reach: 2.6, radius: 1.0, dmg: 12, at: 'foot' },
+  punch: { clip: 'Punch (Cross)', wind: 0.2, windT: 0.6, fast: 1.2, h0: 0.24, h1: 0.4, reach: 2.6, radius: 1.1, dmg: 15, at: 'club' },
+  smash: { clip: 'Hammer Overhead Smash', wind: 1.25, windT: 1.25, fast: 1, h0: 1.3, h1: 1.5, end: 2.8, reach: 3.8, radius: 0.9, dmg: 28, at: 'club', swing: 1 },
+  slam:  { clip: 'AoE Ground Slam', wind: 1.25, windT: 1.25, fast: 1, h0: 1.4, h1: 1.55, end: 2.8, reach: 4.6, radius: 3.6, dmg: 22, at: 'ground', swing: 2 },
 }
+for (const a of Object.values(ATTACKS)) a.lands = a.windT + (a.h0 - a.wind) / a.fast // game seconds from start to the hit
 
 export async function createMonster(ctx) {
   const { THREE, scene, params } = ctx
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z)
   const load = n => new GLTFLoader().loadAsync(import.meta.env.BASE_URL + `models/${n}.glb`)
   const [gltf, props] = await Promise.all([load('troll'), load('club')])
   const model = gltf.scene, root = new THREE.Group()
@@ -26,22 +29,23 @@ export async function createMonster(ctx) {
   root.add(model); root.scale.setScalar(S); scene.add(root)
   const bone = n => model.getObjectByName(n)
 
-  // The club: one of the ring's stones, gripped mid-palm, head out past the thumb and tipped toward the fingers, so
-  // it points forward-down when the arm hangs and back over the head when the arm is raised. Pinned in the rest pose.
+  // The club: gripped mid-palm and pinned in the rest pose. Its direction there was solved from the clips (FK) so that
+  // in Idle / Walk it hangs forward-down off the right hand, clear of the belly.
   const club = props.scene.getObjectByName('club'), hand = bone('rightHand')
   club.traverse(o => { if (o.isMesh) o.castShadow = true })
   club.scale.setScalar(1 / S)
   club.position.set(-0.8, 1.31, 0.15)
-  club.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-0.5, -0.15, 1).normalize())
+  club.quaternion.setFromUnitVectors(V3(0, 1, 0), V3(-0.458, 0.866, 0.201))
   model.add(club); model.updateMatrixWorld(true); hand.attach(club)
-  const HEAD = new THREE.Vector3(0, 1.55, 0) // club's own metres: the heavy torn-out foot
+  const HEAD = V3(0, 2.1, 0) // club's own metres: the heavy torn-out foot
 
-  // Home: on a seat stone just outside the barrow door, facing out (?fight=1: facing the hero it starts beside).
-  const ring = ctx.ring, C = ring?.center ?? new THREE.Vector3(325, 0, 180)
-  const D = ring?.barrow?.doorDir ?? new THREE.Vector3(-C.x, 0, -C.z).normalize()
+  // Home: on a seat stone just outside the barrow door, facing out. The proof views (?fight=1, ?auto=fight) seat it
+  // facing the hero they start beside, so the clip sees its face.
+  const ring = ctx.ring, C = ring?.center ?? V3(325, 0, 180)
+  const D = ring?.barrow?.doorDir ?? V3(-C.x, 0, -C.z).normalize()
   const home = (ring?.barrow?.door ?? C).clone().addScaledVector(D, ring?.barrow ? 1.2 : 0)
   home.y = ctx.heightAt(home.x, home.z)
-  const fight = params.get('fight')
+  const fight = params.get('fight') || params.get('auto') === 'fight'
   let yaw = fight ? 0 : Math.atan2(D.x, D.z)
   const seat = props.scene.getObjectByName('seat')
   seat.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true })
@@ -49,35 +53,35 @@ export async function createMonster(ctx) {
   seat.position.y = ctx.heightAt(seat.position.x, seat.position.z) + 0.05
   seat.rotation.y = yaw
   scene.add(seat)
-  if (fight) { ctx.heroPos.set(home.x - 3.5, 0, home.z + 11.5); ctx.heroPos.y = ctx.heightAt(ctx.heroPos.x, ctx.heroPos.z); ctx.heroAct?.face(0, -1) }
+  if (params.get('fight')) { ctx.heroPos.set(home.x - 3.5, 0, home.z + 11.5); ctx.heroPos.y = ctx.heightAt(ctx.heroPos.x, ctx.heroPos.z); ctx.heroAct?.face(0, -1) }
 
-  // Clips: crossfaded one at a time; a once-clip clamps and fires `done`.
+  // Clips: crossfaded one at a time; a once-clip clamps and sets `done`.
   const mixer = new THREE.AnimationMixer(model), actions = {}
   for (const c of gltf.animations) actions[c.name] = mixer.clipAction(c)
   let cur = null, done = false
   mixer.addEventListener('finished', e => { if (e.action === cur) done = true })
-  const play = (name, { loop = true, fade = 0.3, speed = 1, from = 0 } = {}) => {
+  const play = (name, { loop = true, fade = 0.3, speed = 1 } = {}) => {
     const a = actions[name]
-    if (a === cur) { a.timeScale = speed; return a }
+    if (a === cur) { a.timeScale = speed; return }
     a.reset().setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity)
-    a.clampWhenFinished = !loop; a.timeScale = speed; a.time = from
+    a.clampWhenFinished = !loop; a.timeScale = speed
     a.fadeIn(fade).play(); cur?.fadeOut(fade)
     cur = a; done = false
-    return a
   }
 
-  const pos = root.position.copy(home), V = new THREE.Vector3(), W = new THREE.Vector3()
+  const pos = root.position.copy(home), A = V3(), B = V3(), P = V3()
   const M = ctx.monster = {
     pos, radius: R, height: 3, hp: 200, maxHp: 200, alive: true, state: 'asleep',
-    attack: { active: false, center: new THREE.Vector3(), radius: 1, dmg: 0 },
+    // name + lands (game s from the attack's start to its hit window) let a dodge be timed without copying ATTACKS
+    attack: { active: false, center: V3(), radius: 1, dmg: 0, name: '', lands: 0 },
     takeHit,
   }
-  let st = 0, atk = null, last = '', poise = 0, roared = false, struck = false, notice = 0, pause = 0
-  const go = (state, clip, opts) => { M.state = state; st = 0; if (clip) play(clip, opts) }
+  let st = 0, atk = null, last = '', poise = 0, fx = false, notice = 0, pause = 0
+  const go = (state, clip, opts) => { M.state = state; st = 0; fx = false; if (clip) play(clip, opts) }
   go('asleep', 'Sit', { speed: 0.5 })
   const stones = (ring?.stones ?? []).map(s => ({ x: s.pos.x, z: s.pos.z, r: s.radius + R }))
 
-  function takeHit({ dmg = 10, dir, point } = {}) {
+  function takeHit({ dmg = 10 } = {}) {
     if (!M.alive) return
     M.hp = Math.max(0, M.hp - dmg); poise += dmg
     ctx.vfx?.flash(model)
@@ -85,16 +89,16 @@ export async function createMonster(ctx) {
     if (M.hp <= 0) return die()
     if (M.state === 'asleep' || M.state === 'waking' || M.state === 'roar') return
     if (dmg >= 25 || poise >= 60) { poise = 0; endAttack(); go('stagger', 'Stagger', { loop: false, fade: 0.1 }) }
-    else if (M.state !== 'attack') go('hit', 'Hit (Front)', { loop: false, fade: 0.1 })
+    else if (M.state !== 'attack') go('hit', 'Hit (Front)', { loop: false, fade: 0.1 }) // mid-swing it shrugs light hits off
   }
   function die() {
     endAttack(); M.alive = false
     go('dead', 'Death (Collapse)', { loop: false, fade: 0.15 })
     if (ring) ring.mist = 0 // the sea breeze clears the bowl (ring.js eases toward it)
   }
-  function endAttack() { atk = null; M.attack.active = false }
+  function endAttack() { atk = null; M.attack.active = false; M.attack.name = '' }
 
-  // Turn toward a point at most `rate` rad/s; returns the remaining angle.
+  // Turn toward a point at most `rate` rad/s; returns the angle still to go.
   const turn = (x, z, rate, dt) => {
     let d = Math.atan2(x - pos.x, z - pos.z) - yaw
     d = Math.atan2(Math.sin(d), Math.cos(d))
@@ -110,8 +114,8 @@ export async function createMonster(ctx) {
     for (const s of stones) {
       const ox = s.x - pos.x, oz = s.z - pos.z, along = ox * dx + oz * dz, side = ox * dz - oz * dx
       if (along > 0 && along < Math.min(len, s.r + 4) && Math.abs(side) < s.r + 0.5) {
-        const k = (s.r + 0.5 - Math.abs(side)) / (s.r + 0.5) * 2, sg = side >= 0 ? 1 : -1
-        dx += dz * sg * k; dz -= dx * sg * k // aim past the stone's far side
+        const k = (s.r + 0.5 - Math.abs(side)) / (s.r + 0.5) * 2, sg = side >= 0 ? 1 : -1, ex = dx
+        dx += dz * sg * k; dz -= ex * sg * k // aim past the stone's far side
       }
     }
     turn(pos.x + dx, pos.z + dz, 3, dt)
@@ -122,26 +126,44 @@ export async function createMonster(ctx) {
     }
   }
 
-  // Bend a bone about a MODEL-space axis on top of the clip (parent order; matrices must be fresh).
-  const qp = new THREE.Quaternion(), qd = new THREE.Quaternion(), qr = new THREE.Quaternion()
-  const bend = (b, axis, ang) => {
-    if (!ang) return
-    b.parent.getWorldQuaternion(qp).premultiply(qr.copy(root.quaternion).invert()) // parent in model space
-    qd.setFromAxisAngle(axis, ang)
-    b.quaternion.premultiply(qp.clone().invert().multiply(qd).multiply(qp))
+  // Pose layers on top of the clip, in MODEL space (the troll faces +Z). Each call needs fresh parent matrices and
+  // refreshes the bone's own subtree, so call them parent-first.
+  const qp = new THREE.Quaternion(), qd = new THREE.Quaternion(), qm = new THREE.Quaternion(), qa = new THREE.Quaternion(), I = new THREE.Quaternion()
+  const toModel = v => v.applyQuaternion(qm.copy(root.quaternion).invert())
+  const rotate = (b, q) => {
+    b.parent.getWorldQuaternion(qp).premultiply(qm.copy(root.quaternion).invert())
+    b.quaternion.premultiply(qd.copy(qp).invert().multiply(q).multiply(qp))
     b.updateMatrixWorld(true)
   }
-  const AX = new THREE.Vector3(1, 0, 0)
-  const rArm = bone('rightUpperArm'), lArm = bone('leftUpperArm'), spine = bone('spine'), neck = bone('neck')
-  // Overhead arc for smash/slam, by clip time u: raise behind the head, hold, whip down, club in the turf, recover.
-  const armArc = u => u < 1.0 ? -2.6 * ss(0.05, 1.0, u) : u < 1.25 ? -2.6 - 0.12 * ss(1.0, 1.25, u)
-    : u < 1.4 ? -2.72 + 3.6 * ss(1.25, 1.4, u) : u < 1.9 ? 0.88 : 0.88 * (1 - ss(1.9, 2.7, u))
-  const lean = u => u < 1.25 ? -0.2 * ss(0.1, 1.0, u) : u < 1.4 ? -0.2 + 0.55 * ss(1.25, 1.4, u) : 0.35 * (1 - ss(1.9, 2.7, u))
+  const aim = (b, from, to, w) => rotate(b, qa.setFromUnitVectors(from, to).slerp(I, 1 - w))
+  const mix = (out, a, b, s) => out.copy(a).applyQuaternion(qa.setFromUnitVectors(a, b).slerp(I, 1 - s))
+  const AX = V3(1, 0, 0), UP = V3(0, 1, 0)
+  const shoulderR = bone('rightUpperArm'), elbowR = bone('rightLowerArm'), shoulderL = bone('leftUpperArm'), elbowL = bone('leftLowerArm')
+  const spine = bone('spine'), neck = bone('neck')
+  // The overhead blow (solved with FK so the stone's head meets the turf ~1.5 m ahead once the feet are grounded):
+  // wind-up = arm up and back, the stone raised high behind the head; strike = arm forward-down, stone into the ground.
+  const POSE = { arm: [V3(-0.15, 1, -0.3), V3(-0.1, -0.45, 0.9)], club: [V3(-0.1, 0.85, -0.5), V3(-0.05, -0.8, 0.6)], lean: [-0.2, 0.4] }
+  for (const v of [...POSE.arm, ...POSE.club]) v.normalize()
+  // By clip time u → [weight of the layer, 0 wind-up … 1 strike]: rise, hold, an accelerating whip down, rest, recover.
+  const arc = u => u < 1.25 ? [ss(0.05, 0.95, u), 0] : u < 1.9 ? [1, Math.min(1, ((u - 1.25) / 0.15) ** 2)] : [1 - ss(1.9, 2.7, u), 1]
+  const armDir = (sh, el) => toModel(el.getWorldPosition(A).sub(sh.getWorldPosition(B)).normalize())
+  const T1 = V3(), T2 = V3()
+  function overhead(u, both) {
+    const [w, s] = arc(u)
+    if (w <= 0) return
+    rotate(spine, qa.setFromAxisAngle(AX, (POSE.lean[0] + (POSE.lean[1] - POSE.lean[0]) * s) * w * (both ? 1.2 : 1)))
+    mix(T1, POSE.arm[0], POSE.arm[1], s)
+    aim(shoulderR, armDir(shoulderR, elbowR), T1, w)
+    if (both) aim(shoulderL, armDir(shoulderL, elbowL), T2.copy(T1).setX(-T1.x), w)
+    mix(T1, POSE.club[0], POSE.club[1], s)
+    aim(hand, toModel(P.copy(UP).applyQuaternion(club.getWorldQuaternion(qd))), T1, w)
+  }
 
   const lt = bone('leftToes'), rt = bone('rightToes'), lf = bone('leftFoot'), rf = bone('rightFoot')
+  const seg = new THREE.Line3()
   let yOff = 0
   const hero = ctx.heroPos
-  window.__probes.monster = () => ({ state: M.state, hp: M.hp, dist: +Math.hypot(hero.x - pos.x, hero.z - pos.z).toFixed(1), attack: atk ? last : null })
+  window.__probes.monster = () => ({ state: M.state, hp: M.hp, dist: +Math.hypot(hero.x - pos.x, hero.z - pos.z).toFixed(1), attack: M.attack.name || null })
 
   return {
     update(dt) {
@@ -151,52 +173,56 @@ export async function createMonster(ctx) {
       switch (M.state) {
         case 'asleep':
           if (dist < WAKE) notice += dt
-          if (notice >= STIR) go('waking', 'Stand Up', { loop: false, fade: 0.4 })
+          if (notice >= STIR) go('waking', 'Stand Up', { loop: false, fade: 0.4, speed: 1.3 })
           break
         case 'waking':
           turn(hero.x, hero.z, 0.8, dt)
-          if (done) { go('roar', 'Channel (Two-Handed)', { loop: false, fade: 0.25 }); roared = false }
+          if (done) go('roar', 'Channel (Two-Handed)', { loop: false, fade: 0.25 })
           break
         case 'roar':
           turn(hero.x, hero.z, 1.2, dt)
-          if (!roared && st > 0.45) {
-            roared = true
-            ctx.vfx?.blast(V.set(pos.x, pos.y, pos.z), 13); ctx.vfx?.shake(1, 0.9)
+          if (!fx && st > 0.45) {
+            fx = true
+            ctx.vfx?.blast(pos, 13); ctx.vfx?.shake(1, 0.9)
             if (ring) ring.mist = 0.45 // the roar blows the pooled mist outward
           }
           if (done) go('stalk', 'Walk')
           break
         case 'stalk': {
           if (leashed) { go('home', 'Walk'); break }
-          const pick = Object.entries(ATTACKS).filter(([k, a]) => dist < a.reach && k !== last)
+          // The opener is always the overhead smash — the clearest wind-up; after that, any blow in reach but the last.
+          const pick = Object.entries(ATTACKS).filter(([k, a]) => dist < a.reach && (last ? k !== last : k === 'smash'))
           if (pick.length && st > 0.4 && turn(hero.x, hero.z, 2, dt) < 0.35) {
-            ;[last, atk] = pick[Math.floor(Math.random() * pick.length)]
-            struck = false; go('attack', atk.clip, { loop: false, fade: 0.2, speed: atk.wind / atk.windT })
+            const [name, a] = pick[Math.floor(Math.random() * pick.length)]
+            atk = a; last = name; Object.assign(M.attack, { name, lands: a.lands })
+            go('attack', a.clip, { loop: false, fade: 0.2, speed: a.wind / a.windT })
             break
           }
-          const run = dist > 7, speed = run ? RUN : WALK
+          const run = dist > 5, speed = run ? RUN : WALK
           if (dist > 2.4) { play(run ? 'Run' : 'Walk', { speed: run ? RUN / 3.44 : WALK / 1.21 }); walk(hero.x, hero.z, speed, dt) }
           else play('Idle')
           break
         }
         case 'attack': {
-          const t = cur.time
-          if (t < atk.wind) turn(hero.x, hero.z, 1.6, dt) // tracks the hero through the wind-up, committed after
+          const u = cur.time, a = M.attack
+          if (u < atk.wind) turn(hero.x, hero.z, 1.6, dt) // tracks the hero through the wind-up, committed after
           else cur.timeScale = atk.fast
-          if (t >= atk.h0 && t <= atk.h1) {
-            const a = M.attack
+          if (u >= atk.h0 && u <= atk.h1) {
             a.active = true; a.radius = atk.radius; a.dmg = atk.dmg
             if (atk.at === 'foot') lt.getWorldPosition(a.center)
-            else club.localToWorld(a.center.copy(HEAD))
-            if (atk.at === 'ground') a.center.y = ctx.heightAt(a.center.x, a.center.z)
-            if (!struck && atk.swing) { // the stone hits the turf
-              struck = true
-              W.copy(a.center).setY(ctx.heightAt(a.center.x, a.center.z))
-              ctx.vfx?.dust(W, atk.swing === 2 ? 3 : 1.8); ctx.vfx?.shake(atk.swing === 2 ? 0.9 : 0.6, 0.45)
-              if (atk.swing === 2) ctx.vfx?.blast(W, 8)
+            else { // the point of the stone nearest the hero's chest
+              club.getWorldPosition(seg.start); club.localToWorld(seg.end.copy(HEAD))
+              seg.closestPointToPoint(P.set(hero.x, hero.y + 1, hero.z), true, a.center)
+              if (atk.at === 'ground') { club.localToWorld(a.center.copy(HEAD)); a.center.y = ctx.heightAt(a.center.x, a.center.z) }
             }
           }
-          if (done || t >= (atk.end ?? Infinity)) { endAttack(); pause = 0.5 + Math.random() * 0.8; go('recover', 'Idle', { fade: 0.35 }) }
+          if (atk.swing && !fx && u >= atk.h0 + 0.1) { // the stone meets the turf
+            fx = true
+            club.localToWorld(P.copy(HEAD)); P.y = ctx.heightAt(P.x, P.z)
+            ctx.vfx?.dust(P, atk.swing === 2 ? 3 : 1.8); ctx.vfx?.shake(atk.swing === 2 ? 0.9 : 0.6, 0.45)
+            if (atk.swing === 2) ctx.vfx?.blast(P, 8)
+          }
+          if (done || u >= (atk.end ?? Infinity)) { endAttack(); pause = 0.5 + Math.random() * 0.8; go('recover', 'Idle', { fade: 0.35 }) }
           break
         }
         case 'recover':
@@ -211,6 +237,9 @@ export async function createMonster(ctx) {
           if (Math.hypot(home.x - pos.x, home.z - pos.z) > 1) walk(home.x, home.z, WALK, dt)
           else { play('Idle'); turn(hero.x, hero.z, 1, dt) }
           break
+        case 'dead':
+          if (!fx && cur.time > 0.95) { fx = true; ctx.vfx?.dust(pos, 2.5); ctx.vfx?.shake(0.5, 0.4) } // it hits the ground
+          break
       }
       poise = Math.max(0, poise - dt * 8)
 
@@ -219,18 +248,13 @@ export async function createMonster(ctx) {
       root.position.y = gy + yOff
       root.rotation.y = yaw
       root.updateMatrixWorld(true)
-      if (M.state === 'asleep') bend(neck, AX, 0.45) // chin on its chest
-      if (M.state === 'attack' && atk.swing) {
-        const u = cur.time
-        bend(spine, AX, lean(u) * atk.swing * 0.7)
-        bend(rArm, AX, armArc(u))
-        if (atk.swing === 2) bend(lArm, AX, armArc(u))
-      }
+      if (M.state === 'asleep') rotate(neck, qa.setFromAxisAngle(AX, 0.45)) // chin on its chest
+      if (M.state === 'attack' && atk.swing) overhead(cur.time, atk.swing === 2)
       // Feet on the ground: the clips float or sink a little; settle the lowest foot onto the turf (not once dead —
       // lying down, the body is the lowest thing). Toes rest 0.009 and ankles 0.094 above the sole, model units.
       if (M.alive) {
-        const low = Math.min(lt.getWorldPosition(V).y - 0.009 * S, rt.getWorldPosition(V).y - 0.009 * S,
-          lf.getWorldPosition(V).y - 0.094 * S, rf.getWorldPosition(V).y - 0.094 * S) - gy
+        const low = Math.min(lt.getWorldPosition(A).y - 0.009 * S, rt.getWorldPosition(A).y - 0.009 * S,
+          lf.getWorldPosition(A).y - 0.094 * S, rf.getWorldPosition(A).y - 0.094 * S) - gy
         yOff -= low * Math.min(1, dt * 12)
         root.position.y = gy + yOff
       }

@@ -1,6 +1,6 @@
 """The Barrow Troll's club — a standing stone ripped out of the Old Ring — and the low boulder it sleeps on.
   blender -b -P tools/monster/club.py -- public/models/club.glb
-Nodes: "club" (origin = middle of the grip, stone along +Y, 2.3 m long; the torn-out foot with its clod of soil and
+Nodes: "club" (origin = middle of the grip, stone along +Y, 2.8 m long; the torn-out foot with its clod of soil and
 chalk is the head) and "seat" (origin = centre of its footprint on the ground, top ~0.6 m). Metres, vertex-coloured
 in the same palette as the ring's stones (src/ring.js stoneGeo), so the club reads as one of them.
 """
@@ -68,16 +68,17 @@ def sarsen(p, v, n1, n2, d, o, worn=0.0, soil=0.0):
     return r * shade, g * shade, b * shade
 
 
-# --- club: built along +Z (the exporter turns Z-up into +Y). Grip centre at the origin, head at +1.95 m.
-L0, L = -0.34, 2.3
+# --- club: built along +Z (the exporter turns Z-up into +Y). Grip centre at the origin, head at +2.44 m (its heavy middle ~2.1 m out).
+L0, L = -0.36, 2.8
 def club_shape(x, y, z):
     v = (pw(z, 0.45) + 1) / 2                       # 0 = pommel end (the stone's old crown), 1 = torn-out foot
-    grow = ss(0.1, 0.78, v)
-    w, t = lerp(0.115, 0.31, grow), lerp(0.1, 0.23, grow)
-    bend = 0.05 * ss(0.3, 1, v)                     # a slight warp, as a real slab has
-    return Vector((pw(x, 0.4) * w + bend, pw(y, 0.4) * t, L0 + v * L)), v
-club_shape.rough = lambda v: 0.25 + 0.75 * ss(0.17, 0.4, v)  # the grip is worn smooth
-club = stone("club", 5, club_shape,
+    grow = ss(0.08, 0.6, v)
+    w, t = lerp(0.12, 0.4, grow), lerp(0.1, 0.22, grow)  # a slab: broad face, thinner edge
+    bend = 0.06 * ss(0.3, 1, v)                     # a slight warp, as a real slab has
+    zz = L0 + v * L + 0.14 * (x - 0.6 * y) * ss(0.8, 1, v)  # the torn-out foot: a slanted break
+    return Vector((pw(x, 0.32) * w + bend, pw(y, 0.32) * t, zz)), v
+club_shape.rough = lambda v: 0.3 + 1.5 * ss(0.17, 0.4, v)  # the grip is worn smooth, the rest lumpy and chipped
+club = stone("club", 6, club_shape,
              lambda p, v, n1, n2, d, o: sarsen(p, v, n1, n2, d, o, worn=0.8 * (1 - ss(0.12, 0.24, v)) * ss(0.0, 0.05, v),
                                                soil=ss(0.86, 0.97, v + (n1 - 0.5) * 0.12)), 3.1)
 
