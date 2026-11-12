@@ -16,19 +16,23 @@ ss = lambda a, b, x: (lambda k: k * k * (3 - 2 * k))(min(1, max(0, (x - a) / (b 
 lerp = lambda a, b, k: a + (b - a) * k
 n01 = lambda p, o=3: noise.fractal(p, 1.0, 2.0, o, noise_basis='PERLIN_ORIGINAL') * 0.5 + 0.5
 
-# one vertex-coloured material; metal vs wood differ by colour only (shortcut: no per-part metallic, glb stays one primitive)
-M = bpy.data.materials.new("maul")
-M.use_nodes = True
-b = M.node_tree.nodes["Principled BSDF"]
-vc = M.node_tree.nodes.new("ShaderNodeVertexColor"); vc.layer_name = "Col"
-M.node_tree.links.new(vc.outputs["Color"], b.inputs["Base Color"])
-b.inputs["Roughness"].default_value = 0.6
+# two vertex-coloured materials: wood/rope (dielectric) and metal (bronze, verdigris, iron)
+def mat(name, metal, rough):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    b = m.node_tree.nodes["Principled BSDF"]
+    vc = m.node_tree.nodes.new("ShaderNodeVertexColor"); vc.layer_name = "Col"
+    m.node_tree.links.new(vc.outputs["Color"], b.inputs["Base Color"])
+    b.inputs["Roughness"].default_value = rough
+    b.inputs["Metallic"].default_value = metal
+    return m
+M, MM = mat("maul", 0.0, 0.7), mat("maul_metal", 0.85, 0.45)
 
 BRONZE, VERD = (0.386, 0.162, 0.042), (0.076, 0.342, 0.227)
-WOOD, IRON, ROPE = (0.30, 0.25, 0.19), (0.05, 0.05, 0.055), (0.035, 0.026, 0.02)
+WOOD, IRON, ROPE = (0.30, 0.25, 0.19), (0.07, 0.07, 0.08), (0.09, 0.06, 0.035)
 
 
-def finish(ob, colour, smooth=False):
+def finish(ob, colour, smooth=False, metal=False):
     """Bake scale in, paint vertex colour (colour(local_co) -> rgb), give it the shared material."""
     bpy.context.view_layer.objects.active = ob
     ob.select_set(True)
@@ -38,28 +42,28 @@ def finish(ob, colour, smooth=False):
     ca = me.color_attributes.new("Col", "FLOAT_COLOR", "CORNER")
     flat = []
     for lp in me.loops:
-        flat += [*colour(me.vertices[lp.vertex_index].co), 1]
+        flat += [*colour(me.vertices[lp.vertex_index].co, lp.vertex_index), 1]
     ca.data.foreach_set("color", flat)
-    me.materials.append(M)
+    me.materials.append(MM if metal else M)
     for p in me.polygons:
         p.use_smooth = smooth
     return ob
 
 
-def cyl(z0, z1, rx, ry, colour, loc=(0, 0), v=12):
+def cyl(z0, z1, rx, ry, colour, loc=(0, 0), v=12, metal=False):
     bpy.ops.mesh.primitive_cylinder_add(vertices=v, radius=1, depth=z1 - z0, location=(loc[0], loc[1], (z0 + z1) / 2))
     ob = bpy.context.object
     ob.scale = (rx, ry, 1)
-    return finish(ob, colour)
+    return finish(ob, colour, metal=metal)
 
 
-def torus(R, r, loc, rot, colour, seg=16, minor=6):
+def torus(R, r, loc, rot, colour, seg=16, minor=6, metal=False):
     bpy.ops.mesh.primitive_torus_add(major_radius=R, minor_radius=r, major_segments=seg, minor_segments=minor, location=loc, rotation=rot)
-    return finish(bpy.context.object, colour)
+    return finish(bpy.context.object, colour, metal=metal)
 
 
 def solid(c):
-    return lambda co: c
+    return lambda co, *_: c
 
 
 def join(parts, name):
@@ -77,35 +81,47 @@ def join(parts, name):
 
 # --- weapon: built along +Z (exporter turns Z-up into +Y); head's striking faces on +-X.
 W = []
-W.append(cyl(-0.25, 1.0, 0.013, 0.010, lambda co: tuple(c * (0.8 + 0.4 * n01(Vector((co.x * 9, co.y * 9, co.z * 3)))) for c in WOOD)))  # oar loom
+W.append(cyl(-0.25, 1.0, 0.013, 0.010, lambda co, *_: tuple(c * (0.8 + 0.4 * n01(Vector((co.x * 9, co.y * 9, co.z * 3)))) for c in WOOD)))  # oar loom
 W.append(cyl(-0.27, -0.25, 0.019, 0.015, solid(WOOD)))                      # butt knob where the oar blade snapped
 W.append(cyl(-0.05, 0.05, 0.0175, 0.0145, solid(ROPE)))                     # tarred grip wrap
 W.append(cyl(0.78, 0.86, 0.0175, 0.0145, solid(ROPE)))                      # lashing under the head
 for z in (0.835, 0.875):                                                    # iron bands holding head to shaft
-    W.append(cyl(z - 0.01, z + 0.01, 0.0195, 0.0165, solid(IRON)))
+    W.append(cyl(z - 0.01, z + 0.01, 0.0195, 0.0165, solid(IRON), metal=True))
+for sx in (-1, 1):                                                          # iron straps down both sides of the shaft, up into the head loops
+    W.append(cyl(0.80, 0.90, 0.006, 0.014, solid(IRON), (sx * 0.022, 0), 6, metal=True))
 
 bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3, radius=1, location=(0, 0, 0.95))
 head = bpy.context.object
 head.scale = (0.11, 0.08, 0.08)                                              # 0.22 along X, 0.16 across
-for v in head.data.vertices:                                                 # lumpy cast bronze
+D = {}
+for v in head.data.vertices:                                                 # egg: fuller toward +X; lumpy cast bronze
     n = v.co.normalized()
-    v.co += n * (n01(v.co * 2.4 + Vector((3, 1, 7))) - 0.5) * 1.1 * 0.12
+    t = 1 + 0.18 * n.x
+    v.co.y *= t; v.co.z *= t
+    D[v.index] = n01(v.co * 2.4 + Vector((3, 1, 7)))
+    v.co += n * (D[v.index] - 0.5) * 1.1 * 0.12
 bpy.context.view_layer.objects.active = head
 head.select_set(True); bpy.ops.object.transform_apply(location=False, rotation=True, scale=True); head.select_set(False)
-hz = 0.0  # head verts are local (object sits at z 0.95 until join)
-def head_col(co):
-    p = Vector((co.x * 16, co.y * 16, (co.z - hz) * 16))
-    k = ss(0.47, 0.56, n01(p) + 0.08 * (hz - co.z) / 0.08)                    # verdigris pools low and in pits
+def head_col(co, vi):
+    d = D[vi]
+    k = max(ss(0.44, 0.36, d), 0.7 * ss(0.72, 0.8, n01(co * 40, 2)))           # verdigris only in pits + fine speckle
     c = tuple(lerp(a, bb, k) for a, bb in zip(BRONZE, VERD))
-    s = 0.55 + 0.45 * n01(p * 3.1)
+    s = 0.7 + 0.3 * n01(co * 14)
     return tuple(x * s for x in c)
-W.append(finish(head, head_col, smooth=True))
-W.append(torus(0.05, 0.012, (0, 0, 1.018), (0, pi / 2, 0), solid(IRON)))     # iron ring, plane across the shaft (YZ)
+W.append(finish(head, head_col, smooth=True, metal=True))
+W.append(torus(0.05, 0.012, (0, 0, 1.018), (0, pi / 2, 0), solid(IRON), metal=True))  # iron ring, plane across the shaft (YZ)
+for x in (-0.05, 0.05):                                                     # iron straps over the head
+    W.append(torus(0.083, 0.010, (x, 0, 0.95), (0, pi / 2, 0), solid(IRON), 24, 6, metal=True))
+for x in (-0.02, 0.0, 0.02):                                                # tarred rope crossings
+    W.append(torus(0.086, 0.007, (x, 0, 0.95), (0, pi / 2, 0), solid(ROPE), 24, 5))
 weapon = join(W, "weapon")
 
 # --- carrier: top anchor at the origin, body down -Z (-Y after export); two rope loops the shaft passes through + a strap.
-C = [torus(0.04, 0.008, (0, 0, z), (0, 0, 0), solid(ROPE), 14, 6) for z in (0.0, -0.70)]
-C.append(cyl(-0.97, 0.0, 0.007, 0.007, solid(ROPE), (-0.045, 0), 6))
+C = [torus(0.04, 0.009, (0, 0, z), (0, 0, 0), solid(ROPE), 14, 6) for z in (0.0, -0.70)]
+C.append(cyl(-0.97, 0.0, 0.012, 0.012, solid(ROPE), (-0.045, 0), 8))
+for z in (0.0, -0.70):                                                      # knot where each loop meets the strap
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=8, ring_count=5, radius=0.024, location=(-0.045, 0, z))
+    C.append(finish(bpy.context.object, solid(ROPE)))
 bpy.ops.mesh.primitive_uv_sphere_add(segments=8, ring_count=5, radius=0.02, location=(-0.045, 0, -0.97))
 C.append(finish(bpy.context.object, solid(ROPE)))                            # knot at the hips anchor
 carrier = join(C, "carrier")
