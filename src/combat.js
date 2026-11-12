@@ -83,10 +83,10 @@ export async function createCombat(ctx) {
     const side = (hand, upper, lower, sgn) => {
       mT.decompose(pT, qT, sc)
       hand.getWorldPosition(p2); hand.getWorldQuaternion(qH)
-      pT.lerpVectors(p2, pT, w); qT.slerpQuaternions(qH, qT, w)
+      pT.lerpVectors(p2, pT, w); qH.slerp(qT, w) // (slerpQuaternions would alias qT)
       upper.getWorldPosition(pole).add(W.set(sgn, -0.7, -0.5).applyQuaternion(root.quaternion)) // elbows out, down, back
       reach(upper, lower, hand, pT, pole)
-      setWorldQ(hand, qT)
+      setWorldQ(hand, qH)
     }
     mW.compose(cur.g, cur.q, sc.setScalar(S)).premultiply(root.matrixWorld)
     mT.multiplyMatrices(mW, GRi); side(rightHand, rU, rL, -1)
@@ -135,7 +135,7 @@ export async function createCombat(ctx) {
     { clip: 'Stab', path: PATH.stab, dur: 0.917, speed: 1.0, hit: [0.2, 0.36], chain: 0.6, dmg: 26, lunge: 0.9 },
   ]
   const HEAVY = { clip: 'Greatsword Swing', path: PATH.heavy, dur: 3.25, speed: 1.45, hit: [0.42, 0.53], chain: 0.8, dmg: 45, lunge: 0.8, heavy: true }
-  const BLADE = [0.25, 0.5, 0.75, 1.0, 1.12].map(y => new THREE.Vector3(0, y, 0)) // sword-local sample points
+  const BLADE = [0.3, 0.5, 0.75, 1.0, 1.12].map(y => new THREE.Vector3(0, y, 0)) // sword-local sample points
   let swing = null, combo = -1, comboUntil = 0, want = null, hits = 0
   const tip = V(), tipPrev = V(), P = V(), dir = V()
   function startSwing(a) {
@@ -148,7 +148,7 @@ export async function createCombat(ctx) {
   function endSwing() { if (swing?.trail) swing.trail.stop(); if (swing && !swing.a.heavy) comboUntil = ctx.time + 0.6; swing = null }
   function strike(dt) { // after the arms have moved this frame
     const s = swing, a = s.a, f = s.t / a.dur
-    if (s.trail === null && f > a.hit[0] - 0.06) s.trail = ctx.vfx?.trail(sword, { base: BLADE[0], tip: BLADE[4] }) // the cut, not the wind-up
+    if (s.trail === null && f > a.hit[0] - 0.06) s.trail = ctx.vfx?.trail(sword, { base: BLADE[1], tip: BLADE[4] }) // the cut, not the wind-up
     if (s.trail && f > a.hit[1] + 0.05) { s.trail.stop(); s.trail = false }
     sword.updateWorldMatrix(true, false)
     sword.localToWorld(tip.copy(BLADE[4]))
