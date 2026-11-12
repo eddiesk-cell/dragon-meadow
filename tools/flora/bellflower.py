@@ -58,7 +58,7 @@ def bell(tip, d, ang_end, L, R, seed=0):
     a = radians(ang_end); T = d * sin(a) + Vector((0, 0, cos(a)))
     ax = T.normalized(); B = Vector((-d.y, d.x, 0)); S = ax.cross(B).normalized()
     rows, cols = [], []; N = 20; U = 10
-    lilac = (0.60, 0.48, 0.86, 0); orchid = (0.80, 0.55, 0.88, 0); peach = (1.0, 0.72, 0.62, 0); cream = (1.0, 0.80, 0.55, 0)
+    lilac = (0.50, 0.38, 0.82, 0); orchid = (0.72, 0.45, 0.86, 0); peach = (1.0, 0.62, 0.52, 0); cream = (1.0, 0.80, 0.55, 0)
     for i in range(U + 1):
         u = i / U
         for_r = R * (0.12 + 0.62 * sin(u * pi * 0.5) ** 0.9 * (1 - 0.25 * u) + 0.45 * u ** 4)  # round shoulder, flared mouth
@@ -70,9 +70,9 @@ def bell(tip, d, ang_end, L, R, seed=0):
             along = L * u + 0.06 * L * max(0, lobe) * u ** 4  # petal tips a little longer
             flare = 0.0
             row.append(tip + ax * along + (B * cos(th) + S * sin(th)) * r + ax * (-0.05 * L * u ** 5 * 0))
-            c = lerp(lilac, orchid, sm(u * 1.5)); c = lerp(c, peach, sm((u - 0.55) * 2.2) * (0.5 + 0.5 * max(0, lobe)))
+            c = lerp(lilac, orchid, sm(u * 1.5)); c = lerp(c, peach, sm((u - 0.6) * 2.5) * (0.4 + 0.6 * max(0, lobe)))
             glow = sm((u - 0.08) * 6) * (1 - sm((u - 0.94) * 14))
-            c = lerp(c, cream, glow * 0.35)
+            c = lerp(c, cream, glow * 0.12 * sm((u - 0.3) * 3))
             crow.append((c[0], c[1], c[2], glow))
         rows.append(row); cols.append(crow)
     grid(rows, cols, wrap=True)
