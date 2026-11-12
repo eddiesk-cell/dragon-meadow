@@ -2,16 +2,21 @@
 
   fix   <full.glb> <out.glb>   the icicles under the arms ride the arm (the autorig took them for a hanging skirt and
                                pinned them to the hips: they stretched into blades); the pinnacle crown rides upperChest
-                               rigidly (BESTIARY route +R); the head sunk in the crown keeps HEADKEEP of each clip's turn.
+                               rigidly (BESTIARY route +R); the head sunk in the crown keeps HEADKEEP of each clip's turn;
+                               the fist's lower block rides the hand; the neck joint goes under the jaw. Also writes
+                               <out>-skel.blend (Mixamo names) for skel_tex.py -> skeleton.png of the FINAL rig.
   mask  <glb> <png>            front + side of the rest pose: crown red, repaired icicles green -- check the masks by eye.
   sheet <glb> <png>            every clip at 1/4, 1/2 and 3/4 of its length, front view, one contact sheet.
+  gap   <glb> <clip>           each forearm+hand's nearest gap (m) to the trunk, legs and feet, and how many of its
+                               vertices sit behind that surface, every frame of the clip.
 """
 import bpy, sys, numpy as np
-from mathutils import Quaternion, kdtree
+from mathutils import Quaternion, Vector, kdtree
 
 a = sys.argv[sys.argv.index("--") + 1:]
 MODE, SRC, OUT = a
 HEADKEEP = 0.25   # the face sits boxed in the rigid crown: it keeps a quarter of the borrowed head turn
+NECKDROP = 0.04   # m, neck joint under the head joint: the head block's foot on the chest (the chest juts out below 1.26)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=SRC)
 arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
@@ -55,6 +60,36 @@ icicle, donor, crown = masks()
 print(f"MASK icicles {icicle.sum()} (left {(icicle & (x > 0)).sum()}, right {(icicle & (x < 0)).sum()}), "
       f"crown {(crown > 0.5).sum()} of {len(V)}")
 
+if MODE == "gap":   # OUT = a clip: per frame, each forearm+hand's nearest gap to trunk/legs/feet, and verts behind it
+    dom = W.argmax(1)
+    BODY = ("hips", "spine", "chest", "upperChest", "UpperLeg", "LowerLeg", "Foot", "Toes")
+    body = np.flatnonzero([any(n == p or (p[0].isupper() and p in n) for p in BODY) for n in np.array(names)[dom]])
+    hand = {s: np.flatnonzero([n.startswith(s) and any(p in n for p in ARMB[1:]) for n in np.array(names)[dom]])
+            for s in ("left", "right")}
+    ad = arm.animation_data
+    for tr in ad.nla_tracks:
+        tr.mute = True
+    act = next(x for x in bpy.data.actions if x.name.startswith(OUT)); ad.action = act; ad.action_slot = act.slots[0]
+    from mathutils.bvhtree import BVHTree   # nearest point on the body's SURFACE (its faces), not its nearest vertex
+    isbody = np.zeros(len(V), bool); isbody[body] = True
+    F = [p.vertices[:] for p in me.data.polygons if isbody[list(p.vertices)].all()]
+    worst = {s: (9, 0) for s in hand}
+    for f in range(int(act.frame_range[0]), int(act.frame_range[1]) + 1):
+        bpy.context.scene.frame_set(f)
+        m = me.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
+        P = np.empty(len(m.vertices) * 3); m.vertices.foreach_get("co", P); P = P.reshape(-1, 3) @ M[:3, :3].T + M[:3, 3]
+        bvh = BVHTree.FromPolygons(P.tolist(), F)
+        row = []
+        for s, hi in hand.items():
+            d, inside = 9, 0
+            for i in hi:
+                q, n, _, dist = bvh.find_nearest(P[i]); dist *= 1.8 / H; d = min(d, dist)
+                inside += dist < 0.03 and np.dot(P[i] - np.array(q), np.array(n)) < 0
+            worst[s] = (min(worst[s][0], d), max(worst[s][1], inside)); row.append(f"{s} {d:.3f} m / {inside} behind")
+        print(f"GAP {OUT} f{f}: " + ", ".join(row))
+    print("GAP worst", {s: (round(g, 3), n) for s, (g, n) in worst.items()})
+    raise SystemExit
+
 if MODE == "fix":
     up = names.index("upperChest")
     # the belly and the chest under the face carry stray hip, foot, shoulder, arm and head weight (geodesic leaks
@@ -77,6 +112,11 @@ if MODE == "fix":
         bad = np.flatnonzero(icicle & ((x > 0) if side == "left" else (x < 0)))
         for i in bad:
             W[i] = W[donor[side][kd.find(P[i])[1]]]
+        # past the wrist it is the fist's lower block (the inner side once the arm hangs): solid ice, rigid on the
+        # hand -- per-vertex finger donors crumpled it into shards and folded it into the knee
+        hx = abs(np.array(arm.matrix_world @ arm.data.bones[side + "Hand"].head_local)[0] - V[:, 0].mean()) * 1.8 / H
+        blk = bad[np.abs(x[bad]) > hx]; W[blk] = 0; W[blk, names.index(side + "Hand")] = 1
+        print(f"FIST {side}: {len(blk)} lower-block vertices past the wrist ({hx:.2f} m) rigid on {side}Hand")
     W = (1 - crown)[:, None] * W; W[:, up] += crown
     for v in me.data.vertices:                    # rewrite each vertex's groups: 4 strongest, normalised
         i = v.index; top = np.argsort(W[i])[-4:]; top = top[W[i, top] > 0.01]; tot = W[i, top].sum()
@@ -84,6 +124,18 @@ if MODE == "fix":
             me.vertex_groups[j].remove([i])
         for j in top:
             me.vertex_groups[j].add([i], float(W[i, j] / tot), "REPLACE")
+    # shortcut: core.py hangs the Neck 6 cm above the shoulders whatever the chin says, and this head sits sunk between
+    # them, so the neck came out ABOVE the head joint: upside down in the face, its x axis flipped, and every nod that
+    # retarget.py copies verbatim from the donor's (upright) neck played mirrored. It moves under the jaw (NECKDROP below
+    # the head joint, where the head block meets the chest) and points up with the donor's frame (x across, z forward),
+    # so the copied keys mean what they did on the donor. Drop this once core.py keeps Neck below Head.
+    bpy.context.view_layer.objects.active = arm; bpy.ops.object.mode_set(mode="EDIT")
+    E = arm.data.edit_bones; nk, hd, uc = E["neck"], E["head"], E["upperChest"]
+    nk.head = hd.head - Vector((0, 0, NECKDROP * H / 1.8)); nk.tail = hd.head.copy(); nk.align_roll(Vector((0, -1, 0)))
+    uc.tail = uc.head + (uc.tail - uc.head).normalized() * (nk.head - uc.head).length   # same direction, ends at the neck
+    print(f"NECK neck joint now at z {nk.head.z:.3f} (x axis {tuple(round(c, 2) for c in nk.x_axis)}), head {hd.head.z:.3f}, "
+          f"upperChest {uc.head.z:.3f}")
+    bpy.ops.object.mode_set(mode="OBJECT")
     acts = list(bpy.data.actions)
     for act in acts:
         cs = [c for layer in act.layers for st in layer.strips for bag in st.channelbags for c in bag.fcurves]
@@ -104,6 +156,22 @@ if MODE == "fix":
     ad.action = None
     bpy.ops.export_scene.gltf(filepath=OUT, export_format="GLB", export_animation_mode="NLA_TRACKS")
     print("FIX wrote", OUT, len(acts), "clips:", ", ".join(x.name for x in acts))
+    # the fixed rig, renamed back to Mixamo's names, for the shared skel_tex.py + overlay_draw.py (skeleton.png)
+    MIX = {"hips": "Hips", "spine": "Spine", "chest": "Spine1", "upperChest": "Spine2", "neck": "Neck", "head": "Head"}
+    for L in ("Left", "Right"):
+        l = L.lower()
+        MIX |= {l + a: L + b for a, b in (("Shoulder", "Shoulder"), ("UpperArm", "Arm"), ("LowerArm", "ForeArm"), ("Hand", "Hand"),
+                                          ("UpperLeg", "UpLeg"), ("LowerLeg", "Leg"), ("Foot", "Foot"), ("Toes", "ToeBase"))}
+        MIX |= {f"{l}{v}{p}": f"{L}Hand{f}{i + 1}" for f, v in (("Thumb", "Thumb"), ("Index", "Index"), ("Middle", "Middle"),
+                ("Ring", "Ring"), ("Pinky", "Little")) for i, p in enumerate(("Proximal", "Intermediate", "Distal", "Tip"))}
+    for b in arm.data.bones:
+        b.name = MIX.get(b.name, b.name)
+    arm.animation_data_clear()                    # saved at rest: a blend keeps the last evaluated pose
+    for o in [o for o in bpy.data.objects if o.type == "MESH" and o != me]:   # the importer's bone-shape sphere
+        print("SKEL drops", o.name); bpy.data.objects.remove(o)
+    for pb in arm.pose.bones:
+        pb.location, pb.rotation_quaternion, pb.scale = (0, 0, 0), (1, 0, 0, 0), (1, 1, 1)
+    bpy.ops.wm.save_as_mainfile(filepath=OUT.replace(".glb", "-skel.blend"))
     raise SystemExit
 
 sc = bpy.context.scene; sc.render.engine = "BLENDER_WORKBENCH"; sc.display.shading.light = "STUDIO"
