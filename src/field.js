@@ -48,10 +48,10 @@ export async function createField(ctx) {
   function layer({ side, cell, segs, width, fadeIn, fadeOut, flowers, head, salt }) {
     const t = [], s = [], hd = []
     for (let i = 0; i <= segs; i++) t.push(i / segs, i / segs), s.push(-1, 1), hd.push(0, 0)
-    t.push(0, 0, 1, 1), s.push(-1, 1, -1, 1), hd.push(1, 1, 1, 1) // flower-head quad; collapses to nothing on plain blades
+    for (let a = 0; a < 6; a++) s.push(Math.cos(a * Math.PI / 3)), t.push((Math.sin(a * Math.PI / 3) + 1) / 2), hd.push(1) // hexagon flower head; collapses to nothing on plain blades
     const n = t.length, idx = []
     for (let i = 0; i < segs; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2)
-    idx.push(n - 4, n - 3, n - 2, n - 3, n - 1, n - 2)
+    for (let a = 1; a < 5; a++) idx.push(n - 6, n - 6 + a, n - 5 + a)
     const geo = new THREE.InstancedBufferGeometry() // must be Instanced: plain BufferGeometry ignores instanceCount
     geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3))
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => i % 3 === 1), 3))
@@ -77,8 +77,9 @@ export async function createField(ctx) {
     const alive = step(r(3), keep)
     const patch = lowNoise(world, 0.11, 0.07), bloom = lowNoise(world.add(57), 0.045, 0.06)
     const under = step(r(4), 0.35) // short under-mat closes the gaps between tall crowns
-    const H = mix(r(5).mul(0.45).add(0.6).mul(patch.mul(0.4).add(0.75)), r(5).mul(0.2).add(0.25), under).mul(alive)
     const fl = step(r(6), bloom.mul(1.4).add(0.2).mul(flowers)).mul(float(1).sub(under)) // patchy wildflowers
+    const H = mix(r(5).mul(0.45).add(0.6).mul(patch.mul(0.4).add(0.75)), r(5).mul(0.2).add(0.25), under)
+      .mul(mix(float(1), r(13).mul(0.3).add(0.75), fl)).mul(alive) // flower heads sit at mixed depths in the grass
 
     // --- wind: two travelling fronts (not a uniform wobble) + a light per-blade flutter; push away from the hero
     const along = dot(world, WIND), across = dot(world, vec2(-0.34, 0.94))
@@ -89,14 +90,14 @@ export async function createField(ctx) {
     const yaw = r(8).mul(6.283)
     const toHero = world.sub(uHero.xz), pd = length(toHero)
     const push = float(1).sub(smoothstep(0.15, 0.8, pd)).mul(0.9)
-    const lean0 = WIND.mul(gust.mul(0.45).add(0.08).add(flutter)).add(vec2(cos(yaw), sin(yaw)).mul(r(9).mul(0.12)))
+    const lean0 = WIND.mul(gust.mul(0.38).add(0.05).add(flutter)).add(vec2(cos(yaw), sin(yaw)).mul(r(9).mul(0.18)))
       .add(toHero.div(pd.add(0.001)).mul(push))
     const lean = lean0.mul(min(float(1), float(0.9).div(length(lean0).add(1e-4)))) // lean is a fraction of blade length
 
     const tt = attribute('aT', 'float'), sd = attribute('aSide', 'float'), hh = attribute('aHead', 'float')
     const tc = world.sub(cameraPosition.xz)
     const camFace = normalize(vec2(tc.y.negate(), tc.x).add(1e-4))
-    const face = normalize(mix(vec2(sin(yaw), cos(yaw).negate()), camFace, 0.5))
+    const face = normalize(mix(vec2(sin(yaw), cos(yaw).negate()), camFace, 0.35))
     const tl = lean.mul(tt.mul(tt))
     const halfW = mix(float(1), float(0.12), smoothstep(0.6, 1, tt)).mul(mix(float(1), float(0.35), fl)).mul(width / 2)
     const stem = vec3(world.x.add(tl.x.mul(H)).add(face.x.mul(sd).mul(halfW)),
@@ -107,11 +108,11 @@ export async function createField(ctx) {
     const headPos = tip.add(vec3(camFace.x.mul(sd).mul(hs), tt.mul(2).sub(1).mul(hs), camFace.y.mul(sd).mul(hs)))
 
     // --- colour, worked out per vertex: dark root → muted green → lighter yellow-green tip; flowers white / yellow / orange-red
-    const tipCol = mix(vec3(0.36, 0.42, 0.13), vec3(0.45, 0.41, 0.16), r(10).mul(patch).mul(0.7))
-    const grassCol = mix(vec3(0.03, 0.05, 0.03), mix(vec3(0.13, 0.2, 0.07), tipCol, smoothstep(0.35, 1, tt)), smoothstep(0, 0.5, tt))
-      .mul(r(11).mul(0.3).add(0.85))
+    const tipCol = mix(vec3(0.42, 0.45, 0.15), vec3(0.5, 0.45, 0.2), r(10).mul(patch).mul(0.7))
+    const grassCol = mix(vec3(0.03, 0.06, 0.05), mix(vec3(0.15, 0.21, 0.075), tipCol, smoothstep(0.35, 1, tt)), smoothstep(0, 0.5, tt).max(smoothstep(15, 60, dist)))
+      .mul(r(11).mul(0.3).add(0.85)).mul(lowNoise(world.add(13), 0.035, 0.05).mul(0.35).add(0.8)) // broad darker / lighter patches
     const r12 = r(12)
-    const flowerCol = mix(mix(vec3(0.82, 0.82, 0.76), vec3(0.88, 0.62, 0.1), step(0.5, r12)), vec3(0.78, 0.17, 0.05), step(0.78, r12))
+    const flowerCol = mix(mix(vec3(0.82, 0.82, 0.76), vec3(0.88, 0.62, 0.1), step(0.6, r12)), vec3(0.8, 0.22, 0.06), step(0.8, r12))
     const back = pow(saturate(dot(normalize(stem.sub(cameraPosition)), uSun)), 3).mul(pow(tt, 1.5)).mul(float(1).sub(hh))
 
     const m = new THREE.MeshLambertNodeMaterial({ side: THREE.DoubleSide })
@@ -128,7 +129,7 @@ export async function createField(ctx) {
   }
 
   const layers = [
-    layer({ side: 400, cell: 0.09, segs: 5, width: 0.032, fadeIn: 0, fadeOut: 18, flowers: 0.03, head: 0.024, salt: 0 }),
+    layer({ side: 400, cell: 0.09, segs: 5, width: 0.028, fadeIn: 0, fadeOut: 18, flowers: 0.035, head: 0.024, salt: 0 }),
     layer({ side: 320, cell: 0.2, segs: 3, width: 0.07, fadeIn: 18, fadeOut: 32, flowers: 0.05, head: 0.04, salt: 100 }),
     layer({ side: 224, cell: 0.7, segs: 2, width: 0.15, fadeIn: 32, fadeOut: 80, flowers: 0.07, head: 0.075, salt: 200 }),
   ]
@@ -160,6 +161,14 @@ export async function createField(ctx) {
   const blades = layers.reduce((a, l) => a + l.geometry.instanceCount, 0)
   const r2 = v => Math.round(v * 100) / 100
   window.__probes.field = () => ({ blades, h0: r2(heightAt(0, 0)), crest: r2(heightAt(0, -200)), sea: r2(heightAt(0, -320)) })
+
+  // Proof view: ?fieldcam=x,y,z,lookX,lookY,lookZ pins the main camera after every lane has moved it.
+  const pin = ctx.params.get('fieldcam')?.split(',').map(Number)
+  if (pin?.length === 6) scene.onBeforeRender = (r, s, c) => {
+    if (c !== camera) return
+    c.position.set(pin[0], pin[1], pin[2]); c.lookAt(pin[3], pin[4], pin[5]); c.updateMatrixWorld()
+    uCam.value.set(pin[0], pin[2])
+  }
 
   return {
     update(dt, t) {
