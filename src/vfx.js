@@ -41,7 +41,8 @@ export async function createVfx(ctx) {
       const seed = attribute('aV', 'vec4').w // rotation doubles as the seed of each puff's lumpy edge
       const lump = sin(q.x.mul(4.1).add(seed.mul(5))).mul(sin(q.y.mul(3.7).sub(seed.mul(3)))).mul(0.2)
       const a = saturate(float(1).sub(r).add(lump))
-      return vec4(c.rgb, c.a.mul(a.mul(a)))
+      const near = smoothstep(0.8, 3.5, length(cameraPosition.sub(attribute('aP', 'vec4').xyz))) // a puff at the lens thins out instead of filling the screen
+      return vec4(c.rgb, c.a.mul(a.mul(a)).mul(near))
     })()
     L.mesh = new THREE.Mesh(geo, mat)
     L.mesh.frustumCulled = false; L.mesh.visible = false; L.mesh.renderOrder = glow ? 3 : 2
@@ -62,6 +63,7 @@ export async function createVfx(ctx) {
   for (const L of [glow, soft]) emit(L, 0, -1e3, 0, 0, 0, 0, 0.5, 0.1, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
   function step(L, dt, wx, wz) {
+    if (!L.n && !L.mesh.visible) return // idle: no work, no upload
     const s = L.s, P = L.P.array, Vl = L.Vl.array, C = L.C.array
     for (let i = 0; i < L.n;) {
       const o = i * S
@@ -200,8 +202,8 @@ export async function createVfx(ctx) {
     for (let i = 0; i < SL; i++) {
       if (aS.array[i] >= 1) continue
       if ((aS.array[i] += dt / SLASH_T) >= 1) { arcs.setMatrixAt(i, ZERO); arcs.instanceMatrix.needsUpdate = true }
+      aS.needsUpdate = true
     }
-    aS.needsUpdate = true
   }
 
   // ── Sparks, dust, the roar's mist ───────────────────────────────────────────────────────────────────────────
@@ -234,7 +236,7 @@ export async function createVfx(ctx) {
         const a = (i / n) * 6.283 + rnd(-0.08, 0.08), sp = reach * k * rnd(0.9, 1.15), sh = rnd(0.98, 1.08)
         emit(soft, pos.x + Math.cos(a) * 0.8, pos.y + rnd(0.3, 1.2) + ring * 0.6, pos.z + Math.sin(a) * 0.8,
           Math.cos(a) * sp, rnd(0.1, 0.5), Math.sin(a) * sp, rnd(2, 3.2), 1.0, rnd(3, 4.5) * (ring ? 0.8 : 1),
-          fc.r * sh, fc.g * sh, fc.b * sh, ring ? 0.35 : 0.5, -0.1, k, 0.15, rnd(0, 6.283), rnd(-0.4, 0.4))
+          fc.r * sh, fc.g * sh, fc.b * sh, ring ? 0.3 : 0.42, -0.1, k, 0.15, rnd(0, 6.283), rnd(-0.4, 0.4))
       }
     }
   }
@@ -319,7 +321,7 @@ export async function createVfx(ctx) {
     },
   }
 
-  // ── ?vfx=demo: a blade strikes a standing stone right of the hero, every effect on a loop ─────────────────────
+  // ── ?vfx=demo: a blade strikes a standing stone left of the hero, every effect on a loop ── ─────────────────────
   function makeDemo() {
     const g = (x, z) => ctx.heightAt(x, z)
     const foot = new THREE.Vector3(-2.2, 0, -2.6); foot.y = g(foot.x, foot.z)
