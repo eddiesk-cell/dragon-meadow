@@ -27,8 +27,14 @@ export async function createDragon(ctx) {
       // Figure-eight 65-125 m ahead of the (lagged) hero, ~14 m above them: 6-12 deg up, inside the
       // level hero camera's frame and close enough to read through the haze.
       const u = 0.13 * t
-      out.set(center.x + 60 * Math.sin(u), 0, center.z + 30 * Math.sin(2 * u))
+      out.set(center.x + slide + 60 * Math.sin(u), 0, center.z + 30 * Math.sin(2 * u))
       out.y = Math.max(ctx.heightAt(out.x, out.z) + 10, center.y + 14 + 4 * Math.sin(0.7 * u))
+      const ri = ctx.landmarks?.rockisle // skirt round the rock island: soft radial push to >= r + 8 (softplus keeps the turn smooth)
+      if (ri) {
+        const dx = out.x - ri.x, dz = out.z - ri.z, d = Math.hypot(dx, dz) || 1e-3, R = ri.r + 8, w = 12
+        const k = (R + w * Math.log1p(Math.exp((d - R) / w))) / d
+        out.x = ri.x + dx * k; out.z = ri.z + dz * k
+      }
     }
     return out
   }
@@ -38,11 +44,18 @@ export async function createDragon(ctx) {
   let roll = 0, speed = 0, alt = 0, t = 0
   const cv = new THREE.Vector3()
   const center = ctx.heroPos.clone().add(new THREE.Vector3(0, 0, -95)) // follows the hero with a ~5 s lag
+  let slide = 0 // m sideways: the whole eight slides away from the rock island just far enough to keep its lobes off it
 
   const update = dt => {
     t += dt
     cv.copy(center)
     center.lerp(p1.set(ctx.heroPos.x, ctx.heroPos.y, ctx.heroPos.z - 95), 1 - Math.exp(-dt / 5))
+    const ri = ctx.landmarks?.rockisle
+    if (ri && !near) {
+      const dx = center.x - ri.x, want = Math.sign(dx || -1) * Math.max(0, 68 + ri.r - Math.abs(dx)) // 60 m lobe + 8 m clear
+        * THREE.MathUtils.smoothstep(ri.r + 58 - Math.abs(center.z - ri.z), 0, 20) // only while the lobes' z band meets it
+      slide = t < 0.1 ? want : slide + (want - slide) * (1 - Math.exp(-dt / 3))
+    }
     cv.subVectors(center, cv).divideScalar(Math.max(dt, 1e-3)) // the centre's own drift: nose follows real travel
     const e = 0.2
     pos(t, p0); pos(t + e, p1)
@@ -64,6 +77,11 @@ export async function createDragon(ctx) {
     alt = p0.y - ctx.heightAt(p0.x, p0.z)
   }
   update(0.016)
-  window.__probes.dragon = () => ({ clip, alt, speed, x: holder.position.x, z: holder.position.z })
+  const isleGap = () => { // closest the whole current path comes to the rock island's apron edge (m; < 0 = inside it)
+    const ri = ctx.landmarks?.rockisle, q = new THREE.Vector3(); let g = null
+    if (ri && !near) for (let s = 0; s < 500; s++) { pos(t + s * 0.1, q); g = Math.min(g ?? 1e9, Math.hypot(q.x - ri.x, q.z - ri.z) - ri.r) }
+    return g
+  }
+  window.__probes.dragon = () => ({ clip, alt, speed, x: holder.position.x, z: holder.position.z, isleGap: isleGap() })
   return { update }
 }
