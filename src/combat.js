@@ -344,6 +344,11 @@ export async function createCombat(ctx) {
     const walkKeys = new Set()
     const steer = (on = []) => { for (const k of ['w', 'a', 's', 'd', 'shift']) if (on.includes(k) !== walkKeys.has(k)) { key(k, on.includes(k)); on.includes(k) ? walkKeys.add(k) : walkKeys.delete(k) } }
     const fire = k => { key(k, true); key(k, false) }
+    // Room to fight: metres to the nearest standing stone or the barrow mound (the troll sleeps by its stone door).
+    const r = ctx.ring
+    const room = (x, z) => Math.min(99, ...(r?.stones ?? []).map(s => Math.hypot(x - s.pos.x, z - s.pos.z) - s.radius),
+      r ? Math.hypot(x - r.barrow.pos.x, z - r.barrow.pos.z) - r.barrow.radius : 99)
+    let lure = null // open ground on the camera's side of its bed, where the hero waits for it to come
     return dt => {
       const m = ctx.monster
       if (!m) return
@@ -351,6 +356,10 @@ export async function createCombat(ctx) {
         placed = true
         hero.set(m.pos.x - 2, 0, m.pos.z + 11); hero.y = ctx.heightAt(hero.x, hero.z)
         heroAct.face(0, -1)
+        for (const ox of [-6, -3, 0, 3]) for (const oz of [7, 9, 11]) {
+          const x = m.pos.x + ox, z = m.pos.z + oz
+          if (!lure || room(x, z) > room(lure.x, lure.z)) lure = { x, z }
+        }
       }
       if (m.state === 'asleep') return // let it wake on camera
       if (!drawn && !move && m.alive) fire('r') // draw as it stands up
@@ -362,16 +371,17 @@ export async function createCombat(ctx) {
       const dx = m.pos.x - hero.x, dz = m.pos.z - hero.z, d = Math.hypot(dx, dz)
       // Each troll attack: every other one rolled through just before it lands, the rest blocked.
       if (m.state === 'attack' && prev !== 'attack') {
-        atkN++; atkT = 0; plan = atkN === 2 ? 'guard' : 'roll' // one block for the sparks; rolls are quicker
+        atkN++; atkT = 0; plan = atkN === 1 ? 'roll' : 'guard' // roll through the first, then block and punish
         lands = LANDS[window.__probes.monster?.().attack] ?? 0.8
       }
       prev = m.state
       if (m.state === 'attack') {
         atkT += dt
-        if (plan === 'roll' && atkT >= lands - 0.45 && d < 7) { // sideways and past it, alternating sides
+        if (plan === 'roll' && atkT >= lands - 0.45 && d < 7) { // sideways and past it, to the side with more room
           plan = null; steer()
-          const s = atkN % 4 === 1 ? 1 : -1
-          startRoll(dx / d * 0.6 + dz / d * s, dz / d * 0.6 - dx / d * s)
+          const side = s => [dx / d * 0.6 + dz / d * s, dz / d * 0.6 - dx / d * s]
+          const [ax, az] = side(1), [bx, bz] = side(-1)
+          startRoll(...(room(hero.x + ax * 3, hero.z + az * 3) > room(hero.x + bx * 3, hero.z + bz * 3) ? [ax, az] : [bx, bz]))
         }
         if (plan === 'guard' && d < 7 && !swing) { plan = 'guarding'; steer(); key('k', true) }
         if (plan === 'guarding' || roll) return
@@ -379,14 +389,17 @@ export async function createCombat(ctx) {
       if (roll || hurt) return
       // Stand on the camera's side of it (+Z: the camera looks -Z) so the fight stays framed ahead. W/A/S/D picked
       // from the camera-relative direction to that spot, Shift when it is far.
-      const sx = m.pos.x - hero.x, sz = m.pos.z + m.radius + 1.3 - hero.z, sd = Math.hypot(sx, sz)
-      if (sd > 0.6) {
+      // Until it has come out into the open, wait for it there.
+      const far = d > 6 && lure
+      const sx = (far ? lure.x : m.pos.x) - hero.x, sz = (far ? lure.z : m.pos.z + m.radius + 1.3) - hero.z, sd = Math.hypot(sx, sz)
+      if (sd > 0.6 && (far || d > m.radius + 1.6)) { // in reach already: fight from where he stands
         camera.getWorldDirection(W); W.y = 0; W.normalize()
         const fwd = (W.x * sx + W.z * sz) / sd, right = (-W.z * sx + W.x * sz) / sd
         steer([fwd > 0.38 && 'w', fwd < -0.38 && 's', right > 0.38 && 'd', right < -0.38 && 'a', sd > 4 && 'shift'])
         return
       }
       steer()
+      if (far) return
       if (m.state === 'asleep' || m.state === 'waking' || m.state === 'roar' || want || press) return
       if (swing?.a.heavy) rest = { n: atkN, t: ctx.time } // after a full combo, give it room to swing back
       if (swing && (swing.a.heavy || swing.t / swing.a.dur < swing.a.chain)) return // chain the combo at its cut-in point
