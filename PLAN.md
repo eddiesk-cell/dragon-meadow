@@ -677,3 +677,12 @@ meshes. No per-frame cost growth: test only trees within 30 m of the hero.
 - **CHECK:** `?fieldcam` is not enough — add `&camtest=tree`: the hero walks a circle round the nearest grove trunk with
   the camera swinging behind it; probe `hero.cam.inTrunk` = 0 over 20 s (and > 0 with the blockers switched off, to
   prove it can see). `controls-check` 7/7; fps ≥ 50 in a grove.
+
+### Lane field-ground — `src/field.js` (Opus)
+- Publish `ctx.ground` = the walkable ground's extents: the 800 m terrain square plus settlements' far tile (read the
+  tile from `ctx.settlements` if it publishes one, else take a list other modules push to: `ctx.ground.rects.push(...)`),
+  so flora can drop the rects it copies by hand.
+- Ground patches: raise the slot count from 4 to 6 (ring + settlements + water2 + carvetest already fill 4) and make a
+  full table log one clear error instead of throwing mid-create.
+- **CHECK:** probe `field.ground` lists the rects; `?carvetest=1` with water2's patch present → `field.patches` counts every
+  caller with no error; `controls-check` 7/7; default-view fps ≥ 50.
