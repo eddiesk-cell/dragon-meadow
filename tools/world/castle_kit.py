@@ -3,17 +3,18 @@
 Writes castle-kit.glb, one node per piece, EVERY node at the origin: base centre on the ground (glTF y = 0), foundations
 run 3 m below it so a piece can sit on a slope. Metres, glTF axes (the outer face of a piece looks toward +Z):
   wall          10 m segment along X (ends at x = +-5), 4 m thick, walkway at 14 m, merlons on the outer (+Z) side
-  tower_round   r 5.5 m, battlements to 28.4 m, conical slate roof to ~38 m
-  tower_square  9 x 9 m, battlements to 29.4 m
+  tower_round   r 5.5 m, battlements to 27.9 m, conical slate roof to 35.7 m (finial 37.2 m)
+  tower_square  9 x 9 m, battlements to 29.7 m
   gatehouse     20 m wide (walls butt on at x = +-10), arched passage 5 x 8.5 m running along Z, portcullis half up
-  keep          28 x 22 m hall, upper tower with battlements at ~50 m, corner turrets, slate spire to 60 m
+  keep          28 x 22 m hall (battlements 37.9 m), upper tower to 51.9 m, corner turrets, slate spire to 60 m
   banner        3 x 10 m hanging banner, origin = its top bar; it hangs down -Y with the cloth facing +Z
 Materials: stone (masonry texture, 4 m tile, + normal map), slate (shingle texture), iron, window, cloth, emblem.
 UVs are world-scale per face (v = height on walls), so stone courses line up across pieces standing at one height.
 Window glow mask: COLOR_0 rgb is white everywhere, alpha 1 on window panes and 0 elsewhere; the panes also carry
 material `window`. One material can mix gold in by ctx.night.
 With a second arg, renders <shots>/castle-kit-{day,night,close,pieces}.png: a test castle (keep, 4 round towers,
-2 square towers, walls, gatehouse, banners) built from the EXPORTED glb, beside public/models/hero.glb.
+2 square towers, walls, gatehouse, banners) built from the EXPORTED glb on a 24 m crag, beside public/models/hero.glb.
+Blender needs the GPU, so run it outside the sandbox.
 """
 import bpy, bmesh, sys, os
 import numpy as np
@@ -79,16 +80,16 @@ def normal_map(h, n, tile, amp):  # height (m) -> tangent-space normal, rows run
 
 def masonry(n=1024, tile=4.0):
     """Coursed ashlar: 8 courses of ~0.5 m, blocks 0.7-1.5 m, recessed mortar, per-block tone, weathering."""
-    d, bid, _, nb = blocks(n, tile, cuts(tile, .42, .62), .7, 1.5)
-    tone = 1 + .11 * rng.standard_normal(nb)
-    warm = .035 * rng.standard_normal(nb)
+    d, bid, _, nb = blocks(n, tile, cuts(tile, .45, .7), .8, 1.7)
+    tone = 1 + .06 * rng.standard_normal(nb)
+    warm = .012 * rng.standard_normal(nb)
     h = smooth(.012, .05, d) * (1 + .15 * noise(n, 3)) + .25 * smooth(.02, .3, d) * noise(n, 18) * .3
-    stone = np.array([.58, .56, .52])[None, None, :] * tone[bid][..., None]
+    stone = np.array([.60, .58, .54])[None, None, :] * tone[bid][..., None]
     stone[..., 0] += warm[bid]
     stone[..., 2] -= warm[bid]
-    col = np.where((d < .012)[..., None], np.array([.34, .33, .31]), stone)
-    col = col * (.78 + .22 * smooth(.012, .06, d))[..., None]
-    col = col * (1 + .07 * noise(n, 1.2))[..., None] * (1 + .08 * noise(n, 60))[..., None]
+    col = np.where((d < .012)[..., None], np.array([.38, .36, .33]), stone)
+    col = col * (.84 + .16 * smooth(.012, .06, d))[..., None]
+    col = col * (1 + .05 * noise(n, 1.2))[..., None] * (1 + .09 * noise(n, 70))[..., None]
     return col, normal_map(h * .03, n, tile, 1.0)
 
 
@@ -142,7 +143,7 @@ MATS = [mat("stone", rough=.9, tex=image("stone", sc), nrm=image("stone_n", sn, 
         mat("slate", rough=.6, tex=image("slate", lc), nrm=image("slate_n", ln, True)),
         mat("iron", (.035, .035, .04), .5, .6),
         mat("window", (.03, .035, .045), .25),  # dark glass by day; the game lights it by the vertex alpha mask
-        mat("cloth", (.25, .028, .026), .9, double=True),
+        mat("cloth", (.12, .016, .02), .9, double=True),   # deep maroon, like the reference banners
         mat("emblem", (.70, .52, .22), .6)]
 S, SL, IR, WI, CL, EM = range(6)
 TILE = [4.0, 2.0, 1, 1, 1, 1]  # metres per texture repeat, per material
@@ -357,12 +358,12 @@ def gatehouse():
 
 def keep():
     begin()
-    hx, hy, zc = 14, 11, 30
+    hx, hy, zc = 14, 11, 34
     loft([rect(0, 0, hx + 1, hy + 1, -3), rect(0, 0, hx, hy, 3), rect(0, 0, hx, hy, zc),
           rect(0, 0, hx + .6, hy + .6, zc + 1.2), rect(0, 0, hx + .6, hy + .6, zc + 2.6),
           rect(0, 0, hx - .3, hy - .3, zc + 2.6), rect(0, 0, hx - .3, hy - .3, zc + 1.2)], S, bottom=False)
     merlons(rect(0, 0, hx + .6, hy + .6, 0), zc + 2.6)
-    for z in (13, 22):                                         # string courses at the floor lines
+    for z in (13, 22, 30):                                         # string courses at the floor lines
         box(0, 0, z, z + .5, hx + .25, hy + .25)
     for side, (o, t, half, xs) in enumerate((((0, -hy, 0), (1, 0, 0), hx, (-11, -5.5, 0, 5.5, 11)),
                                               ((0, hy, 0), (-1, 0, 0), hx, (-11, -5.5, 0, 5.5, 11)),
@@ -373,26 +374,26 @@ def keep():
             if side or u:                                      # the front centre is the door
                 window(p, t, 1.8, 7, 10.5)
             window(p, t, 1.8, 16, 19.5)
-            window(p, t, 1.4, 25, 27)
+            window(p, t, 1.8, 24.5, 28)
     slab((0, -hy, 0), (1, 0, 0), arch(4.4, -.5, 5.5, pointed=True), -.2, .25, IR)  # great door
     for sx in (-1, 1):                                         # corner turrets, full height
         for sy in (-1, 1):
             round_tower(sx * hx, sy * hy, 3.0, zc + 5, roof=2.2, k=16, corbels=False,
                         slits=((12, 2, atan2(sy, sx) - .5), (24, 2, atan2(sy, sx) - .5)))
     # upper tower
-    uh, uz = 7, 47
+    uh, uz = 7, 48
     loft([rect(0, 1, uh, uh, zc), rect(0, 1, uh, uh, uz), rect(0, 1, uh + .6, uh + .6, uz + 1.2),
           rect(0, 1, uh + .6, uh + .6, uz + 2.6), rect(0, 1, uh - .3, uh - .3, uz + 2.6),
           rect(0, 1, uh - .3, uh - .3, uz + 1.2)], S, bottom=False)
     merlons(rect(0, 1, uh + .6, uh + .6, 0), uz + 2.6)
     for o, t in (((0, 1 - uh, 0), (1, 0, 0)), ((0, 1 + uh, 0), (-1, 0, 0)), ((uh, 1, 0), (0, 1, 0)), ((-uh, 1, 0), (0, -1, 0))):
         for u in (-2.6, 2.6):
-            window((o[0] + t[0] * u, o[1] + t[1] * u, 0), t, 1.6, 36, 41)
+            window((o[0] + t[0] * u, o[1] + t[1] * u, 0), t, 1.6, 39, 43.5)
     for sx in (-1, 1):
         for sy in (-1, 1):
             round_tower(sx * uh, 1 + sy * uh, 1.7, uz + 2, roof=2.4, k=12, corbels=False)
     cone(0, 1, 5.6, uz + 1.6, 60 - uz - 1.6, 8)               # octagonal slate spire, tip at 60 m
-    box(0, 1, 59.6, 62, .08, .08, IR)
+    box(0, 1, 59.6, 61.5, .08, .08, IR)
     return finish("keep")
 
 
@@ -408,10 +409,10 @@ def banner():
         for i in range(cols):  # facing -Y
             face((vs[j + 1][i], vs[j + 1][i + 1], vs[j][i + 1], vs[j][i]), CL)
     # the tree of Asterholm, laid on the cloth 3 cm proud
-    on = lambda pts: [bm.verts.new(Vector(surf(x, z)) + Vector((0, -.03, 0))) for x, z in pts]
-    face(list(reversed(on([(.85 * cos(a), -3.6 + .75 * sin(a)) for a in np.linspace(0, 2 * pi, 14)[:-1]]))), EM)
-    face(list(reversed(on([(-.13, -6.0), (.13, -6.0), (.13, -4.3), (-.13, -4.3)]))), EM)
-    face(list(reversed(on([(-.6, -6.3), (.6, -6.3), (.15, -5.9), (-.15, -5.9)]))), EM)
+    on = lambda pts, off=.03: [bm.verts.new(Vector(surf(x, z)) + Vector((0, -off, 0))) for x, z in pts]
+    lobe = lambda a: 1 + .13 * cos(6 * a)                       # scalloped crown over a flared trunk
+    face(on([(.95 * lobe(a) * cos(a), -3.7 + .8 * lobe(a) * sin(a)) for a in np.linspace(0, 2 * pi, 37)[:-1]], .036), EM)
+    face(on([(-.5, -6.4), (.5, -6.4), (.16, -6.0), (.12, -4.0), (-.12, -4.0), (-.16, -6.0)]), EM)
     return finish("banner")
 
 
@@ -457,40 +458,58 @@ def put(name, x, y, z=0., rot=0.):
     return o
 
 
-CY, FY, BY, SX = 15, -35, 55, 45                     # keep centre y, front / back wall y, side wall x
-put("keep", 0, CY)
-put("gatehouse", 0, FY)
+# The test castle stands on a crag 24 m above the meadow (like Crestwatch on its headland), the keep on an inner mound.
+H, MZ, CY, FY, BY, SX = 24, 10, 15, -35, 55, 45         # crag top, keep mound, keep y, front/back wall y, side x
+put("keep", 0, CY, H + MZ)
+put("gatehouse", 0, FY, H)
 for sx in (-SX, SX):
     for sy in (FY, BY):
-        put("tower_round", sx, sy)
-    put("tower_square", sx, 10)
+        put("tower_round", sx, sy, H)
+    put("tower_square", sx, 10, H)
 for x in (15, 25, 35):
     for s in (-1, 1):
-        put("wall", s * x, FY)
+        put("wall", s * x, FY, H)
 for x in range(-35, 36, 10):
-    put("wall", x, BY, rot=pi)
+    put("wall", x, BY, H, pi)
 for y in range(-25, 46, 10):
-    put("wall", SX, y, rot=pi / 2)
-    put("wall", -SX, y, rot=-pi / 2)
+    put("wall", SX, y, H, pi / 2)
+    put("wall", -SX, y, H, -pi / 2)
 for x in (-8.25, 8.25):
-    put("banner", x, CY - 11, 29)
-for x in (-4.6, 4.6):
-    put("banner", x, FY - 5, 17.6)
+    put("banner", x, CY - 11, H + MZ + 33)
+for x in (-32, -20, 20, 32):
+    put("banner", x, FY - 2, H + 12.6)
 
 bpy.ops.import_scene.gltf(filepath=os.path.join(os.path.dirname(out_dir.rstrip("/")), "hero.glb"))
 hero = [o for o in scn.objects if o not in kit.values() and o not in placed and o.parent is None]
-hz = [(o.matrix_world @ Vector(c)).z for o in scn.objects if o.type == "MESH" and o not in kit.values()
-      and o not in placed for c in o.bound_box]
-print(f"HERO height {max(hz) - min(hz):.2f} m")
+GRASS, ROCK = mat("grass", (.10, .16, .035), .95), mat("rock", (.07, .066, .06), .95)
 
-ground = bpy.data.meshes.new("ground")
-ground.from_pydata([(-3000, -3000, 0), (3000, -3000, 0), (3000, 3000, 0), (-3000, 3000, 0)], [], [(0, 1, 2, 3)])
-ground.materials.append(mat("grass", (.10, .16, .035), .95))
-scn.collection.objects.link(bpy.data.objects.new("ground", ground))
-road = bpy.data.meshes.new("road")
-road.from_pydata([(-3, -400, .02), (3, -400, .02), (3, -36, .02), (-3, -36, .02)], [], [(0, 1, 2, 3)])
-road.materials.append(mat("dirt", (.22, .17, .11), .95))
-scn.collection.objects.link(bpy.data.objects.new("road", road))
+
+def land(name, rings, m_side, m_top):
+    me = bpy.data.meshes.new(name)
+    vs = [p for r in rings for p in r]
+    k = len(rings[0])
+    fs = [(j * k + i, j * k + (i + 1) % k, (j + 1) * k + (i + 1) % k, (j + 1) * k + i)
+          for j in range(len(rings) - 1) for i in range(k)] + [tuple(range((len(rings) - 1) * k, len(rings) * k))]
+    me.from_pydata(vs, [], fs)
+    me.materials.append(m_side)
+    me.materials.append(m_top)
+    me.polygons[-1].material_index = 1
+    ob = bpy.data.objects.new(name, me)
+    scn.collection.objects.link(ob)
+    return ob
+
+
+def wob(ax, ay, z, ph, cy=0., e=2., jit=0.):  # rugged super-ellipse ring (e = 2 round, 8 a rounded rectangle)
+    rr = lambda a: (abs(cos(a)) ** e + abs(sin(a)) ** e) ** (-1 / e) * (1 + .02 * sin(5 * a + ph) + .012 * sin(13 * a + 2 * ph))
+    return [(ax * rr(a) * cos(a) + jit * rng.uniform(-1, 1), cy + ay * rr(a) * sin(a) + jit * rng.uniform(-1, 1),
+             z + jit * rng.uniform(-1, 1)) for a in np.linspace(0, 2 * pi, 96, endpoint=False)]
+
+
+land_obs = [land("crag", [wob(57 + d, 66 + d, z, ph, 0, 8, j) for d, z, ph, j in
+                          ((18, -1, 0, 3), (11, 6, .9, 3), (7, 12, 1.3, 2.5), (4, 18, 1.7, 2), (.6, H - .3, 2.4, 0), (0, H, 2.4, 0))],
+                 ROCK, GRASS),
+            land("mound", [wob(r, r, H + z, ph, CY) for r, z, ph in ((36, -.5, 3), (29, MZ - 2, 3.6), (26, MZ, 4))], ROCK, GRASS),
+            land("ground", [wob(3000, 3000, 0, 0)], GRASS, GRASS)]
 
 sun_d = bpy.data.lights.new("sun", "SUN")
 sun = bpy.data.objects.new("sun", sun_d)
@@ -498,7 +517,13 @@ scn.collection.objects.link(sun)
 world = bpy.data.worlds.new("w")
 world.use_nodes = True
 scn.world = world
-bg = world.node_tree.nodes["Background"]
+nt = world.node_tree
+bg = nt.nodes["Background"]
+sky = nt.nodes.new("ShaderNodeValToRGB")                 # horizon glow -> high sky, by view elevation
+xyz = nt.nodes.new("ShaderNodeSeparateXYZ")
+nt.links.new(nt.nodes.new("ShaderNodeTexCoord").outputs["Generated"], xyz.inputs[0])
+nt.links.new(xyz.outputs["Z"], sky.inputs["Fac"])
+nt.links.new(sky.outputs["Color"], bg.inputs["Color"])
 cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
 scn.collection.objects.link(cam)
 scn.camera = cam
@@ -513,9 +538,11 @@ def aim(loc, target, lens=22):
     cam.data.lens = lens
 
 
-def place_hero(x, y):
+def place_hero(x, y, toward, z=0.):  # the hero glb faces -Y here; turn his back to the camera, facing `toward`
     for o in hero:
-        o.location.x, o.location.y = x, y
+        o.location = (x, y, z)
+        o.rotation_mode = "XYZ"
+        o.rotation_euler.z = atan2(toward[1] - y, toward[0] - x) + pi / 2
 
 
 def render(name):
@@ -524,34 +551,40 @@ def render(name):
     print("rendered", scn.render.filepath)
 
 
-def day():
-    sun.rotation_euler = (1.12, 0, -.55)                      # low golden afternoon light from front-left
-    sun_d.energy, sun_d.color, sun_d.angle = 4.5, (1, .88, .72), .02
-    bg.inputs["Color"].default_value, bg.inputs["Strength"].default_value = (.50, .60, .85, 1), 1.0
-    win.inputs["Emission Strength"].default_value = 0
+def light(night):
+    e = sky.color_ramp.elements
+    if night:
+        sun.rotation_euler = (.9, 0, 2.6)                    # moonlight from behind-right
+        sun_d.energy, sun_d.color = .8, (.55, .65, 1)
+        e[0].color, e[1].color, bg.inputs["Strength"].default_value = (.08, .07, .14, 1), (.01, .015, .05, 1), 1
+        win.inputs["Emission Strength"].default_value = 5
+    else:
+        sun.rotation_euler = (1.15, 0, -1.25)                # low golden afternoon light raking from the left
+        sun_d.energy, sun_d.color, sun_d.angle = 5, (1, .86, .68), .02
+        e[0].color, e[1].color, bg.inputs["Strength"].default_value = (.95, .80, .66, 1), (.36, .45, .78, 1), .7
+        win.inputs["Emission Strength"].default_value = 0
+    e[1].position = .45
 
 
 win = bpy.data.materials["window"].node_tree.nodes["Principled BSDF"]
-win.inputs["Emission Color"].default_value = (1, .58, .2, 1)
-day()
-place_hero(-10, -75)
-aim((-13, -86, 2.0), (0, 10, 15))
+win.inputs["Emission Color"].default_value = (1, .55, .18, 1)
+WIDE, WT = (-75, -150, 1.8), (-8, 5, 44)
+light(False)
+HERO = (-64.4, -129.8)                                   # 22 m ahead of the camera, toward the castle
+place_hero(*HERO, WT)
+aim(WIDE, WT, 28)
 render("day")
-place_hero(-4, -52)
-aim((-9, -62, 1.7), (0, -38, 9.5), 24)
+place_hero(-6, -50, (0, -38), H)
+aim((-13, -62, H + 1.8), (0, -38, H + 10), 22)
 render("close")
-
-sun.rotation_euler = (.9, 0, 2.6)                            # moonlight from behind
-sun_d.energy, sun_d.color = .35, (.55, .65, 1)
-bg.inputs["Color"].default_value, bg.inputs["Strength"].default_value = (.02, .03, .07, 1), 1.0
-win.inputs["Emission Strength"].default_value = 14
-place_hero(-10, -75)
-aim((-13, -86, 2.0), (0, 10, 15))
+light(True)
+place_hero(*HERO, WT)
+aim(WIDE, WT, 28)
 render("night")
 
 # lineup: every piece in a row, front elevation, hero at the left end
-day()
-for o in placed:
+light(False)
+for o in placed + land_obs[:2]:
     o.hide_render = True
 x = -70.
 for name in ("banner", "wall", "tower_square", "tower_round", "gatehouse", "keep"):
@@ -559,7 +592,7 @@ for name in ("banner", "wall", "tower_square", "tower_round", "gatehouse", "keep
     w = max(xs) - min(xs)
     put(name, x + w / 2, 0, 10 if name == "banner" else 0)
     x += w + 6
-place_hero(-74, -2)
+place_hero(-74, -2, (-74, -400))
 cam.data.type, cam.data.ortho_scale = "ORTHO", x + 80
 aim(((x - 74) / 2, -400, 28), ((x - 74) / 2, 0, 28))
 render("pieces")
