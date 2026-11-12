@@ -25,7 +25,7 @@ def mat(name, rgb, metal, rough):
 ASH = mat("ash", (0.55, 0.42, 0.27), 0.0, 0.7)
 IRON = mat("iron", (0.30, 0.31, 0.33), 0.9, 0.45)
 TAR = mat("tar", (0.07, 0.05, 0.04), 0.0, 0.85)
-RIBBON = mat("ribbon", (0.45, 0.85, 0.82), 0.0, 0.6)  # lake turquoise #72D9D1, a touch muted
+RIBBON = mat("ribbon", (0.08, 0.50, 0.47), 0.0, 0.6)  # lake turquoise #72D9D1, linearised from sRGB
 LEATHER = mat("leather", (0.20, 0.11, 0.06), 0.0, 0.65)
 
 
@@ -105,8 +105,9 @@ w.append(lofted("socket", [(1.30, ring(0.017)), (1.33, ring(0.012))], IRON))
 for tip in (-0.05, 0.0, 0.05):  # three flat tines, splaying in X-Y; the middle one runs straight
     sec = [(1.30 + (1.60 - 1.30) * t, rect(tip * t * t, 0.006 * (1 - 0.85 * t), 0.002 * (1 - 0.6 * t))) for t in (0, .25, .5, .75, 1)]
     w.append(lofted("tine", sec, IRON))
-    for s in (-1, 1):  # two backward barbs, 0.03 m
-        for yb in (1.50, 1.42):
+    # outer tines barb outward at two heights; the middle tine barbs both sides once, high up, so none cross
+    for s, yb in ([(1 if tip > 0 else -1, 1.50), (1 if tip > 0 else -1, 1.42)] if tip else [(-1, 1.56), (1, 1.56)]):
+        if True:
             t = (yb - 1.30) / 0.30
             cx = tip * t * t
             w.append(lofted("barb", [(yb, rect(cx + s * 0.005, 0.003, 0.002)),
@@ -114,7 +115,7 @@ for tip in (-0.05, 0.0, 0.05):  # three flat tines, splaying in X-Y; the middle 
 rib = []
 for i in range(7):  # wavy hanging strip 0.25 x 0.03
     y = 1.24 - 0.25 * i / 6
-    rib.append((y, rect(0.045 + 0.012 * i / 6, 0.015, 0.0008, 0.02 * sin(i * 0.9))))
+    rib.append((y, rect(0.032 + 0.012 * i / 6, 0.015, 0.0008, 0.02 * sin(i * 0.9))))
 w.append(lofted("ribbon", rib, RIBBON))
 weapon = finish(w, "weapon")
 
