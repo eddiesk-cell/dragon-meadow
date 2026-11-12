@@ -173,7 +173,14 @@ export async function createHero(ctx) {
     return ray.intersectObjects(list, false)[0]?.distance
   }
   let scanT = 0, pulled = 0, frames = 0, behind = 0, inStone = 0
-  const camtest = params.get('camtest') // proof: the orbit is swung behind the nearest block (in ?auto=fight, the barrow-door stones)
+  // ?camtest=1 proof: the orbit swings behind the nearest of the ring's REAL stone meshes (in ?auto=fight, the barrow-door
+  // stones), found from ctx.ring.stones[].pos and not from the flag, so an unflagged ring shows inStone > 0 instead of a quiet 0.
+  const camtest = params.get('camtest')
+  let rocks = []
+  const findRocks = () => { // the mesh standing at the first ring stone, then every mesh in its group with the same stone material
+    const p = ctx.ring?.stones?.[0]?.pos
+    if (p) scene.traverse(o => { if (!rocks.length && o.isMesh && o.getWorldPosition(corner).setY(p.y).distanceTo(p) < 0.01) rocks = o.parent.children.filter(m => m.material === o.material) })
+  }
 
   const dirOf = () => {
     const f = (keys.has('w') || keys.has('arrowup')) - (keys.has('s') || keys.has('arrowdown'))
@@ -183,7 +190,7 @@ export async function createHero(ctx) {
   }
 
   window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), strapSkin: strap?.skin.length ?? 0, strapLift: strap?.lift.map(x => +x.toFixed(3)),
-    cam: { blocks: blocks.length, pulled, frames, behind: camtest ? behind : undefined, inStone: camtest ? inStone : undefined }, // frames: pulled in front of a block, goal behind one, camera inside one
+    cam: { blocks: blocks.length, pulled, frames, ...(camtest && { rocks: rocks.length, behind, inStone }) }, // frames: pulled in front of a block, goal behind one, camera inside one
     hold: held && { secs: +(ctx.time - held.t).toFixed(2), drift: +Math.max(...snap().map((q, i) => Math.abs(q - held.pose[i]))).toFixed(5) } })
 
   return {
@@ -218,16 +225,17 @@ export async function createHero(ctx) {
         scanT = 1; solids.length = 0
         scene.traverse(o => o.userData.cameraBlock && o.traverse(m => m.isMesh && solids.push(m)))
         blocks.length = 0; blocks.push(...solids.map(hullOf))
+        if (camtest && !rocks.length) findRocks()
       }
       let R = DIST, near = Infinity
-      if (camtest) for (const o of solids) { // swing ±30° across the nearest block, 2.5 m beyond it, low: its goal keeps landing behind stone
+      if (camtest) for (const o of rocks) { // swing ±30° across the nearest stone, 2.5 m beyond it, low: its goal keeps landing behind stone
         const p = o.getWorldPosition(corner), d = Math.hypot(p.x - pos.x, p.z - pos.z)
         if (d < near) { near = d; R = Math.min(d + 2.5, 16); yaw = Math.atan2(p.x - pos.x, p.z - pos.z) + 0.5 * Math.sin(ctx.time * 0.9); pitch = 0.05 + 0.1 * Math.abs(Math.sin(ctx.time * 0.6)) }
       }
       const cp = Math.cos(pitch)
       camGoal.set(camTarget.x + Math.sin(yaw) * cp * R, camTarget.y + Math.sin(pitch) * R, camTarget.z + Math.cos(yaw) * cp * R)
       camGoal.y = Math.max(camGoal.y, ctx.heightAt(camGoal.x, camGoal.z) + 0.4)
-      if (camtest) behind += hitAt(solids, camTarget, camGoal, 0) !== undefined
+      if (camtest) behind += hitAt(rocks, camTarget, camGoal, 0) !== undefined
       camera.position.lerp(camGoal, 1 - Math.exp(-dt * 12))
       // After the lerp, so a lagging camera never trails through stone.
       const cl = camera.position.distanceTo(camTarget)
@@ -241,10 +249,10 @@ export async function createHero(ctx) {
       if (k < cl) { camera.position.lerp(camTarget, 1 - Math.max(k, 0.2) / cl); pulled++ }
       camera.lookAt(camTarget.x, camTarget.y + 0.3, camTarget.z)
       frames++
-      if (camtest) { // independent check: the camera and its near-plane corners all on his side of every block
+      if (camtest) { // independent check: the camera and its near-plane corners all on his side of every stone
         camera.updateMatrixWorld()
-        let inside = hitAt(solids, camTarget, camera.position, 0) !== undefined // against the real meshes, not the hulls
-        for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) inside ||= hitAt(solids, camTarget, corner.set(x, y, -1).unproject(camera), 0) !== undefined
+        let inside = hitAt(rocks, camTarget, camera.position, 0) !== undefined // against the real stone meshes, not the hulls
+        for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) inside ||= hitAt(rocks, camTarget, corner.set(x, y, -1).unproject(camera), 0) !== undefined
         inStone += inside
       }
     },
