@@ -27,8 +27,8 @@ me = max((o for o in bpy.data.objects if o.type == "MESH"), key=lambda o: len(o.
 M = np.array(me.matrix_world)
 co = np.array([v.co for v in me.data.vertices])
 V = co @ M[:3, :3].T + M[:3, 3]
-H = V[:, 2].max() - V[:, 2].min()
-x, y, z = (V[:, 0] - V[:, 0].mean()) * 1.8 / H, V[:, 1] * 1.8 / H, (V[:, 2] - V[:, 2].min()) * 1.8 / H  # the 1.80 m rig frame
+H = V[:, 2].max() - V[:, 2].min()   # x is centred on the T-pose span (the body's centre line): the claw drags the mean 8 cm
+x, y, z = (V[:, 0] - (V[:, 0].min() + V[:, 0].max()) / 2) * 1.8 / H, V[:, 1] * 1.8 / H, (V[:, 2] - V[:, 2].min()) * 1.8 / H  # the 1.80 m rig frame
 
 
 def vertex_colours():
@@ -48,7 +48,7 @@ def shell_mask(W, names):
     hsv = np.array([colorsys.rgb_to_hsv(*c) for c in vertex_colours()])
     ax = np.abs(x)
     zmin = np.where(ax > 0.30, 0.82, 0.95)                # the rope belt and the skirt's glass floats sit lower
-    ok = (z > zmin) & (ax < 0.62) & ~((x < -0.44) & (z > 1.08))   # past 0.44 above 1.08 is the claw and its cuff
+    ok = (z > zmin) & (ax < 0.62) & ~((x < -0.51) & (z > 1.08))   # past 0.51 above 1.08 is the claw and its cuff
     kelp = ((hsv[:, 0] > 45 / 360) & (hsv[:, 0] < 80 / 360) & (hsv[:, 1] > 0.4) & (hsv[:, 2] > 0.12)
             | (z < 1.16) & (ax > 0.30)) & ok              # under a T-posed arm, outside the torso, only kelp hangs
     e = np.empty(len(me.data.edges) * 2, np.int32); me.data.edges.foreach_get("vertices", e); e = e.reshape(-1, 2)
@@ -58,9 +58,11 @@ def shell_mask(W, names):
     armw = W[:, [i for i, n in enumerate(names) if any(p in n for p in ("Arm", "Hand", "Thumb", "Index", "Middle",
              "Ring", "Pinky", "Little"))]].sum(1)
     hull = np.clip((z - 1.31) / 0.05, 0, 1) * ~face
+    tips = np.clip((z - zmin) / 0.12, 0, 1)               # kelp lying on the skirt: its last 12 cm go back to the body,
+    # else a strand rigid to its tip tears off the skirt it touches in every bend
     # what the arm carries goes with the arm (deltoid under the rim, the claw's cuff, kelp stuck to the skin):
     # a rigid patch on a moving arm tears into long blades
-    s = np.maximum(hull, kelp.astype(float)) * (1 - armw)
+    s = np.maximum(hull, kelp * tips) * (1 - armw)
     print(f"MASK kelp {kelp.sum()} hull {(hull > 0.5).sum()} face-kept {(face & (z > 1.31)).sum()} of {len(V)}")
     return s
 
