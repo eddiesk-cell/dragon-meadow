@@ -2,7 +2,7 @@
 // Grass pattern borrowed from wanderlight/src/life/grass.js: blades on lattices that follow the camera,
 // identity hashed from the integer world cell, so the field stays nailed down as the tile slides.
 import {
-  Fn, uniform, uniformArray, attribute, varying, vec2, vec3, vec4, float, int, uint,
+  Fn, If, uniform, uniformArray, attribute, varying, vec2, vec3, vec4, float, int, uint,
   floor, sin, cos, mix, smoothstep, step, saturate, length, normalize, dot, pow, min, exp,
   cameraPosition, cameraViewMatrix, positionWorld, positionLocal, vertexColor, texture,
 } from 'three/tsl'
@@ -60,7 +60,7 @@ export async function createField(ctx) {
   // Ground patches: four HalfFloat textures, each over a rect (x0, z0, size in m), texel = (metres added to the ground,
   // grass height ×, bare chalk 0..1, light ×). Slot 0 is ctx.groundPatch (src/ring.js fills it); ctx.addGroundPatch hands
   // out the rest, callable any time after create (water loads later). Overlaps combine: metres add, grass and light
-  // multiply, bare takes the max. Edges clamp, so border texels must hold (0, 1, 0, 1): outside a patch nothing changes.
+  // multiply, bare takes the max. Outside its rect a patch changes nothing (a road cut to the border does not run on forever).
   const PN = 256, one = THREE.DataUtils.toHalfFloat(1), fromHalf = THREE.DataUtils.fromHalfFloat
   const patches = Array.from({ length: 4 }, () => {
     const tex = new THREE.DataTexture(new Uint16Array(PN * PN * 4).map((_, i) => i % 2 ? one : 0), PN, PN, THREE.RGBAFormat, THREE.HalfFloatType)
@@ -78,7 +78,13 @@ export async function createField(ctx) {
   }
   const uRects = patches.map(p => uniform(p.rect))
   const patchOne = (k, xz) => texture(patches[k].tex, xz.sub(uRects[k].xy).div(uRects[k].z)).level(0)
-  const patchAt = xz => patches.reduce((a, _, k) => { const s = patchOne(k, xz); return vec4(a.x.add(s.x), a.y.mul(s.y), a.z.max(s.z), a.w.mul(s.w)) }, vec4(0, 1, 0, 1))
+  const inRect = (k, xz) => { const uv = xz.sub(uRects[k].xy).div(uRects[k].z); return uv.x.greaterThanEqual(0).and(uv.y.greaterThanEqual(0)).and(uv.x.lessThanEqual(1)).and(uv.y.lessThanEqual(1)) }
+  // Each slot is sampled only inside its own rect: most of the ~3M grass vertices sit in none, so they skip all four fetches.
+  const patchAt = Fn(([xz]) => {
+    const a = vec4(0, 1, 0, 1).toVar()
+    patches.forEach((_, k) => If(inRect(k, xz), () => { const s = patchOne(k, xz); a.assign(vec4(a.x.add(s.x), a.y.mul(s.y), a.z.max(s.z), a.w.mul(s.w))) }))
+    return a
+  })
   // CPU twin of the metres in the added patches, bilinear like the GPU. Slot 0 is left out: ring wraps ctx.heightAt with its own.
   const patchHeight = (x, z) => {
     let h = 0
@@ -244,10 +250,14 @@ export async function createField(ctx) {
   const tm = new THREE.MeshLambertNodeMaterial() // colour comes in colorNode as vc² (vertexColors: true squared it before; look kept)
   const near = mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz)))) // shade under the near grass
   const tp = patchAt(positionWorld.xz)
-  const dh = patches.reduce((a, _, k) => { // slope of the patch metres, each patch at its own texel step
-    const e = uRects[k].z.div(PN), ph = o => patchOne(k, positionWorld.xz.add(o)).x
-    return a.add(vec2(ph(vec2(e, 0)).sub(ph(vec2(e.negate(), 0))), ph(vec2(0, e)).sub(ph(vec2(0, e.negate())))).div(e.mul(2)))
-  }, vec2(0, 0))
+  const dh = Fn(() => { // slope of the patch metres, each patch at its own texel step, sampled only inside its rect
+    const a = vec2(0, 0).toVar()
+    patches.forEach((_, k) => {
+      const e = uRects[k].z.div(PN), ph = o => patchOne(k, positionWorld.xz.add(o)).x
+      If(inRect(k, positionWorld.xz), () => a.addAssign(vec2(ph(vec2(e, 0)).sub(ph(vec2(e.negate(), 0))), ph(vec2(0, e)).sub(ph(vec2(0, e.negate())))).div(e.mul(2))))
+    })
+    return a
+  })()
   const n0 = attribute('normal', 'vec3') // terrain sits at the origin: local = world
   tm.positionNode = positionLocal.add(vec3(0, patchAt(positionLocal.xz).x, 0))
   tm.normalNode = normalize(cameraViewMatrix.mul(vec4(normalize(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y))), 0)).xyz)
