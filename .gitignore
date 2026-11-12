@@ -7,3 +7,5 @@ art/hero/*-small.png
 art/hero/rig/*.glb
 art/hero/rig/*.fbx
 art/hero/rig/hero.markers.json
+art/troll/rig/*.glb
+art/troll/rig/*.fbx
