@@ -1,102 +1,134 @@
-// Lane water — the still pond at the rock island's foot (PLAN.md Phase 6 "Lane water"): a planar mirror with soft
-// ripples, and post lanterns on its shore whose light it doubles. Publishes ctx.pond, pushes ctx.keepClear.
+// Lane water (water2) — the still pond at the rock island's foot (PLAN.md Phase 6): a planar mirror with soft ripples,
+// and post lanterns on its shore whose light it doubles. Publishes ctx.pond, pushes ctx.keepClear.
 //
-// The ground is not carved (field.js builds the terrain and grass before this loads). Instead the water paints over what
-// the carve would remove: inside the pond, the turf and grass within GRASS of the ground are drawn as water, so the bank
-// reads as a clean shoreline. shortcut: anything else standing there under GRASS m (the hero wading) is painted too;
-// upgrade when field.js takes a carve hook (needsWiring) — then this becomes a plain depth-tested surface.
+// The pond is the meadow's own hollow filled to LEVEL: the water is the low ground connected to the hollow's deepest
+// point, so its shore is the terrain's contour, never a painted edge. One ground patch (ctx.addGroundPatch) deepens the
+// bed toward BED m, takes the grass out from under the water and darkens a damp bank; the water is a plain depth-tested
+// surface that lets the shallows show through. ctx.heightAt gets a wading floor: the hero sinks WADE m at most.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import {
   reflector, texture, uniform, vec2, vec3, vec4, float, positionWorld, positionView, cameraPosition, cameraWorldMatrix,
   cameraNear, cameraFar, viewportDepthTexture, perspectiveDepthToViewZ, mx_noise_float, normalize, length, mix, max,
-  smoothstep, pow, step, viewportSharedTexture, getScreenPosition, cameraViewMatrix, cameraProjectionMatrix,
+  smoothstep, pow, exp,
 } from 'three/tsl'
 
-// The pond: an organic ellipse (centre if landmarks has no rock island, half-axes, turn) in the low meadow ahead-right, filled up to TOP m;
-// the water stands BANK below that, so its shore is a low turf bank. GRASS: the tallest blade field.js grows.
-const POND = { x: 48, z: -55, ax: 52, az: 27, rot: 0.35, TOP: 0.45, BANK: 0.45 }, GRASS = 1.3
+// C, S: the patch square over the hollow below the rock island (field.js's ground dips to −1.9 m round (20, −60)).
+const C = { x: 20, z: -52 }, S = 124, LEVEL = -0.5, BED = 1.2, WADE = 0.45
+const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k) }
 
 export async function createWater(ctx) {
   const { THREE, scene } = ctx
-  const isle = ctx.landmarks?.rockisle // src/landmarks.js: the pond lies at its south foot, toward the start
-  const { ax, az, rot, TOP, BANK } = POND, level = TOP - BANK
-  const cx = isle ? isle.x - 2 : POND.x, cz = isle ? isle.z + isle.r + 6 : POND.z
-  const c = Math.cos(rot), s = Math.sin(rot)
-  const blob = (x, z) => { // metres inside the outline (< 0 outside)
-    const u = (x - cx) * c + (z - cz) * s, v = (z - cz) * c - (x - cx) * s, a = Math.atan2(v / az, u / ax)
-    return (1 - Math.hypot(u / ax, v / az) / (1 + 0.09 * Math.sin(3 * a + 1) + 0.06 * Math.sin(5 * a + 2))) * az
-  }
-  const inside = (x, z) => Math.min(blob(x, z), (TOP - ctx.heightAt(x, z)) * 6) // > 0: water
+  const P = ctx.addGroundPatch(C.x - S / 2, C.z - S / 2, S), N = P.size, NN = N * N, cell = S / N, x0 = C.x - S / 2, z0 = C.z - S / 2
+  const X = o => x0 + (o % N + 0.5) * cell, Z = o => z0 + (Math.floor(o / N) + 0.5) * cell
 
-  // --- bake the pond into one texture over its square: (metres inside the shore, ground height)
-  const N = 160, S = 2.3 * ax, x0 = cx - S / 2, z0 = cz - S / 2, half = THREE.DataUtils.toHalfFloat
-  const data = new Uint16Array(N * N * 4)
-  let area = 0
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const x = x0 + (i + 0.5) * S / N, z = z0 + (j + 0.5) * S / N, e = inside(x, z), k = (j * N + i) * 4
-    data[k] = half(e); data[k + 1] = half(ctx.heightAt(x, z))
-    if (e > 0) area += (S / N) ** 2
+  // --- the water: flood the low ground (below LEVEL) from the hollow's deepest point near C
+  const h = new Float32Array(NN)
+  let seed = -1
+  for (let o = 0; o < NN; o++) {
+    h[o] = ctx.heightAt(X(o), Z(o))
+    if (Math.hypot(X(o) - C.x, Z(o) - C.z) < 30 && (seed < 0 || h[o] < h[seed])) seed = o
   }
-  const map = new THREE.DataTexture(data, N, N, THREE.RGBAFormat, THREE.HalfFloatType)
+  const wet = new Uint8Array(NN), q = [seed]
+  let edge = false // true if the flood reached the patch border (a cut shore): move C or grow S
+  wet[seed] = 1
+  while (q.length) {
+    const o = q.pop(), i = o % N
+    if (i === 0 || i === N - 1 || o < N || o >= NN - N) edge = true
+    for (const k of [i ? o - 1 : -1, i < N - 1 ? o + 1 : -1, o - N, o + N]) if (k >= 0 && k < NN && !wet[k] && h[k] < LEVEL) wet[k] = 1, q.push(k)
+  }
+  // signed metres to the shore (> 0 in the water): two-pass chamfer distance on each side
+  const chamfer = side => {
+    const d = Float32Array.from(wet, w => w === side ? 1e9 : 0)
+    for (const s of [1, -1]) for (let o = s > 0 ? 0 : NN - 1; o >= 0 && o < NN; o += s) {
+      const i = o % N
+      for (const [di, dj, w] of [[-1, 0, 1], [0, -1, 1], [-1, -1, 1.414], [1, -1, 1.414]]) {
+        const ii = i + di * s, k = o + (di + dj * N) * s
+        if (ii >= 0 && ii < N && k >= 0 && k < NN) d[o] = Math.min(d[o], d[k] + w)
+      }
+    }
+    return d
+  }
+  const din = chamfer(1), dout = chamfer(0), e = new Float32Array(NN)
+  for (let o = 0; o < NN; o++) e[o] = (wet[o] ? din[o] - 0.5 : 0.5 - dout[o]) * cell
+
+  // --- the carve: bed deepens fast from the shore (natural depth n → BED), so the contour stays the shoreline;
+  // no grass under water; a damp, short-grassed bank for the first metre or two
+  const put = THREE.DataUtils.toHalfFloat, pd = P.tex.image.data
+  let area = 0
+  for (let o = 0; o < NN; o++) {
+    const n = LEVEL - h[o], out = -e[o], k = o * 4
+    if (wet[o]) area += cell * cell
+    pd[k] = put(wet[o] ? Math.min(0, n - BED * (1 - Math.exp(-n / 0.15))) : 0)
+    pd[k + 1] = put(wet[o] ? 0 : ss(0.2, 1.6, out))
+    pd[k + 2] = put(wet[o] ? 0.55 : 0.2 * (1 - ss(0, 1, out)))
+    pd[k + 3] = put(wet[o] ? 0.55 : 0.68 + 0.32 * ss(0, 2.5, out))
+  }
+  P.tex.needsUpdate = true
+
+  const inside = (x, z) => { // metres inside the shore (< 0 on land), bilinear
+    const u = (x - x0) / cell - 0.5, v = (z - z0) / cell - 0.5
+    if (!(u >= 0 && v >= 0 && u <= N - 1 && v <= N - 1)) return -S
+    const i = Math.min(N - 2, u | 0), j = Math.min(N - 2, v | 0), fu = u - i, fv = v - j, o = j * N + i
+    return (e[o] * (1 - fu) + e[o + 1] * fu) * (1 - fv) + (e[o + N] * (1 - fu) + e[o + N + 1] * fu) * fv
+  }
+  const ground = ctx.heightAt // includes the carve (field reads the patch live)
+  ctx.heightAt = (x, z) => { const g = ground(x, z); return inside(x, z) > 0 ? Math.max(g, LEVEL - WADE) : g }
+
+  // keepClear: the biggest circles that fit in the water, largest first (flora also asks ctx.pond.inside)
+  const circles = []
+  for (let t = 0; t < 6; t++) {
+    let best = -1, br = 3
+    for (let o = 0; o < NN; o++) if (e[o] > br && !circles.some(c => Math.hypot(X(o) - c.x, Z(o) - c.z) < c.r)) best = o, br = e[o]
+    if (best < 0) break
+    circles.push({ x: X(best), z: Z(best), r: br })
+  }
+  const deep = circles[0] || { x: C.x, z: C.z }
+
+  // the shader's map: metres inside the shore
+  const md = new Uint16Array(NN * 4)
+  for (let o = 0; o < NN; o++) md[o * 4] = put(e[o])
+  const map = new THREE.DataTexture(md, N, N, THREE.RGBAFormat, THREE.HalfFloatType)
   map.magFilter = map.minFilter = THREE.LinearFilter
   map.needsUpdate = true
-  const pond = xz => texture(map, xz.sub(vec2(x0, z0)).div(S)).level(0)
 
   // --- the surface
   const uTime = uniform(0), uSky = uniform(new THREE.Color()), uNight = uniform(0)
-  const wp = positionWorld.xz, here = pond(wp), e = here.x
+  const wp = positionWorld.xz, wetAt = texture(map, wp.sub(vec2(x0, z0)).div(S)).level(0).x
   const ripple = vec2( // slow, faint: the pond is a mirror that breathes
     mx_noise_float(vec3(wp.mul(0.45), uTime.mul(0.35))), mx_noise_float(vec3(wp.mul(0.45).add(31.7), uTime.mul(0.35))),
   ).add(vec2(mx_noise_float(vec3(wp.mul(1.6), uTime.mul(0.9))), mx_noise_float(vec3(wp.mul(1.6).add(7.3), uTime.mul(0.9)))).mul(0.4))
   const toCam = cameraPosition.sub(positionWorld), dist = length(toCam)
   const mirror = reflector({ resolutionScale: 0.5 })
   mirror.target.rotateX(-Math.PI / 2)
-  mirror.target.position.set(cx, level, cz)
+  mirror.target.position.set(deep.x, LEVEL, deep.z)
   scene.add(mirror.target)
   mirror.uvNode = mirror.uvNode.add(ripple.mul(float(0.006).mul(float(12).div(max(dist, 12)))))
   const cosV = normalize(toCam).y.add(ripple.x.mul(0.03)).clamp(0, 1)
-  const fres = float(0.02).add(pow(float(1).sub(cosV), 5).mul(0.98))
-  const shallow = smoothstep(9, 0, e)
-  const body = mix(vec3(0.012, 0.045, 0.04), vec3(0.05, 0.1, 0.06), shallow).mul(uSky.mul(1.4))
-  const sheen = mix(float(0.62), float(1), fres) // stylised: a strong mirror even looking down
-  // Nothing is carved and the mirror hides the grass, so the bank and the far meadow's grass have nothing to reflect: march
-  // the reflected ray over the pond map, and where it leaves the pond below the grass tops it sees turf, not sky.
-  const r = normalize(positionWorld.sub(cameraPosition)).mul(vec3(1, -1, 1))
-  // The turf it hits is drawn on screen already (bank grass): sample that, so the reflection matches it, day or night.
-  let hitAt = vec3(0), found = float(0)
-  for (const t of [1, 2.5, 4.5, 7, 10, 14, 19, 26]) {
-    const p = positionWorld.add(r.mul(t)), g = pond(p.xz)
-    const hit = step(g.x, 0).mul(step(p.y, g.y.add(0.9))).mul(float(1).sub(found))
-    hitAt = hitAt.add(vec3(p.x, max(p.y, g.y.add(0.3)), p.z).mul(hit))
-    found = found.add(hit)
-  }
-  const turf = viewportSharedTexture(getScreenPosition(cameraViewMatrix.mul(vec4(hitAt, 1)).xyz, cameraProjectionMatrix).clamp(0, 1)).rgb
-  const seen = mix(mirror.rgb, turf.mul(0.7), found).mul(vec3(0.82, 0.9, 0.88))
-  const col = mix(body, seen, sheen)
+  const R = mix(float(0.62), float(1), float(0.02).add(pow(float(1).sub(cosV), 5).mul(0.98))) // stylised: a strong mirror even looking down
+  // What is under this water pixel (the bed, a wading leg): light from it comes back up through the water, less the
+  // further it travels in it, so shallows and the shore show through and the deep reads as dark water.
+  const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture(), cameraNear, cameraFar)
+  const under = cameraWorldMatrix.mul(vec4(positionView.xyz.mul(sceneZ.div(positionView.z)), 1)).xyz
+  const T = exp(length(under.sub(positionWorld)).mul(-2.5))
+  const body = vec3(0.012, 0.045, 0.04).mul(uSky.mul(1.4))
+  const alpha = float(1).sub(float(1).sub(R).mul(T))
+  // fog off: the mirror image already carries the haze of the whole path, eye → water → object
+  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, fog: false })
+  m.colorNode = mirror.rgb.mul(vec3(0.82, 0.9, 0.88)).mul(R).add(body.mul(float(1).sub(T)).mul(float(1).sub(R))).div(alpha)
+  m.opacityNode = alpha.mul(smoothstep(0, 0.05, float(LEVEL).sub(under.y))).mul(smoothstep(-0.3, 0.3, wetAt))
+  const surface = new THREE.Mesh(new THREE.PlaneGeometry(S, S).rotateX(-Math.PI / 2), m)
+  surface.position.set(C.x, LEVEL, C.z)
+  surface.renderOrder = -1 // first among the see-through things, so motes, fur and effects still draw over it
+  scene.add(surface)
 
-  // The mirror never shows grass: blades standing in the pond are painted out below, so their reflections would be ghosts.
-  // shortcut: finds field.js's blade meshes by their `aOffset` lattice attribute; upgrade when field publishes ctx.grass.
-  const grass = []
-  scene.traverse(o => o.geometry?.attributes?.aOffset && grass.push(o))
+  // The mirror leaves out the grass (none stands in the water; the bank's would read as upside-down blades) — and the
+  // mirror pass is cheaper for it.
+  const grass = [ctx.grass?.blades, ctx.grass?.flowers].filter(Boolean)
   const base = mirror.reflector, render = base.updateBefore
   base.updateBefore = frame => {
     for (const g of grass) g.visible = false
     try { return render.call(base, frame) } finally { for (const g of grass) g.visible = true }
   }
-
-  // What is in front of this water pixel? If it is turf or grass inside the pond (what a carve would remove), paint over it.
-  const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture(), cameraNear, cameraFar)
-  const q = cameraWorldMatrix.mul(vec4(positionView.xyz.mul(sceneZ.div(positionView.z)), 1)).xyz, there = pond(q.xz)
-  const carved = step(0, there.x).mul(step(q.y, there.y.add(GRASS)))
-  const hidden = step(positionView.z.add(0.05), sceneZ).mul(float(1).sub(carved)) // occluder nearer and not carved
-  // fog off: the mirror image already carries the haze of the whole path, eye → water → object
-  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, fog: false })
-  m.colorNode = col
-  m.opacityNode = smoothstep(0, 1.5, e).mul(float(1).sub(hidden))
-  const surface = new THREE.Mesh(new THREE.PlaneGeometry(S, S).rotateX(-Math.PI / 2), m)
-  surface.position.set(cx, level, cz)
-  surface.renderOrder = -1 // first among the see-through things, so motes, fur and effects still draw over it
-  scene.add(surface)
 
   // --- lanterns on the shore (town-kit piece; its glass carries the glow), lit by ctx.night
   const glass = new THREE.MeshStandardNodeMaterial({ color: 0xffe2b0, roughness: 0.3 })
@@ -104,11 +136,11 @@ export async function createWater(ctx) {
   const kit = await new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'models/world/town-kit.glb')
   const proto = kit.scene.getObjectByName('lantern')
   const lanterns = []
-  for (const a of [1.05, 1.57, 2.09, 2.62, 3.4, 3.67, 5.9, 6.02]) { // world bearings from the centre: near shore, then far ends
+  for (const a of [1.05, 1.57, 2.09, 2.62, 3.4, 3.67, 5.9, 6.02]) { // world bearings from the deepest water: near shore, then far ends
     let r = 0
-    while (inside(cx + Math.cos(a) * r, cz + Math.sin(a) * r) > 0) r += 0.25
-    const x = cx + Math.cos(a) * (r + 2.5), z = cz + Math.sin(a) * (r + 2.5)
-    if (isle && Math.hypot(x - isle.x, z - isle.z) < isle.r + 3) continue // not inside the island's apron
+    while (inside(deep.x + Math.cos(a) * r, deep.z + Math.sin(a) * r) > 0) r += 0.25
+    const x = deep.x + Math.cos(a) * (r + 2.5), z = deep.z + Math.sin(a) * (r + 2.5)
+    if (ctx.keepClear.some(c => Math.hypot(x - c.x, z - c.z) < c.r)) continue // not in the island's apron, the egg, a house
     const l = proto.clone()
     l.traverse(o => { if (o.isMesh) { o.castShadow = true; if (o.material.name === 'window') o.material = glass } })
     l.position.set(x, ctx.heightAt(x, z) + 0.3, z)
@@ -117,15 +149,19 @@ export async function createWater(ctx) {
     lanterns.push(l)
   }
 
-  ctx.pond = { x: cx, z: cz, level, inside } // inside(x, z) > 0: water there
-  for (const t of [-0.55, 0, 0.55]) ctx.keepClear.push({ x: cx + c * ax * t, z: cz + s * ax * t, r: az + 4 })
-  window.__probes.water = () => ({ level, area: Math.round(area), lanterns: lanterns.length, unmirrored: grass.length })
+  for (const c of circles) ctx.keepClear.push({ x: c.x, z: c.z, r: c.r + 2 })
+  ctx.pond = { x: deep.x, z: deep.z, level: LEVEL, inside } // inside(x, z) > 0: water there
+  let wade = 0 // deepest the hero's feet have been under the surface
+  const r1 = v => Math.round(v * 10) / 10
+  window.__probes.water = () => ({ level: LEVEL, area: Math.round(area), edge, lanterns: lanterns.length, circles: circles.length,
+    deep: [r1(deep.x), r1(deep.z)], wade: Math.round(wade * 100) / 100, heroIn: r1(inside(ctx.heroPos.x, ctx.heroPos.z)) })
 
   return {
     update(dt, t) {
       uTime.value = t
       uSky.value.copy(ctx.fogColor)
       uNight.value = ctx.night
+      if (inside(ctx.heroPos.x, ctx.heroPos.z) > 0) wade = Math.max(wade, LEVEL - ctx.heroPos.y)
     },
   }
 }
