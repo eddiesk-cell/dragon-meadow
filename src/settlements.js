@@ -127,6 +127,7 @@ function tile(THREE, ctx, x0, z0, w, d, step, mat, gb = () => [1, 0], drop = () 
 export async function createSettlements(ctx) {
   const { THREE, scene } = ctx
   if (ctx.params.get('settlements') === '0') return null // A/B for fps and look
+  const t0 = performance.now()
   const loader = new GLTFLoader()
   const [townKit, castleKit] = (await Promise.all(['town-kit', 'castle-kit'].map(n => loader.loadAsync(`/models/world/${n}.glb`)))).map(g => g.scene)
   const uNight = uniform(0), uT = uniform(0), uSky = uniform(new THREE.Color().copy(ctx.fogColor))
@@ -624,6 +625,7 @@ export async function createSettlements(ctx) {
   for (const o of [drum, dome]) { o.position.set(CITY.x + 26, topY - 2, CITY.z); scene.add(o) }
   clear(CITY.x, CITY.z, 260)
 
+  const createMs = Math.round(performance.now() - t0)
   const r2 = v => Math.round(v * 100) / 100
   window.__probes.settlements = () => {
     let gap = 0, worst = null
@@ -631,7 +633,7 @@ export async function createSettlements(ctx) {
     return {
       settlements: 3, springwell: { houses: placed.filter(b => !['market', 'well', 'church'].includes(b.name)).length, trees: trees.map(l => l.length), lanterns: lanterns.length, chimneys: T.tops.length, bridgeDeck: r2(R), water: [r2(Wl[0]), r2(Wl[Wl.length - 1])], patchEdge: r2(edge) },
       crestwatch: { at: [KEEP.x, KEEP.z], plateau: r2(cy(0, 0)), towers: towers.length, bearingDeg: r2(Math.atan2(-KEEP.x, -KEEP.z + 6) * 180 / Math.PI) },
-      asterhaven: { at: [CITY.x, CITY.z], houses }, bases: bases.length, maxBaseGap: r2(gap), worst, night: r2(uNight.value), lamps: r2(uLamps.value),
+      asterhaven: { at: [CITY.x, CITY.z], houses }, bases: bases.length, maxBaseGap: r2(gap), worst, night: r2(uNight.value), lamps: r2(uLamps.value), createMs,
     }
   }
 
@@ -639,7 +641,7 @@ export async function createSettlements(ctx) {
     update(dt, tt) {
       uT.value = tt
       uNight.value = ctx.night
-      uLamps.value = Math.max(ss(0.03, 0.45, ctx.night), ss(0.2, 0.03, ctx.sunDir.y))
+      uLamps.value = Math.max(ss(0.03, 0.45, ctx.night), ss(0.26, 0.08, ctx.sunDir.y))
       uSky.value.copy(ctx.fogColor)
     },
   }
