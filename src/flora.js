@@ -67,10 +67,10 @@ export async function createFlora(ctx) {
     if (b > -28 && b < 40) continue
     if (x > -150 && x < 40 && z > -150 && z < -45) continue
     if (!free(x, z, 16, 0.12)) continue
-    let ring = 0
-    for (let a = 0; a < 8; a++) ring += H(x + 45 * Math.cos(a * Math.PI / 4), z + 45 * Math.sin(a * Math.PI / 4)) / 8
+    let ring = 0, low = 0
+    for (let a = 0; a < 8; a++) { const h = H(x + 45 * Math.cos(a * Math.PI / 4), z + 45 * Math.sin(a * Math.PI / 4)); ring += h / 8; low = Math.min(low, h) }
     const rise = H(x, z) - ring
-    if (rise > 0.4) cand.push({ x, z, rise: rise + rnd() })
+    if (rise > 0.4 && low > -5) cand.push({ x, z, rise: rise + rnd() }) // low: a cliff lip is not a rise
   }
   cand.sort((a, b) => b.rise - a.rise)
   const groves = []
@@ -88,13 +88,14 @@ export async function createFlora(ctx) {
 
   // Drifts: a centre on a rim (2–12 m outside a keepClear circle: shore, rock, ring, houses), round a tree, or anywhere
   // (weighted toward the start); then a clump of 3–9 round it, spaced so heads do not merge.
-  const rims = ctx.keepClear.filter(c => Math.hypot(c.x, c.z) < R)
+  const rims = ctx.keepClear.filter(c => Math.hypot(c.x, c.z) < 400), rimW = rims.reduce((a, c) => a + c.r, 0)
+  const rim = () => { let w = rnd() * rimW; return rims.find(c => (w -= c.r) < 0) || rims[0] } // big features (lake, rock, ring) draw more
   function drifts(kind, n, spread, gap) {
     const list = lists[kind]
     for (let d = 0, tries = 0; d < n && tries < n * 30; tries++) {
       const m = rnd()
       let cx, cz
-      if (m < 0.45 && rims.length) { const c = rims[Math.floor(rnd() * rims.length)], a = rnd() * 6.28, r = c.r + 2 + rnd() * 10; cx = c.x + r * Math.cos(a); cz = c.z + r * Math.sin(a) }
+      if (m < 0.45 && rims.length) { const c = rim(), a = rnd() * 6.28, r = c.r + 2 + rnd() * 10; cx = c.x + r * Math.cos(a); cz = c.z + r * Math.sin(a) }
       else if (m < 0.7 && trees.length) { const t = trees[Math.floor(rnd() * trees.length)], a = rnd() * 6.28, r = t.s * (9 + rnd() * 20); cx = t.x + r * Math.cos(a); cz = t.z + r * Math.sin(a) }
       else { const a = rnd() * 6.28, r = R * rnd() ** 1.6; cx = r * Math.sin(a); cz = -r * Math.cos(a) }
       if (OPEN(cx, cz) || !free(cx, cz, 1, 0.35)) continue
@@ -106,8 +107,8 @@ export async function createFlora(ctx) {
       }
     }
   }
-  drifts('bellflower', 70, 7, 2.2)
-  drifts('fern', 90, 5, 1.3)
+  drifts('bellflower', 140, 7, 2.2)
+  drifts('fern', 160, 5, 1.3)
 
   // One InstancedMesh per kind; per-instance aBend (m/s of wind, low-passed + the plant's own sway) bends it.
   const uNight = uniform(0), uDay = uniform(1), uSun = uniform(new THREE.Vector3())
