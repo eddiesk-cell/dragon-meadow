@@ -34,12 +34,14 @@ export async function createCombat(ctx) {
   const GUARD = pose([0, 1.3, 0.3], [0.75, 0.62, 0.2], [0, 0, 1])
   // Swings: the blade turns through a plane, dir(θ) = A cos θ + B sin θ, flats facing A × B. Keys [u (0..1 of the
   // clip), θ°, grip x, y, z]; before the first key it eases in from wherever the sword was, after the last back to READY.
+  // Every cut plane leans ~35° off his forward axis: the camera sits behind him, and a plane holding that axis is seen
+  // edge-on, its trail a 1-px line (the stab is a thrust and stays one).
   const plane = (A, B, keys) => { const a = V(...A).normalize(), b = V(...B).normalize(); return { A: a, B: b, n: V().crossVectors(a, b).normalize(), keys } }
   const PATH = {
-    diag: plane([-0.6, 0.8, 0], [0, 0, 1], [[0.26, -55, -0.24, 1.55, 0.05], [0.33, 40, -0.16, 1.4, 0.35], [0.42, 150, 0.1, 1.0, 0.38], [0.5, 185, 0.2, 0.9, 0.3], [0.7, 190, 0.18, 0.92, 0.28]]),
-    horiz: plane([-1, 0, 0], [0, -0.12, 1], [[0.24, -45, -0.3, 1.3, 0.1], [0.32, 50, -0.1, 1.25, 0.38], [0.42, 165, 0.25, 1.2, 0.3], [0.68, 185, 0.25, 1.18, 0.22]]),
+    diag: plane([-0.6, 0.8, 0], [0.45, 0.3, 0.84], [[0.26, -40, -0.24, 1.55, 0.05], [0.33, 40, -0.16, 1.4, 0.35], [0.42, 150, 0.1, 1.0, 0.38], [0.5, 185, 0.2, 0.9, 0.3], [0.7, 190, 0.18, 0.92, 0.28]]),
+    horiz: plane([-1, 0, 0], [0, 0.5, 0.87], [[0.24, -45, -0.3, 1.3, 0.1], [0.32, 50, -0.1, 1.25, 0.38], [0.42, 165, 0.25, 1.2, 0.3], [0.68, 185, 0.25, 1.18, 0.22]]),
     stab: plane([0, 0, 1], [0, 1, 0], [[0.18, 8, -0.2, 1.12, -0.02], [0.28, 2, -0.06, 1.22, 0.55], [0.55, 2, -0.06, 1.2, 0.5]]),
-    heavy: plane([0, 1, 0], [0, 0, 1], [[0.22, -55, -0.05, 1.72, -0.02], [0.36, -62, -0.05, 1.75, -0.04], [0.43, 60, -0.05, 1.5, 0.42], [0.5, 140, -0.05, 0.95, 0.48], [0.75, 145, -0.05, 0.95, 0.45]]),
+    heavy: plane([-0.55, 0.83, 0], [0.6, 0.4, 0.69], [[0.22, -30, -0.15, 1.72, -0.02], [0.36, -38, -0.15, 1.75, -0.04], [0.43, 60, 0, 1.5, 0.42], [0.5, 140, 0.12, 0.95, 0.48], [0.75, 150, 0.12, 0.95, 0.45]]),
   }
   const cur = { g: READY.g.clone(), q: READY.q.clone() } // the sword pose the arms aim for this frame
   const keyPose = (p, k, out) => { const r = k[1] * Math.PI / 180; out.g.set(k[2], k[3], k[4]); swordQ(out.q, W.copy(p.A).multiplyScalar(Math.cos(r)).addScaledVector(p.B, Math.sin(r)), p.n); return out }
@@ -50,7 +52,7 @@ export async function createCombat(ctx) {
     if (u <= k[0][0]) return mix(from, keyPose(p, k[0], kA), smooth(0, k[0][0], u), cur)
     if (u >= last[0]) return mix(keyPose(p, last, kA), READY, smooth(last[0], 1, u), cur)
     let i = 0; while (u > k[i + 1][0]) i++
-    const f = smooth(k[i][0], k[i + 1][0], u), a = k[i], b = k[i + 1]
+    const f = (u - k[i][0]) / (k[i + 1][0] - k[i][0]), a = k[i], b = k[i + 1] // linear: one unbroken cut, no stop at each key
     return keyPose(p, [0, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f, a[4] + (b[4] - a[4]) * f], cur)
   }
   // The sword as it lies in the scabbard, in his frame; `lift` slides it out along the scabbard.
@@ -137,9 +139,9 @@ export async function createCombat(ctx) {
   const HEAVY = { clip: 'Greatsword Swing', path: PATH.heavy, dur: 3.25, speed: 1.7, hit: [0.42, 0.53], chain: 0.8, dmg: 50, lunge: 0.8, heavy: true }
   const BLADE = [0.3, 0.5, 0.75, 1.0, 1.12].map(y => new THREE.Vector3(0, y, 0)) // sword-local sample points
   let swing = null, combo = -1, comboUntil = 0, want = null, hits = 0
-  // shortcut: a still (zero-area) trail for the first frames compiles the trail shader at load, not on the first cut
-  // (that froze a loaded desk ~4 s); vfx.js should warm it beside its particle layers, then this goes.
-  let warm = ctx.vfx?.trail(sword, { base: BLADE[1], tip: BLADE[4] }), warmN = 0
+  // Trails follow `blade`, a copy of the sword as the arms left it last frame: vfx samples its trails before combat runs,
+  // while the hand still holds the raw clip's pose (arms barely lifted), so a trail on `sword` drew the clip's path.
+  const blade = new THREE.Object3D()
   const tip = V(), tipPrev = V(), P = V(), dir = V()
   function startSwing(a) {
     if (!drawn || move) return
@@ -150,9 +152,11 @@ export async function createCombat(ctx) {
   }
   function endSwing() { if (swing?.trail) swing.trail.stop(); if (swing && !swing.a.heavy) comboUntil = ctx.time + 0.6; swing = null }
   function strike(dt) { // after the arms have moved this frame
-    const s = swing, a = s.a, f = s.t / a.dur
-    if (s.trail === null && f > a.hit[0] - 0.1) s.trail = ctx.vfx?.trail(sword, { base: BLADE[0], tip: BLADE[4] }) // the cut, not the wind-up
-    if (s.trail && f > a.hit[1] + 0.08) { s.trail.stop(); s.trail = false }
+    const s = swing, a = s.a, f = s.t / a.dur, keys = a.path.keys
+    // From the top of the wind-up to the end of the cut, then the whole arc fades as one (following the slow recovery
+    // would shrink it to a sliver at the blade).
+    if (s.trail === null && f > keys[0][0]) s.trail = ctx.vfx?.trail(blade, { base: BLADE[0], tip: BLADE[4] })
+    if (s.trail && f > keys[keys.length - 2][0]) { s.trail.stop(); s.trail = false }
     sword.updateWorldMatrix(true, false)
     sword.localToWorld(tip.copy(BLADE[4]))
     if (f > a.hit[0] && f < a.hit[1]) {
@@ -313,7 +317,6 @@ export async function createCombat(ctx) {
   window.__probes.combat = () => ({ drawn, w: +w.toFixed(2), u: swing ? +(swing.t / swing.a.dur).toFixed(3) : move ? +move.u.toFixed(3) : null, inHand: sword.parent === rightHand, hp, dead, doing, combo, hits, swing: swing?.a.clip ?? null, troll: ctx.monster ? { hp: ctx.monster.hp, state: ctx.monster.state } : null })
   return {
     update(dt) {
-      if (warm && ++warmN > 4) { warm.stop(); warm = null }
       if (press && !press.heavy && performance.now() - press.t > 280) { press.heavy = true; want = 'heavy' }
       // Next attack: the first when free, the next combo step once the current swing has passed its chain point.
       if (want && !drawn && !move && !dead) toggle() // the first attack draws the sword
@@ -330,6 +333,7 @@ export async function createCombat(ctx) {
       else if (drawn) mix(cur, guard ? GUARD : READY, 1 - Math.exp(-dt * 12), cur)
       if (!move) w = Math.min(Math.max(w + (drawn && !roll && !hurt && !dead ? dt : -dt) / 0.15, 0), 1)
       holdSword(w, sword.parent === rightHand)
+      sword.updateWorldMatrix(true, false); sword.matrixWorld.decompose(blade.position, blade.quaternion, blade.scale)
       if (swing) strike(dt)
       if (roll) stepRoll(dt)
       stepHurt()
