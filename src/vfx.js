@@ -58,6 +58,9 @@ export async function createVfx(ctx) {
     s[o + 14] = grav; s[o + 15] = drag; s[o + 16] = wind; s[o + 17] = p17; s[o + 18] = p18
   }
 
+  // One invisible particle per layer, so both pipelines compile during load rather than on the first hit.
+  for (const L of [glow, soft]) emit(L, 0, -1e3, 0, 0, 0, 0, 0.5, 0.1, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
   function step(L, dt, wx, wz) {
     const s = L.s, P = L.P.array, Vl = L.Vl.array, C = L.C.array
     for (let i = 0; i < L.n;) {
@@ -93,11 +96,13 @@ export async function createVfx(ctx) {
 
   // ── Sword trails: a ribbon between the blade's base and tip over the last TL seconds ─────────────────────────
   const TL = 0.2, MAXS = 24, SUB = 4, MAXC = (MAXS - 1) * SUB + 1
-  const trailMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false, blending: THREE.AdditiveBlending })
+  // Normal blending with HDR colour: reads as gold on the white haze (additive would vanish into it) and still blooms.
+  const trailMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false })
   trailMat.colorNode = Fn(() => {
     const t = attribute('aT', 'vec2'), edge = t.y // x: age 0 (at the blade) → 1 (gone); y: 0 inner edge → 1 tip edge
-    const fade = pow(saturate(float(1).sub(t.x)), 1.5).mul(smoothstep(0, 0.04, t.x))
-    return vec4(mix(vec3(1.0, 0.8, 0.5).mul(1.6), vec3(6.5, 6.2, 5.8), pow(edge, 8)), fade.mul(edge.mul(0.8).add(0.08)))
+    const fade = pow(saturate(float(1).sub(t.x)), 1.4).mul(smoothstep(0, 0.03, t.x))
+    const core = pow(edge, 14)
+    return vec4(mix(vec3(1.0, 0.62, 0.22).mul(1.8), vec3(5, 4.6, 3.8), core), fade.mul(pow(edge, 2.5).mul(0.75).add(core.mul(0.25)).add(0.03)))
   })()
   const trailIdx = []
   for (let c = 0; c < MAXC - 1; c++) trailIdx.push(c * 2, c * 2 + 1, c * 2 + 2, c * 2 + 1, c * 2 + 3, c * 2 + 2)
@@ -107,7 +112,8 @@ export async function createVfx(ctx) {
     const at = new THREE.BufferAttribute(new Float32Array(MAXC * 4), 2).setUsage(THREE.DynamicDrawUsage)
     geo.setAttribute('position', pos); geo.setAttribute('aT', at); geo.setIndex(trailIdx)
     const mesh = new THREE.Mesh(geo, trailMat)
-    mesh.frustumCulled = false; mesh.visible = false; mesh.renderOrder = 3
+    mesh.frustumCulled = false; mesh.renderOrder = 3
+    geo.setDrawRange(0, 6) // one zero-area quad until first use: the pipeline compiles during load, not on the first swing (73 ms)
     scene.add(mesh)
     return { mesh, geo, pos, at, obj: null, live: false, gen: 0, born: 0, n: 0, base: V(), tip: V(), m: new Float32Array(MAXS * 7) }
   })
@@ -152,7 +158,7 @@ export async function createVfx(ctx) {
   const SL = 8, SLASH_T = 0.3, SEG = 40, ARC = 2.3
   const arcGeo = new THREE.BufferGeometry(), ap = [], au = [], ai = []
   for (let i = 0; i <= SEG; i++) { // unit circle round (0,-1,0); the arc's middle sits at the origin, heading +X
-    const u = i / SEG, th = (u - 0.5) * ARC, w = 0.32 * Math.sin(Math.PI * u) ** 0.6
+    const u = i / SEG, th = (u - 0.5) * ARC, w = 0.16 * Math.sin(Math.PI * u) ** 0.8
     ap.push(Math.sin(th) * (1 - w), Math.cos(th) * (1 - w) - 1, 0, Math.sin(th), Math.cos(th) - 1, 0)
     au.push(u, 0, u, 1)
     if (i < SEG) ai.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2)
@@ -162,12 +168,12 @@ export async function createVfx(ctx) {
   arcGeo.setIndex(ai)
   const aS = new THREE.InstancedBufferAttribute(new Float32Array(SL).fill(1), 1).setUsage(THREE.DynamicDrawUsage)
   arcGeo.setAttribute('aS', aS)
-  const arcMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false, blending: THREE.AdditiveBlending })
+  const arcMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false })
   arcMat.colorNode = Fn(() => {
     const p = attribute('aS', 'float'), q = uv()
     const head = float(1).sub(pow(float(1).sub(p), 3)).mul(1.5) // ease-out sweep that overshoots, so the head leaves the arc
     const band = smoothstep(head.sub(0.75), head.sub(0.04), q.x).mul(smoothstep(head.add(0.03), head.sub(0.03), q.x))
-    return vec4(mix(vec3(1.0, 0.86, 0.6).mul(1.3), vec3(7, 6.8, 6.4), pow(q.y, 9)), band.mul(smoothstep(1, 0.55, p)).mul(pow(q.y, 2).mul(0.9).add(0.05)))
+    return vec4(mix(vec3(1.0, 0.7, 0.32).mul(2), vec3(6, 5.6, 4.8), pow(q.y, 10)), band.mul(smoothstep(1, 0.55, p)).mul(pow(q.y, 3).mul(0.9).add(0.04)))
   })()
   const arcs = new THREE.InstancedMesh(arcGeo, arcMat, SL)
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0), mB = new THREE.Matrix4(), X = V(), Y = V(), Z = V()
@@ -201,10 +207,10 @@ export async function createVfx(ctx) {
   // ── Sparks, dust, the roar's mist ───────────────────────────────────────────────────────────────────────────
   function sparks(pos, normal, n = 24) {
     fired.sparks++
-    emit(glow, pos.x, pos.y, pos.z, 0, 0, 0, 0.09, 0.5, 0.9, 6, 5, 3.6, 1, 0, 0, 0, 0, 0) // impact glint
+    emit(glow, pos.x, pos.y, pos.z, 0, 0, 0, 0.1, 0.7, 1.1, 6, 5, 3.6, 1, 0, 0, 0, 0, 0) // impact glint
     for (let i = 0; i < n; i++) {
       T.set(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).multiplyScalar(0.85).add(normal).normalize().multiplyScalar(rnd(3, 11))
-      emit(glow, pos.x, pos.y, pos.z, T.x, T.y, T.z, rnd(0.25, 0.65), rnd(0.018, 0.032), 0.012, 9, 6, 3.5, 1, 9.8, 0.6, 0, 0.035, 1)
+      emit(glow, pos.x, pos.y, pos.z, T.x, T.y, T.z, rnd(0.3, 0.75), rnd(0.03, 0.05), 0.015, 9, 6, 3.5, 1, 9.8, 0.6, 0, 0.045, 1)
     }
   }
   // size 1 ≈ a footstep or roll; 3 ≈ a ground slam. Puffs hug the ground, spread, grow and drift with ctx.windAt.
@@ -213,9 +219,9 @@ export async function createVfx(ctx) {
     const n = Math.min(40, Math.round(8 + 8 * size))
     for (let i = 0; i < n; i++) {
       const a = (i / n) * 6.283 + rnd(-0.3, 0.3), sp = rnd(0.6, 1.6) * size, sh = rnd(0.82, 1.04)
-      emit(soft, pos.x + Math.cos(a) * 0.2 * size, pos.y + rnd(0.05, 0.3) * size, pos.z + Math.sin(a) * 0.2 * size,
-        Math.cos(a) * sp, rnd(0.2, 0.6) * size, Math.sin(a) * sp, rnd(1.4, 2.4), 0.35 * size, rnd(0.9, 1.4) * size,
-        0.8 * sh, 0.76 * sh, 0.68 * sh, 0.5, -0.15, 2.2, 0.12, rnd(0, 6.283), rnd(-0.6, 0.6))
+      emit(soft, pos.x + Math.cos(a) * 0.2 * size, pos.y + rnd(0.2, 0.45) * size, pos.z + Math.sin(a) * 0.2 * size,
+        Math.cos(a) * sp, rnd(0.5, 1.1) * size, Math.sin(a) * sp, rnd(1.4, 2.4), 0.35 * size, rnd(0.9, 1.4) * size,
+        0.56 * sh, 0.48 * sh, 0.37 * sh, 0.6, -0.15, 2.2, 0.12, rnd(0, 6.283), rnd(-0.6, 0.6))
     }
   }
   // The roar: two rings of mist blown outward to ~radius metres.
@@ -234,7 +240,7 @@ export async function createVfx(ctx) {
   }
 
   // ── Hit flash: the struck meshes' emissive goes white and decays (colour only, so nothing recompiles) ─────────
-  const FLASH_T = 0.13, WHITE = new THREE.Color(2.4, 2.4, 2.3), tc = new THREE.Color(), flashing = new Map()
+  const FLASH_T = 0.16, WHITE = new THREE.Color(1.9, 1.9, 1.8), tc = new THREE.Color(), flashing = new Map()
   function flash(obj) {
     fired.flash++
     obj.traverse(o => {
@@ -249,7 +255,7 @@ export async function createVfx(ctx) {
     for (const [m, t] of flashing) {
       const left = t - dt, orig = m.userData.vfxEmissive
       if (left <= 0) { m.emissive.copy(orig); flashing.delete(m); continue }
-      m.emissive.copy(orig).lerp(tc.copy(WHITE).multiplyScalar(1 / Math.max(m.emissiveIntensity, 1e-3)), (left / FLASH_T) ** 2)
+      m.emissive.copy(orig).lerp(tc.copy(WHITE).multiplyScalar(1 / Math.max(m.emissiveIntensity, 1e-3)), Math.min(1, 1.7 * left / FLASH_T) ** 2) // a few frames of full white, then a quick fade
       flashing.set(m, left)
     }
   }
@@ -273,24 +279,34 @@ export async function createVfx(ctx) {
     qLeft.copy(camera.quaternion); shook = true
   }
   // A few ms where the world nearly stops (ctx.timeScale; main scales every dt by it). Timed in real ms.
+  // Released by a timer (re-armed if it fires early) and by update, so neither a broken frame nor an early timer freezes the world.
   function hitstop(ms = 70) {
     fired.hitstop++
     stopUntil = Math.max(stopUntil, performance.now() + ms)
     ctx.timeScale = 0.02
-    setTimeout(() => { if (performance.now() >= stopUntil - 1) ctx.timeScale = 1 }, ms) // a timer, so a broken frame can never leave the world frozen
+    setTimeout(release, ms)
+  }
+  function release() {
+    if (!stopUntil) return
+    const left = stopUntil - performance.now()
+    if (left > 0) return void setTimeout(release, left + 1)
+    stopUntil = 0; ctx.timeScale = 1
   }
 
+  let frames = 0, worstMs = 0
   ctx.vfx = { trail, slash, sparks, flash, shake, dust, blast, hitstop }
   window.__probes.vfx = () => ({
     glow: glow.n, soft: soft.n, dropped: glow.dropped + soft.dropped, trails: trails.filter(t => t.obj).length,
-    slashes: [...aS.array].filter(p => p < 1).length, flashing: flashing.size, timeScale: ctx.timeScale, fired,
+    slashes: [...aS.array].filter(p => p < 1).length, flashing: flashing.size, timeScale: ctx.timeScale, fired, worstMs: Math.round(worstMs),
   })
 
   const demo = params.get('vfx') === 'demo' && makeDemo()
   return {
     update(dt) {
       const now = performance.now(), rdt = Math.min((now - lastNow) / 1000, 0.1)
+      if (++frames > 30) worstMs = Math.max(worstMs, now - lastNow) // proof that effects never hitch (load frames excluded)
       lastNow = now
+      if (stopUntil && now >= stopUntil) release()
       clock += dt
       if (demo) demo(dt)
       const w = ctx.windAt?.(ctx.heroPos.x, ctx.heroPos.z, ctx.time) // one sample a frame: the fight is a few metres wide
@@ -306,23 +322,23 @@ export async function createVfx(ctx) {
   // ── ?vfx=demo: a blade strikes a standing stone right of the hero, every effect on a loop ─────────────────────
   function makeDemo() {
     const g = (x, z) => ctx.heightAt(x, z)
-    const foot = new THREE.Vector3(1.8, 0, -3.4); foot.y = g(foot.x, foot.z)
+    const foot = new THREE.Vector3(-2.2, 0, -2.6); foot.y = g(foot.x, foot.z)
     const rockGeo = new THREE.IcosahedronGeometry(0.6, 3), rp = rockGeo.attributes.position
     for (let i = 0; i < rp.count; i++) { T.fromBufferAttribute(rp, i); T.multiplyScalar(1 + 0.12 * Math.sin(T.x * 7 + T.y * 5) * Math.sin(T.z * 6 - T.y * 3)); rp.setXYZ(i, T.x, T.y, T.z) }
     rockGeo.computeVertexNormals()
     const stone = new THREE.Mesh(rockGeo, new THREE.MeshStandardMaterial({ color: 0x9a978c, roughness: 0.95 }))
     stone.scale.set(1, 2.1, 0.8); stone.position.copy(foot).add(T.set(0, 0.9, 0)); stone.castShadow = true
-    const hit = stone.position.clone().add(T.set(-0.25, 0.35, 0.5)) // the face toward the camera
-    const pivot = hit.clone().add(T.set(-0.6, 1.1, 0.35))
+    const hit = stone.position.clone().add(T.set(0.25, 0.35, 0.5)) // the face toward the camera
+    const pivot = hit.clone().add(T.set(0.6, 1.1, 0.35))
     const reach = hit.clone().sub(pivot).normalize(), axis = new THREE.Vector3(0, 0, 1).addScaledVector(reach, -reach.z).normalize()
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.25, 0.015).translate(0, 0.78, 0), new THREE.MeshStandardMaterial({ color: 0xd8dde2, metalness: 0.9, roughness: 0.25 }))
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.25, 0.015).translate(0, 0.78, 0), new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 0.3, roughness: 0.35 }))
     blade.position.copy(pivot)
     scene.add(stone, blade)
-    const q = new THREE.Quaternion(), d = V(), outward = new THREE.Vector3(-0.3, 0.35, 1).normalize(), ground = V()
-    let t = 0, swing = -1, handle = null, struck = false
+    const q = new THREE.Quaternion(), d = V(), outward = new THREE.Vector3(0.3, 0.35, 1).normalize(), ground = V()
+    let t = -1.5, swing = -1, handle = null, struck = false
     return dt => {
-      t += dt
-      const n = Math.floor(t / 1.1), f = (t % 1.1) / 0.32 // a swing every 1.1 s, 0.32 s long
+      if ((t += dt) < 0) return
+      const n = Math.floor(t / 1.1), f = (t % 1.1) / 0.42 // a swing every 1.1 s, 0.42 s long
       if (n !== swing) { swing = n; struck = false; handle?.stop(); handle = trail(blade, { base: [0, 0.3, 0], tip: [0, 1.4, 0] }) }
       const dirSign = n % 2 ? -1 : 1, ang = dirSign * 1.7 * (Math.min(f, 1) * 2 - 1) * (1 - 0.15 * Math.min(f, 1)) // eased sweep through the stone
       blade.quaternion.setFromUnitVectors(UP, d.copy(reach).applyQuaternion(q.setFromAxisAngle(axis, ang)))
@@ -335,9 +351,9 @@ export async function createVfx(ctx) {
         flash(stone)
         hitstop(heavy ? 110 : 60)
         shake(heavy ? 0.8 : 0.3, heavy ? 0.5 : 0.25)
-        ground.set(foot.x + 0.3, foot.y, foot.z + 0.7)
+        ground.set(foot.x - 0.3, foot.y, foot.z + 0.7)
         dust(ground, heavy ? 2.5 : 1.2)
-        if (heavy) blast(ground.set(foot.x - 1, g(foot.x - 1, foot.z + 1), foot.z + 1), 9)
+        if (heavy) blast(ground.set(foot.x + 1, g(foot.x + 1, foot.z + 1), foot.z + 1), 9)
       }
     }
   }
