@@ -355,3 +355,30 @@ sword is entry 1 (it exists: `tools/props/sword.py`).
 **Clothes (Eddie asked):** outfits can switch the same way weapons do if each outfit is a whole new hero model on
 the same skeleton (same markers, same 51 clips — swapping is instant), about 22 credits an outfit. Layered,
 mix-and-match clothes need a separate under-body plus garment meshes — a bigger job, later if wanted.
+
+### Lanes weapon-<id> — one Sonnet builder per weapon (Phase 5b)
+Each lane owns exactly `tools/weapons/<id>.py` and its output `public/models/weapons/<id>.glb` (+ `shots/weapon-<id>*.png`).
+Brief: WEAPONS.md → "How to build each weapon" and your entry; copy the pattern of `tools/props/sword.py` (run Blender
+unsandboxed: `blender -b -P tools/weapons/<id>.py -- public/models/weapons`). Commit the first working mesh at once.
+- **CHECK (all weapon lanes):** the script prints total length, grip→tip, carrier length and triangle count, and they
+  match the entry's build note (±10 %) and the limits (weapon ≤ 4,000 tris, carrier ≤ 2,000); the glb has nodes
+  `weapon` and `carrier`; a Blender render `shots/weapon-<id>.png` shows it beside `public/models/sword.glb` with the
+  same camera — LOOK: it reads as the entry's look (silhouette, materials, palette), the right size next to the sword.
+
+### Lane weapon-lanternstring
+Your entry is WEAPONS.md "## 2. Lanternstring". Files: `tools/weapons/lanternstring.py` → `public/models/weapons/lanternstring.glb`. CHECK above.
+
+### Lane weapon-reedholt-leister
+Your entry is WEAPONS.md "## 3. Reedholt Leister". Files: `tools/weapons/reedholt-leister.py` → `public/models/weapons/reedholt-leister.glb`. CHECK above.
+
+### Lane weapon-tidebell-maul
+Your entry is WEAPONS.md "## 4. Tidebell Maul". Files: `tools/weapons/tidebell-maul.py` → `public/models/weapons/tidebell-maul.glb`. CHECK above.
+
+### Lane weapon-wreckers-axe
+Your entry is WEAPONS.md "## 5. Wrecker's Axe". Files: `tools/weapons/wreckers-axe.py` → `public/models/weapons/wreckers-axe.glb`. CHECK above.
+
+### Lane weapon-windgap-warden
+Your entry is WEAPONS.md "## 6. Windgap Warden". Files: `tools/weapons/windgap-warden.py` → `public/models/weapons/windgap-warden.glb`. CHECK above.
+
+### Lane weapon-ribfire-staff
+Your entry is WEAPONS.md "## 7. Ribfire Staff". Files: `tools/weapons/ribfire-staff.py` → `public/models/weapons/ribfire-staff.glb`. CHECK above.
