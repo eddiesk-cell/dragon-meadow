@@ -5,11 +5,12 @@
 #   art/bestiary/rime-warden/build.sh   -> skeleton.png, markers.png, idle.png, clips.png, public/models/bestiary/rime-warden.glb
 # OFFS: the arms are 1.4 m long on a 1.8 m rig -- straight down they hide the legs and plant the fists in the ground, so
 # they swing out and the elbows bend forward (Z bends a T-posed forearm forward: minus on the left, plus on the right).
+# Feet: the borrowed Idle tips the soles 9-11 deg toe-up; X,16 / X,13 set them flat (measured on the posed soles).
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 ID=rime-warden; A=art/bestiary/$ID; R=dm-rig/bestiary/$ID; B=/Applications/Blender.app/Contents/MacOS/Blender
 CLIPS=("Idle" "Walk" "AoE Ground Slam" "Greatsword Swing" "Block" "Channel (Two-Handed)" "Hit (Front)" "Stagger" "Death (Collapse)")
-OFFS=(${OFFS-leftUpperArm=Y,-36 rightUpperArm=Y,36 leftLowerArm=Z,-10 rightLowerArm=Z,10})
+OFFS=(${OFFS-leftUpperArm=Y,-36 rightUpperArm=Y,36 leftLowerArm=Z,-10 rightLowerArm=Z,10 leftFoot=X,16 rightFoot=X,13})
 [ "${SKIPRIG:-}" ] || tools/bestiary/studio-rig.sh $ID rig $A/markers-fixed.json | grep -E 'note|SCALE'
 tools/bestiary/studio-rig.sh $ID clips "${CLIPS[@]}" ${OFFS[@]+-- "${OFFS[@]}"} | tail -1
 rsync -a $A/warden.py guru-studio:$R/

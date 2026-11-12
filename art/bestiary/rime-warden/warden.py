@@ -34,13 +34,16 @@ def armw(side):
 
 
 def masks():
-    # out past the shoulder everything is arm; what the arms do not own there is the icicles the autorig mistook for cloth
+    # icicle: what hangs under an arm (below the armpit the torso is narrower than 0.42 m) and, out past the shoulder,
+    # anything the arm does not own (the autorig took the icicles and the fist's lower block for cloth and pinned them
+    # to the hips). It copies the weights of the arm's own surface right above it (donor).
     icicle = np.zeros(len(V), bool); donor = {}
     for side, s in (("left", 1), ("right", -1)):
-        out = s * x > 0.55
-        aw = armw(side)
-        icicle |= out & (aw < 0.95)
-        donor[side] = np.flatnonzero(out & (aw > 0.999))
+        out, sx = s * x > 0.45, s * x
+        foreign = (sx > 0.55) & (armw(side) + W[:, names.index(side + "Shoulder")] < 0.95)
+        hang = out & (z > 0.8) & (z < np.where(sx < 1.2, 1.06, 0.99))   # the fist's own underside reaches 1.0; feet below
+        icicle |= foreign | hang
+        donor[side] = np.flatnonzero(out & ~foreign & ~hang)
     # the crown: every pinnacle above the shoulder line, but not the face under the brow, and not what an arm carries
     face = (np.abs(x) < 0.14) & (y < -0.08) & (z < 1.50)
     aw = armw("left") + armw("right")
@@ -54,7 +57,18 @@ print(f"MASK icicles {icicle.sum()} (left {(icicle & (x > 0)).sum()}, right {(ic
 
 if MODE == "fix":
     up = names.index("upperChest")
-    P = np.c_[x, y, z]
+    # the belly and the chest under the face carry stray hip, foot, shoulder, arm and head weight (geodesic leaks
+    # through the boulders frozen in the ice): the trunk rides the spine chain, blended by height, edges feathered
+    spine = ["hips", "spine", "chest", "upperChest"]
+    bz = [(np.array(arm.matrix_world @ arm.data.bones[n].head_local)[2] - V[:, 2].min()) * 1.8 / H for n in spine]
+    ax, c = np.abs(x), lambda v: np.clip(v / 0.06, 0, 1)
+    m = np.maximum(c(0.40 - ax) * c(1.12 - z), c(0.30 - ax) * c(1.28 - z)) * c(z - 0.80)
+    si = np.array([names.index(n) for n in spine])
+    t = np.interp(z, bz, range(4)); lo = np.minimum(t.astype(int), 2); f = t - lo
+    S = np.zeros_like(W); r = np.arange(len(V)); S[r, si[lo]] = 1 - f; S[r, si[lo + 1]] += f
+    W = (1 - m)[:, None] * W + m[:, None] * S
+    print(f"TORSO {(m > 0.5).sum()} trunk vertices onto the spine chain (bones at z {np.round(bz, 2)})")
+    P = np.c_[x, y, 0.3 * z]                      # nearest in plan first: the arm surface right above the icicle
     for side in ("left", "right"):
         kd = kdtree.KDTree(len(donor[side]))
         for j, i in enumerate(donor[side]):
