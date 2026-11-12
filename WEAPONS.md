@@ -40,3 +40,72 @@ trail, they are pushed to about ×1.8 HDR so they bloom.
   stay the same; only the speed changes.
 - **The hit effect** for every weapon is `ctx.vfx.sparks` in its trail colour plus `flash`. Heavy hits add `shake`
   and `hitstop`. Each entry lists only what it adds to this.
+
+## Clip truth (measured 2026-11-12; read this before building 5c)
+
+I loaded `public/models/hero.glb` in Blender and sampled the hands, feet and head on every frame of every weapon
+clip. I also compared each clip's bone rotations at the same fraction of the way through.
+
+- **`Hammer Overhead Smash` (4.71 s), `Greatsword Swing` (3.25 s) and `AoE Ground Slam` (2.00 s) are the same
+  motion as `Slash (Diagonal)` (1.42 s), just slowed down.** Their upper-arm rotations agree to within 0.0015 at
+  every matching fraction. In all four, the hands stay between 1.0 and 1.3 m (chest height): nothing goes overhead,
+  and nothing reaches the ground.
+- **`Bow Draw & Release`, `Throw`, `Pistol Aim & Fire`, `Cast (One-Handed)`, `Conjure`, `Summon` and
+  `Channel (Two-Handed)` are cuts of one shared gesture:** the arms open wide at shoulder height (hands 1.25 m
+  apart), then both hands push forward together (the left hand ends 0.59 m in front of the hips). It reads well as
+  spellcasting. It does not read as a bow draw (no side-on stance, no hand at the jaw) or as a throw (the arm never
+  goes behind the head).
+- **These clips are distinct and fine as they are:** `Slash (Horizontal)` (a real sweep across the body; the head
+  turns with it), `Stab` (a real lunge: the head drops 0.55 m forward and the lead hand reaches 0.81 m),
+  `Parry`, `Block`, `Greatsword Guard`, `Greatsword Idle`, `Dash`, `Roll`, `Backstep`, `Kick (Front)` (the
+  left foot goes 0.92 m forward at 1.18 m high) and `Punch (Cross)` (the right fist goes 0.46 m forward).
+
+Every weapon below works today with the clips as they are. But until four clips are remade, the hammer, the
+greatsword's heavy attack and the bow will look like the sword's diagonal chop or the spell gesture.
+**Remake these clips for free, locally, with the `kimodo-motion` skill. Keep the names so no code changes:**
+
+| clip | motion to ask for | done when (measured the same way as above) |
+|---|---|---|
+| `Slash (Diagonal)` | two-handed sword cut from above the right shoulder down across to the left hip | right hand starts ≥ 1.6 m high and ends ≤ 0.9 m high, on his left side |
+| `Hammer Overhead Smash` | lift a heavy two-handed hammer high over the head and smash it straight down in front | hands go ≥ 2.0 m high, then ≤ 0.6 m high and ≥ 0.4 m in front |
+| `Greatsword Swing` | huge two-handed sweep from right to left, the whole body turning | hands travel ≥ 2.5 m along a level arc 1.0–1.3 m high |
+| `AoE Ground Slam` | small hop, then both hands drive the weapon into the ground | hands reach ≤ 0.4 m high; hips dip ≥ 0.3 m |
+| `Bow Draw & Release` | side-on archer: left arm straight at the target, right hand draws to the jaw, holds, lets go | left hand ≥ 0.55 m from its shoulder; right hand within 0.15 m of the jaw for ≥ 0.4 s |
+| `Throw` | one-arm overhand throw with the right hand, from behind the head forward | right hand ≥ 1.8 m high behind the head, then ≥ 0.5 m in front |
+
+Each remade clip must also differ from `Slash (Diagonal)`: the rotation comparison above has to fail. Until they are
+remade, use the hit windows measured below.
+
+**Measured hit windows (clip time):**
+
+| clip | window |
+|---|---|
+| `Slash (Diagonal)` | 0.25–0.60 s (hands fastest at 0.29–0.33 s; the twist peaks at 0.54 s) |
+| `Slash (Horizontal)` | 0.45–0.95 s (lead hand fastest at 0.71 s) |
+| `Stab` | 0.10–0.40 s (full reach at 0.25 s) |
+| `Parry` | 0.12–0.40 s |
+| `Kick (Front)` | 0.50–0.75 s (left foot furthest at 0.67 s) |
+| `Punch (Cross)` | 0.18–0.38 s (right fist furthest at 0.29 s) |
+| `Greatsword Swing`, `Hammer Overhead Smash`, `AoE Ground Slam`, until remade | 18–42 % of the clip, which is 0.57–1.37 s, 0.83–1.99 s and 0.35–0.85 s |
+| the release in the shared gesture: when to spawn the arrow, bolt or axe | `Bow Draw & Release` 1.17 s · `Throw` 0.60 s · `Cast (One-Handed)` 0.79 s · `Summon` 1.75 s · `Conjure` 1.83 s (its end) · `Channel (Two-Handed)` arms open 0.25–1.75 s (loop this span) |
+
+## How to build each weapon (5b: `tools/weapons/<id>.py`)
+
+- **Follow `tools/props/sword.py`.** Build along +Z in Blender and call `upright()`; the glTF exporter turns +Z into
+  +Y. Work in metres. Use flat or vertex colours from the land's palette in `WORLD.md`, roughness ≥ 0.3, nothing
+  neon. Keep the weapon ≤ 4,000 triangles and the carrier ≤ 2,000.
+- **Write one file, `public/models/weapons/<id>.glb`, with two nodes** (`club.glb` also uses named nodes):
+  - `weapon`: the origin is the centre of the right-hand grip, where `rightHand` closes (for the bow, the left-hand
+    grip). The business end points +Y, and the cutting edge or striking face points +X. That is the sword's frame,
+    so combat's `GRIP_Q` fits every weapon.
+  - `carrier`: the origin is its top anchor (pinned to the chest), and its body runs down −Y toward its end anchor
+    (pinned to the hips), like `scabbard.glb`. The strap aims every carrier from the chest anchor toward the hips
+    anchor, which is about 0.97 m along his back. A longer weapon runs past the hips anchor, as noted per entry.
+  - The weapon's **seat** on the carrier is its origin's position in carrier coordinates, plus which way it points.
+- **Print** the total length, grip to tip, carrier top to end, and the triangle count. The 5b CHECK picture is a
+  render of each weapon beside the existing sword with the same camera.
+- **Anything that sticks out past the hips anchor** must pass `tools/strap-check.mjs` and a walk clip: the stride
+  must not kick it.
+
+Every entry below has the same fields: id, family, where found, look, how it is carried, moveset, what plays
+differently, trail and hit, which monsters it answers, and the build note.
