@@ -28,6 +28,7 @@ export async function createSprings(ctx) {
   const headC = head.clone().lerp(top, 0.45)
   const UPPER = [
     cap('head', headC, headC, 0.13), // skull + spiky hair
+    cap('head', ...Array(2).fill(headC.clone().add(new THREE.Vector3(0, -0.07, 0.11))), 0.085), // the face: tails never blow across it
     cap('neck', wp(bone('neck')), head, 0.06),
     cap('upperChest', wp(bone('upperChest')), wp(bone('neck')), 0.11),
     ...['left', 'right'].flatMap(s => [
@@ -37,7 +38,7 @@ export async function createSprings(ctx) {
   ]
   const LOWER = [
     cap('hips', wp(bone('hips')), wp(bone('hips')), 0.12),
-    ...['left', 'right'].map(s => cap(s + 'UpperLeg', wp(bone(s + 'UpperLeg')), wp(bone(s + 'LowerLeg')), 0.09)),
+    ...['left', 'right'].map(s => cap(s + 'UpperLeg', wp(bone(s + 'UpperLeg')), wp(bone(s + 'LowerLeg')), 0.12)), // baggy trousers
   ]
 
   const closest = (p, c, out) => { // point on capsule c's axis nearest p
@@ -58,8 +59,12 @@ export async function createSprings(ctx) {
     const nodes = [...bones, end], kind = m[1].startsWith('bandana') ? 'bandana' : 'hem'
     const rest = nodes.map(wp), cols = kind === 'bandana' ? UPPER : LOWER
     for (const c of cols) { c.A.copy(c.on.localToWorld(c.a.clone())); c.B.copy(c.on.localToWorld(c.b.clone())) }
+    const restQ = bones.map(b => b.quaternion.clone())
+    // The sculpt's tails stick out sideways and a little forward; aim them 35° back (about the head's up axis) so wind and
+    // running sweep them behind the head, not over the face. From the front they still stream out to his side.
+    if (kind === 'bandana') restQ[0].premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.6 * Math.sign(rest[1].x - rest[0].x)))
     chains.push({
-      name: m[1], p: PART[kind], cols, bones, nodes, restQ: bones.map(b => b.quaternion.clone()),
+      name: m[1], p: PART[kind], cols, bones, nodes, restQ,
       len: rest.slice(1).map((r, i) => r.distanceTo(rest[i])),
       // per joint, per collider: never closer than the cloth sits at rest, so nothing is pushed while standing still
       rad: rest.map(r => cols.map(c => Math.min(c.r, 0.95 * r.distanceTo(closest(r, c, tmp2))))),

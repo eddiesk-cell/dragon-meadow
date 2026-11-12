@@ -158,9 +158,13 @@ for nm, ch in chains.items():
                 acc[f"spring_{nm}_{k}"] = acc.get(f"spring_{nm}_{k}", 0) + float(wi[k] * si)
 bset = set(np.nonzero(bd)[0].tolist())
 for i, acc in new.items():
-    sp = sum(acc.values())
     old = {"head": 1.0} if i in bset else {gname[g.group]: g.weight for g in me.vertices[i].groups if g.weight > 0}
     tot = sum(old.values()) or 1
+    if i not in bset:  # where the cloth lies on a thigh it keeps following that leg: less spring, so the leg never pokes through
+        f = 1 - sum(w for k, w in old.items() if "Leg" in k) / tot
+        for k in acc:
+            acc[k] *= f
+    sp = sum(acc.values())
     for k, v in old.items():
         acc[k] = acc.get(k, 0) + (1 - sp) * v / tot
 for i in bset - set(new):  # the knot and the headband ride the head only
