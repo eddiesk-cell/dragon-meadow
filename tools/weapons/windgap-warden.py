@@ -94,7 +94,8 @@ def tris(ob):
 
 # --- weapon (build frame: long axis Y, edge on X)
 w = []
-w.append(lofted("pommel", [(-0.285, ring(0.045, 16)), (-0.255, ring(0.045, 16))], BRASS))
+bpy.ops.mesh.primitive_cylinder_add(radius=0.045, depth=0.03, location=(0, -0.265, 0), vertices=16)  # wheel pommel, axis = blade thickness, touches grip end -0.22
+pom = bpy.context.object; pom.name = "pommel"; pom.data.materials.append(BRASS)
 w.append(lofted("grip", [(-0.22, ring(0.017)), (0.16, ring(0.017))], PINE))
 w.append(box("guard", (0.40, 0.03, 0.035), (0, 0.18, 0), GRANITE))
 w.append(lofted("ricasso", [(0.20, dia(0.025, 0.0055)), (0.32, dia(0.025, 0.0055))], LEATHER))
@@ -104,6 +105,7 @@ for s in (-1, 1):  # parrying lugs, 0.06 m spikes along +-X
              if False else box("lug", (0.06, 0.012, 0.012), (s * 0.055, 0.32, 0), STEEL))
 w.append(lofted("blade", [(0.32, dia(0.030, 0.005)), (0.34, dia(0.030, 0.005)), (1.25, dia(0.0225, 0.005)),
                           (1.48, dia(0.0015, 0.0015))], STEEL))
+w.append(pom)  # not first: finish() joins into objs[0], which must have identity location
 weapon = finish(w, "weapon")
 
 # --- carrier: strip down -Y from the top anchor, clasps at y 0, -0.45, -0.90
