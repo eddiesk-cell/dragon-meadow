@@ -38,7 +38,10 @@ so the 4d gallery gets models early. The rest follow `WORLD.md`'s land build ord
 
 **Concept rules (phase 4b).** Bipeds: front view, full body, feet visible, plain grey ground, a TRUE T-pose (arms
 straight out at shoulder height, palms down, space between arm and body: the house-autorig rule). Draw extras (wings,
-nets, capes, tails) clear of the limbs so the mesh does not fuse them. The serpent: side view, laid straight. Original
+nets, capes, tails) clear of the limbs so the mesh does not fuse them.
+**Eddie, 2026-11-12: golems and big creatures get LONG arms** (*"make sure golems arms and big creatures are not too
+short, they should have long arms"*): in the T-pose concept the span is ~1.5× the height; hanging, the knuckles reach
+the knees. Check it on the concept before paying for the 3D. The serpent: side view, laid straight. Original
 designs only: nothing in this file is taken from an existing game.
 
 ### Rig routes
