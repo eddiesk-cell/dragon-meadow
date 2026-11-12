@@ -20,10 +20,10 @@ const sunAt = (tod, v) => { const a = (tod - 0.5) * TAU; return v.set(-0.8434 * 
 const KEYS = [
   [-0.30, [.008, .012, .060], [.050, .060, .170], [0, 0, 0], [.55, .66, 1], [.30, .42, .85], [.02, .035, .05], [.07, .08, .17], [.012, .015, .045], 0, .9, .32],
   [-0.10, [.020, .030, .130], [.17, .11, .24], [.30, .09, .08], [.55, .66, 1], [.42, .38, .70], [.05, .05, .06], [.32, .13, .20], [.04, .035, .09], 0, .8, .25],
-  [0.00, [.060, .080, .280], [.66, .38, .38], [1.4, .45, .12], [1, .45, .2], [.80, .58, .62], [.12, .10, .08], [1.3, .55, .38], [.22, .14, .26], 1.3, .9, .16],
-  [0.08, [.070, .140, .460], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.6, .95, .66], [.34, .28, .42], 1.9, 1.0, .12],
-  [0.20, [.045, .150, .580], [.60, .68, .88], [1.3, .90, .50], [1, .86, .68], [.72, .84, 1], [.30, .36, .16], [1.9, 1.75, 1.6], [.46, .50, .72], 2.6, 1.2, .10],
-  [0.55, [.035, .130, .550], [.52, .66, .95], [.80, .75, .60], [1, .96, .90], [.70, .82, 1], [.30, .36, .16], [2.0, 2.0, 2.0], [.52, .58, .78], 3.0, 1.3, .12],
+  [0.00, [.060, .080, .280], [.66, .38, .38], [1.4, .45, .12], [1, .45, .2], [.80, .58, .62], [.12, .10, .08], [1.3, .55, .38], [.22, .14, .26], 1.3, .9, .08],
+  [0.08, [.070, .140, .460], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.6, .95, .66], [.34, .28, .42], 1.9, 1.0, .02],
+  [0.20, [.045, .150, .580], [.60, .68, .88], [1.3, .90, .50], [1, .86, .68], [.72, .84, 1], [.30, .36, .16], [1.9, 1.75, 1.6], [.46, .50, .72], 2.6, 1.2, -.02],
+  [0.55, [.035, .130, .550], [.52, .66, .95], [.80, .75, .60], [1, .96, .90], [.70, .82, 1], [.30, .36, .16], [2.0, 2.0, 2.0], [.52, .58, .78], 3.0, 1.3, .0],
 ]
 
 export async function createSky(ctx) {
@@ -48,17 +48,18 @@ export async function createSky(ctx) {
     return base.add(uGlow.mul(glow)).add(halo)
   })
 
-  // Cumulus on a flat deck: 5-octave noise, lit on the side facing the sun, silver-edged near it, dissolving into the haze low down.
+  // Cumulus on a flat deck: 5-octave noise; each puff is lit on its top and on the side facing the sun (density
+  // sampled a step that way: thinner there = lit), silver-edged near the sun, dissolving into the haze low down.
   const clouds = Fn(([d]) => {
-    const p = d.xz.div(d.y.add(0.1)).mul(0.55).add(vec2(uTime.mul(0.004), uTime.mul(0.0015)))
-    const toSun = normalize(uSun.xz.add(1e-4)).mul(0.07)
+    const q = d.xz.div(d.y.add(0.1)), p = q.mul(0.8).add(vec2(uTime.mul(0.006), uTime.mul(0.002)))
+    const toLight = normalize(uSun.xz.add(1e-4)).mul(0.6).sub(normalize(q.add(1e-4)).mul(0.4)).mul(0.14) // toward the sun and up the screen
     const n = mx_fractal_noise_float(vec3(p, uTime.mul(0.002)), 5, 2.1, 0.5)
-    const n2 = mx_fractal_noise_float(vec3(p.add(toSun), uTime.mul(0.002)), 5, 2.1, 0.5)
-    const dens = smoothstep(uCover, uCover.add(0.32), n)
-    const lit = clamp(n.sub(n2).mul(5).add(0.55), 0, 1)
+    const n2 = mx_fractal_noise_float(vec3(p.add(toLight), uTime.mul(0.002)), 5, 2.1, 0.5)
+    const dens = smoothstep(uCover, uCover.add(0.22), n)
+    const lit = clamp(n.sub(n2).mul(4.5).add(0.6), 0, 1)
     const rim = pow(max(dot(d, uSun), 0), 6).mul(dens.oneMinus()).mul(1.6)
     const col = mix(uCloudShade, uCloudLit, lit).add(uCloudLit.mul(rim))
-    return vec4(mix(col, uHorizon, exp(d.y.mul(-8)).mul(0.65)), dens.mul(smoothstep(0.015, 0.17, d.y)))
+    return vec4(mix(col, uHorizon, exp(d.y.mul(-8)).mul(0.6)), dens.mul(smoothstep(0.015, 0.15, d.y)))
   })
 
   // Stars: one per lit cell of a 3-D grid on the sphere, twinkling; the Milky Way band crowds them and glows faintly.
