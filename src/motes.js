@@ -31,20 +31,21 @@ export async function createMotes(ctx) {
     const c = attribute('aC', 'vec4'), r = length(uv().sub(0.5).mul(2))
     const s = saturate(float(1).sub(r)), core = s.mul(s)
     const far = smoothstep(0.0, 6.0, length(cameraPosition.sub(attribute('aP', 'vec4').xyz))) // fade at the lens
-    return vec4(c.rgb.mul(core.mul(1.6).add(s.mul(0.25))), core.mul(c.a).mul(far))
+    return vec4(c.rgb.mul(core.mul(0.8).add(s.mul(0.3))), core.mul(c.a).mul(far))
   })()
   const mesh = new THREE.Mesh(geo, mat)
   mesh.frustumCulled = false; mesh.renderOrder = 3
   scene.add(mesh)
 
   // Per-mote state: position, rise speed, sway phase/speed, size, hue (0 cyan-green … 1 warm gold), twinkle phase.
-  const m = Array.from({ length: MAX }, () => ({ x: 0, y: 0, z: 0, vy: 0, ph: 0, sp: 0, size: 0, hue: 0, tw: 0, init: false }))
+  const m = Array.from({ length: MAX }, () => ({ x: 0, y: 0, z: 0, vy: 0, ph: 0, sp: 0, size: 0, top: 3, hue: 0, tw: 0, init: false }))
   function spawn(s, fresh) {
     const a = Math.random() * Math.PI * 2, d = R * Math.pow(Math.random(), 0.7) // squared-ish bias: densest near the hero
     s.x = heroPos.x + Math.cos(a) * d; s.z = heroPos.z + Math.sin(a) * d
-    s.y = ctx.heightAt(s.x, s.z) + (fresh ? rnd(0.2, 9) : rnd(0.1, 1.2))
+    s.y = ctx.heightAt(s.x, s.z) + (fresh ? rnd(0.3, s.top = Math.random() < 0.1 ? rnd(5, 9) : rnd(2, 3.5)) : rnd(0.1, 0.8))
     s.vy = rnd(0.12, 0.45); s.ph = rnd(0, 6.28); s.sp = rnd(0.2, 0.7)
-    s.size = rnd(0.05, 0.14); s.hue = Math.random(); s.tw = rnd(0, 6.28); s.init = true
+    if (!fresh) s.top = Math.random() < 0.1 ? rnd(5, 9) : rnd(2, 3.5)
+    s.size = rnd(0.09, 0.22); s.hue = Math.random() < 0.7 ? rnd(0.75, 1) : rnd(0, 0.3); s.tw = rnd(0, 6.28); s.init = true
   }
 
   let count = 0
@@ -63,13 +64,13 @@ export async function createMotes(ctx) {
       s.y += s.vy * dt
       s.x += Math.sin(t * s.sp + s.ph) * 0.35 * dt; s.z += Math.cos(t * s.sp * 0.8 + s.ph * 1.7) * 0.35 * dt
       const dx = s.x - heroPos.x, dz = s.z - heroPos.z
-      if (dx * dx + dz * dz > R * R || s.y > ctx.heightAt(s.x, s.z) + 11) spawn(s, false)
+      if (dx * dx + dz * dz > R * R || s.y > ctx.heightAt(s.x, s.z) + s.top) spawn(s, false)
       const k = i * 4, tw = 0.65 + 0.35 * Math.sin(t * 1.7 + s.tw)
       // Fade near the ground and near the top of the rise so seeds never pop.
-      const h = s.y - ctx.heightAt(s.x, s.z), edge = Math.min(1, h / 0.6, (11 - h) / 3)
+      const h = s.y - ctx.heightAt(s.x, s.z), edge = Math.min(1, h / 0.6, (s.top - h) / 1.2)
       P.array[k] = s.x; P.array[k + 1] = s.y; P.array[k + 2] = s.z; P.array[k + 3] = s.size * (n > 0.05 ? 1 + n : 0.7)
       tmp.copy(lo).lerp(hi, s.hue).lerp(pale, 1 - n) // by day all pollen is pale warm white
-      const gain = (0.35 + 2.2 * n) // HDR > 1 at night so bloom takes them
+      const gain = (0.35 + 1.5 * n) // HDR > 1 at night so bloom takes them
       C.array[k] = tmp.r * gain; C.array[k + 1] = tmp.g * gain; C.array[k + 2] = tmp.b * gain; C.array[k + 3] = Math.max(0, edge) * tw * (0.35 + 0.65 * n)
     }
     P.needsUpdate = C.needsUpdate = true
