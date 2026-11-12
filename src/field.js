@@ -96,7 +96,7 @@ export async function createField(ctx) {
     const alive = step(r(3), keep)
     const patch = lowNoise(world, 0.11, 0.07), bloom = lowNoise(world.add(57), 0.045, 0.06)
     const under = step(r(4), 0.35) // short under-mat closes the gaps between tall crowns
-    const fl = step(r(6), bloom.mul(1.4).add(0.2).mul(flowers)).mul(float(1).sub(under)) // patchy wildflowers
+    const fl = step(r(6), bloom.mul(1.4).add(0.2).mul(flowers).mul(pt.y.mul(pt.y))).mul(float(1).sub(under)) // patchy wildflowers, few on trampled turf
     const H = mix(r(5).mul(0.45).add(0.6).mul(patch.mul(0.4).add(0.75)), r(5).mul(0.2).add(0.25), under)
       .mul(mix(float(1), r(13).mul(0.3).add(0.75), fl)).mul(alive).mul(pt.y) // flower heads sit at mixed depths in the grass; pt.y tramples
 
@@ -166,14 +166,14 @@ export async function createField(ctx) {
     c.toArray(col, i * 3)
   }
   tg.setAttribute('color', new THREE.BufferAttribute(col, 3))
-  const tm = new THREE.MeshLambertNodeMaterial({ vertexColors: true })
+  const tm = new THREE.MeshLambertNodeMaterial() // colour comes in colorNode as vc² (vertexColors: true squared it before; look kept)
   const near = mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz)))) // shade under the near grass
   const tp = patchAt(positionWorld.xz), pe = uPatch.z.div(PN), ph = o => patchAt(positionWorld.xz.add(o)).x
   const dh = vec2(ph(vec2(pe, 0)).sub(ph(vec2(pe.negate(), 0))), ph(vec2(0, pe)).sub(ph(vec2(0, pe.negate())))).div(pe.mul(2))
   const n0 = attribute('normal', 'vec3') // terrain sits at the origin: local = world
   tm.positionNode = positionLocal.add(vec3(0, patchAt(positionLocal.xz).x, 0))
   tm.normalNode = normalize(cameraViewMatrix.mul(vec4(normalize(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y))), 0)).xyz)
-  tm.colorNode = mix(vertexColor().mul(mix(float(1), near, tp.y)), vec3(0.55, 0.53, 0.47), tp.z).mul(tp.w)
+  tm.colorNode = mix(vertexColor().mul(vertexColor()).mul(mix(float(1), near, tp.y)), vec3(0.55, 0.53, 0.47), tp.z).mul(tp.w)
   const terrain = new THREE.Mesh(tg, tm)
   terrain.receiveShadow = true
   scene.add(terrain)
