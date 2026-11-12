@@ -543,7 +543,8 @@ strands, vine glow mask). Glow mask = vertex colour alpha (1 glows), so one mate
 
 ### Lane flora-place — `src/flora.js` (Opus, after the three flora lanes pass)
 Instance the three models: bell flowers and ferns in drifts round the meadow edges (none on the path or in the Old
-Ring), vine trees in groves on the rises, as in `day.png`. Sway with `ctx.windAt`; glow by `ctx.night`.
+Ring), vine trees in groves on the rises, as in `day.png`. Sway with `ctx.windAt`; glow by `ctx.night`. Light the glow mask as alpha² (fern.glb's leaflet midribs carry
+~0.35, its rachis and coils 1), so midribs read as thin veins; `tools/flora/beside_hero.py` renders a model that way.
 - **CHECK:** `tod=day` and `tod=night` default views read like `day.png` / `night.png`; fps ≥ 50; no plant floats or
   sinks (probe: max |base − heightAt| ≤ 0.05 m).
 
