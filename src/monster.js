@@ -14,7 +14,7 @@ const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
 const ATTACKS = {
   kick:  { clip: 'Kick (Front)', wind: 0.35, windT: 0.75, fast: 1.1, h0: 0.42, h1: 0.7, reach: 2.6, radius: 1.0, dmg: 12, at: 'foot' },
   punch: { clip: 'Punch (Cross)', wind: 0.2, windT: 0.6, fast: 1.2, h0: 0.24, h1: 0.4, reach: 2.6, radius: 1.1, dmg: 15, at: 'club' },
-  smash: { clip: 'Hammer Overhead Smash', wind: 1.25, windT: 1.25, fast: 1, h0: 1.3, h1: 1.5, end: 2.8, reach: 3.2, radius: 0.9, dmg: 28, at: 'club', swing: 1 },
+  smash: { clip: 'Hammer Overhead Smash', wind: 1.25, windT: 1.25, fast: 1, h0: 1.3, h1: 1.5, end: 2.8, reach: 2.6, radius: 1.1, dmg: 28, at: 'club', swing: 1 },
   slam:  { clip: 'AoE Ground Slam', wind: 1.25, windT: 1.25, fast: 1, h0: 1.4, h1: 1.55, end: 2.8, reach: 4.6, radius: 3.6, dmg: 22, at: 'ground', swing: 2 },
 }
 for (const a of Object.values(ATTACKS)) a.lands = a.windT + (a.h0 - a.wind) / a.fast // game seconds from start to the hit
