@@ -20,8 +20,13 @@ ob = bpy.context.object
 bpy.ops.object.parent_clear(type="CLEAR_KEEP_TRANSFORM")
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-# Drop loose shells under 0.5% of the vertices: a speck no bone reaches makes the rigger give up.
+# Weld first: generated meshes arrive split along every UV seam (Hunyuan: 2385 "shells", 1 after welding),
+# and without this the speck pass below throws away most of the body. UVs live per face corner, so they survive.
 bm = bmesh.new(); bm.from_mesh(ob.data)
+v0 = len(bm.verts)
+bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+print(f"PREP welded {v0} -> {len(bm.verts)} verts")
+# Drop loose shells under 0.5% of the vertices: a speck no bone reaches makes the rigger give up.
 bm.verts.ensure_lookup_table()
 seen, shells = set(), []
 for v in bm.verts:
@@ -37,6 +42,7 @@ for v in bm.verts:
     shells.append(shell)
 n = len(bm.verts)
 drop = [v for s in shells if len(s) < 0.005 * n for v in s]
+assert len(drop) < 0.05 * n, f"PREP would drop {len(drop)}/{n} verts as specks: the mesh is in pieces, not specks"
 bmesh.ops.delete(bm, geom=drop, context="VERTS")
 bm.to_mesh(ob.data); bm.free()
 print(f"PREP shells {len(shells)}, dropped {len(drop)} verts in {sum(len(s) < 0.005 * n for s in shells)} specks")

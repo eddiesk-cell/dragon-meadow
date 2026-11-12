@@ -128,6 +128,57 @@ made in code (no model, no credits).
   `"pet=close"` picture: fluffy silhouette with visible fur strands, ears, eyes — cute, soft, lit like
   the meadow. `node tools/controls-check.mjs` still 7/7 ok.
 
+### Lane springs — `tools/hero/springs.py`, `src/springs.js`, `tools/hero/build.sh`, and only a `ctx.windAt` export in `src/field.js` (Opus)
+Eddie: *"could we put the spring joints for the cloths like his bandana and his clothes? so it's affected
+by wind? so it looks more natural?"*. Reference picture: `art/hero/hero-front-nosword.png` (bandana knot at
+the back of his head, two long green tails streaming to his left; linen shirt tails and the leather vest's
+lower panels hang below the belt to mid-thigh). Rigged mesh: `art/hero/rig/hero-vrm.glb` (VRM bone names:
+`hips`, `spine`, `chest`, `upperChest`, `neck`, `head`, `leftUpperLeg`, …; 49k verts, one material).
+Skeleton over the body: `art/hero/rig/hero.markers.png`, shoulders fixed by hand in
+`art/hero/rig/hero-markers-fixed.json` — do not re-rig.
+- `tools/hero/springs.py` (Blender, `blender -b -P tools/hero/springs.py -- in.glb out.glb`, run unsandboxed,
+  Blender is `$HOME/.local/homebrew/bin/blender`): adds bone chains named `spring_<part>_<n>`:
+  **bandana** — 2 chains (one per tail, 3–4 bones from the knot to the tip) parented to `head`;
+  **hem** — at least 4 chains around the body below the belt (front-left, front-right, back-left,
+  back-right; 2 bones each, belt → hem) parented to `hips`. Find the cloth vertices by position (print the
+  counts it picks so a silent zero shows), weight them along their chain with a smooth falloff from the
+  root (the knot and the belt line stay 100 % on `head` / `hips`), keep ≤ 4 normalised influences per
+  vertex, and keep the leg weights where the cloth lies on the thigh so the hem follows the legs AND swings.
+  Print one line per chain: name, bones, vertex count. A chain with 0 vertices is a failure.
+- `tools/hero/build.sh`: run springs.py after `kimodo_glb.py` and retarget the springs file, so
+  `public/models/hero.glb` carries the chains plus all 51 clips. Prove retarget keeps the extra bones
+  (bone count printed before/after) and the clips still play.
+- `src/field.js`: add only `ctx.windAt = (x, z, t) => Vector2` — the same `WIND` direction and travelling
+  gust fronts the grass uses (CPU version of the `front`/`ripple`/`gust` lines), so cloth and grass move together.
+- `src/springs.js` (`createSprings(ctx)`, loaded by main right after hero; read `ctx.heroRig.model`):
+  every `spring_` chain is a damped spring (verlet per bone tip): it inherits the body's motion (inertia —
+  tails trail behind when he runs or turns, swing up when he jumps), springs back toward its rest direction,
+  feels gravity, drag and `ctx.windAt` at the hero. Collision spheres keep the hem out of the thighs and the
+  bandana out of the head. Stable at 20–144 fps (substep), never explodes, no jitter at rest. Frame-rate
+  independent. Probe: `window.__probes.springs = () => ({ chains, bones, maxSwingDeg })`.
+- **CHECK:** `node tools/hero/build.sh art/hero/raw/hero-hunyuan.glb art/hero/rig/hero-markers-fixed.json`
+  prints every chain with > 0 vertices and `public/models/hero.glb` has 51 animations (count them).
+  `node tools/shot.mjs shots/springs-front.png "fieldcam=0.6,2.5,-3.2,0,2.2,0" 6000` → no `springs:` error,
+  `chains ≥ 6`; picture: bandana tails and shirt hem look like his reference, nothing torn or spiked.
+  `node tools/clip.mjs shots/springs-idle.mp4 "fieldcam=0.6,2.5,-3.2,0,2.2,0" 8` and
+  `node tools/clip.mjs shots/springs-run.mp4 "auto=run" 8` → pull 6 frames from each with ffmpeg and LOOK:
+  idle — the tails visibly sway and flutter with the wind, the hem stirs; run — the tails stream behind his
+  head and the hem swings with his legs, never through them. `node tools/controls-check.mjs` 7/7 ok.
+
+### Lane slim — `tools/hero/slim.py` (Sonnet)
+`public/models/hero.glb` is 28.7 MB, almost all two 4K PNG textures (normal + base colour). A web game hero
+should be under 8 MB. Write `python3.12 tools/hero/slim.py <in.glb> <out.glb> [max_px=2048]` (python3.12 is
+`$HOME/.local/homebrew/bin/python3.12`, it has Pillow): re-encode every embedded image to ≤ max_px on the long
+side as JPEG (quality 88 for colour, 95 for a normal map), rewrite the BIN chunk with every bufferView offset and
+length recomputed and 4-byte aligned, update `images[].mimeType`, leave everything else (meshes, skins, 51
+animations) byte-identical. Self-check inside the script: the output parses, has the same counts of nodes,
+meshes, skins, animations and accessors as the input. Never write into `public/models/` — test on a copy in
+`$TMPDIR`; the orchestrator wires it into build.sh.
+- **CHECK:** `python3.12 tools/hero/slim.py public/models/hero.glb $TMPDIR/hero-slim.glb` → prints sizes,
+  output < 8 MB, 51 animations. Load both files headlessly in Blender (`blender -b`, import glTF, material
+  preview or Eevee) and render the same front view of each to `shots/slim-before.png` / `shots/slim-after.png`;
+  LOOK: the same character, same colours, no blockiness or seams.
+
 ## Review (Opus, never the builder)
 
 Mechanical first: the lane's commit exists and touches only its files; the reviewer re-runs the
