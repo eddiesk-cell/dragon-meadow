@@ -51,50 +51,99 @@ Each land keeps a narrow day palette and a night palette (4–6 colours each), o
 door, and its own share of the glow.
 
 **1. Dragon Meadow** — *you start here* · (0, 0)
-- Look: chalk downs under knee-high grass and wildflowers, sea fog in the hollows. Sage, yellow-green, chalk white, poppy red, pale grey sky.
+- Look: rolling chalk downs under dense, thigh-high grass thick with small flowers — the opening of `mix-day.png`. Drifts
+  of giant bell flowers and spiral ferns at the edges; groves of colossal pale vine trees on the rises, their vine
+  curtains swaying; skystone isles overhead. Ahead-left on the cliff headland, Castle Crestwatch. Near the start, a
+  towering rock island (80–120 m) stands out of a mirror-still pond — round puff trees on top, a cottage with a smoking
+  chimney and a big pale egg stone, lanterns on the shore. It is a skystone isle that lost its lift and came down long
+  ago; the egg stone is the last of its skystone, light enough to rock with one hand. Sea fog comes and goes in the
+  hollows, and the landmarks are what it shows when it thins. Flocks of birds wheel over the grass.
+- Day: grass saturated yellow-green with pale gold tips, poppy red, buttercup yellow, daisy white, bell-flower lilac and
+  peach, chalk white, warm blue sky with cream clouds.
+- Night: grass deep jade going teal, fern violet, bell gold, indigo sky, aurora green-violet.
+- Glows: grass tips (teal-cyan) and the light ring at every footstep; small pale star flowers; bell flowers (gold, from
+  inside); fern veins (violet); vine curtains (cyan-green); drifting seed lights; the pond's lanterns doubled in the
+  water; the Crest Stone's carved lines; the Old Ring's moss.
 - Feel: wide, calm, windy — the first breath of the game.
-- Lives: sheep, hares, skylarks; the winter dragon circling overhead; a troll asleep in the Old Ring.
-- Landmark: **the Crest Stone**, a leaning standing stone on the cliff top, dark against the sea haze.
+- Lives: sheep, hares, skylarks and wheeling flocks; the winter dragon circling overhead; a troll asleep in the Old Ring.
+- Landmark: **the Crest Stone**, a leaning standing stone on the cliff top, its seaward side carved into a giant stone
+  face looking out over the sea. Dark against the sea haze by day; its carved lines glow-veined at night like the ring
+  stones.
 
 **2. The Undercliff** · (0, −340)
-- Look: 65 m white chalk cliffs over a grey shingle beach; tide pools, sea caves, chalk stacks. Chalk, slate, foam, kelp brown.
+- Look: 65 m white chalk cliffs over a grey shingle beach; tide pools, sea caves, chalk stacks and arches (`island.png`,
+  left). Green turf and hanging bell flowers along the cliff lip; clear turquoise shallows over pale shingle, deep blue
+  beyond; thin spring falls down the cliff face.
+- Day: chalk white, turquoise shallows, deep sea blue, slate, foam, kelp bronze.
+- Night: chalk faint lilac in the moonlight, sea blue-black, surf cyan.
+- Glows: the surf — every breaking wave lights blue-cyan with sea-glow; anemones in the tide pools; the glass floats on
+  the Driftwight's nets (foam green).
 - Feel: loud, cold, salt spray — the meadow's calm turned upside down.
 - Lives: gulls and puffins on the ledges, seals on the rocks, crabs, an old beachcomber in a cave.
 - Landmark: **the Needle**, a chalk sea stack with an arch punched through it.
 
 **3. Bellholm** · (−1190, −750)
-- Look: a small green tidal island ringed by drowned roofs. Grey stone, verdigris, sea green, white surf.
+- Look: a small green tidal island ringed by drowned roofs — the headland town the sea took, its streets under the
+  shallows. Sea thrift in pink cushions on the walls; Castle Crestwatch on the cliffs to the east still watching it.
+- Day: grey stacked stone, verdigris green, sea green over the drowned streets, white surf, thrift pink.
+- Night: the drowned town lit from below — weed in its windows glows teal under the water; the fishers' few lamps
+  orange above it; the causeway outlined in surf-glow at low tide.
+- Glows: drowned weed (teal), surf (blue-cyan), the fishers' lamps (lamp orange).
 - Feel: lonely and beautiful, half under water.
 - Lives: a few fishers, seals, crabs in the flooded cellars.
 - Landmark: **the Bell Tower**, leaning; the tide swings its bells, and on still days you hear them from the meadow.
 
 **4. Lanternwood** · (100, 975)
-- Look: old oak and beech forest in the clay vale below the downs; moss, light shafts, fireflies at dusk. Deep green, moss, bark brown, firefly gold.
+- Look: the old forest in the clay vale below the downs — colossal pale vine trees with buttressed trunks and curtains
+  of hanging vines, old oaks between them, moss, honey light shafts, fireflies at dusk (`island.png`, right). Spiral
+  ferns and bell flowers on the floor. Springwell on its north edge.
+- Day: deep jade canopy, bone-pale bark, moss green, honey light, firefly gold.
+- Night: vine curtains cyan-green, fungus and hollow trunks glowing gold from the roots up, ferns violet.
+- Glows: vines (cyan-green), fungus and the hollows of the great trees (gold), fireflies and Lantern-caps (gold), fern
+  veins (violet).
 - Feel: sheltered, deep, a little magical.
-- Lives: deer, boar, owls; the woodcutters' village of Springwell, where the stream rises.
+- Lives: deer, boar, owls; the town of Springwell, where the stream rises.
 - Landmark: **the Lantern Oak**, a giant hollow oak glowing inside with fungus.
 
 **5. Mirrormere** · (−1000, 1560)
-- Look: a wide, still, milky-turquoise lake with reed beds. Turquoise, reed gold, pale sky, lamp orange.
+- Look: a wide, mirror-still, milky-turquoise lake with reed beds and lily pads, small falls where the Brightwater
+  enters, Reedholt's walkways and lamps on the water (`island.png`, centre).
+- Day: turquoise, reed gold, lily pink, pale sky.
+- Night: the water holds the aurora and the stars; lamp orange from Reedholt.
+- Glows: lily flowers (soft gold-pink, from inside), reed tips (teal), Reedholt's lamps doubled in the water — and Old
+  Glim's flank lamps, which look just like them.
 - Feel: slow and quiet — the place to rest.
 - Lives: herons, eels, frogs; the eel-fishers of Reedholt.
 - Landmark: **Reedholt**, a village on stilts in the middle of the water, its lamps doubled in the reflection.
 - Why turquoise: the Coldrun carries rock flour ground by Wyrmcrown's glacier, and it hangs in the still water. The dragon's mountain colours the lake.
 
 **6. The Greyspine** · Windgap at (1525, 1300)
-- Look: granite ridges, pine on the wet west slopes, scree, cold tarns, snow on the tops. Granite, pine, snow, sky blue.
+- Look: rose-grey granite ridges, pine on the wet west slopes, scree, cold tarns, snow on the tops, white falls down the
+  rock faces and cloud banks in the valleys (`island.png`, the range).
+- Day: rose granite, pine green, snow white, tarn blue, sky blue.
+- Night: snow blue-violet under the aurora, the tarns holding stars.
+- Glows: lichen veins on the granite (faint green), the tarns (ice blue, glacier light). No warm light: the Windgap Gate
+  stays dark.
 - Feel: hard climbing, huge views, wind.
 - Lives: goats, eagles, wolves.
 - Landmark: **the Windgap Gate**, a ruined fortress gate built across the only pass.
 
 **7. The Redwaste** · (2550, 1560)
-- Look: red sandstone mesas, dunes, a white salt pan, heat shimmer. Rust, ochre, bone, hard blue sky.
+- Look: red sandstone mesas, dunes, a white salt pan, heat shimmer; the Ribs arching out of the sand.
+- Day: rust, ochre, bone, salt white, hard blue sky.
+- Night: sand deep plum, salt pan pale lilac, the sky clearest on the island — the Milky Way over the dunes.
+- Glows: the salt pan (a pale sheen: the salt drinks the sun too), the Dragon's Ribs (a faint ember inside the bone),
+  the nomads' fires (lamp orange).
 - Feel: vast, hot, silent.
 - Lives: lizards, sand beetles, a nomad camp.
 - Landmark: **the Dragon's Ribs**, the bones of an ancient dragon arching out of the dunes, big enough to walk through.
 
 **8. Wyrmcrown** · (1825, −325)
-- Look: the island's highest peak; its summit a ring of ice pinnacles around a frozen bowl, a glacier down its flank. White, ice blue, shadow violet, aurora green at night.
+- Look: the island's highest peak; its summit a ring of ice pinnacles around a frozen bowl, a glacier down its flank;
+  rose alpenglow at dusk.
+- Day: white, ice blue, shadow violet, alpenglow rose.
+- Night: the aurora hangs lowest and brightest over the Crown, green and violet; ice blue-black.
+- Glows: glacier ice (ice blue, from deep inside), the Rime Warden's cracks (aurora green).
 - Feel: thin air, silence, awe — the end of the road.
 - Lives: the winter dragon, alone.
 - Landmark: **the Crown** itself — seen from every land; it is the island's compass.
