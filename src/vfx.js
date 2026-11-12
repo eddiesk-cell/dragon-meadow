@@ -120,8 +120,10 @@ export async function createVfx(ctx) {
     return { mesh, geo, pos, at, obj: null, live: false, gen: 0, born: 0, n: 0, life: 0.2, base: V(), tip: V(), m: new Float32Array(MAXS * 7) }
   })
   const v3 = (out, a) => (a.isVector3 ? out.copy(a) : out.fromArray(a))
+  let cutAt = null, cutMs = 0
   function trail(obj, { base, tip, life = 0.2 }) {
     fired.trail++
+    cutAt ??= performance.now() // the first cut: the probe watches the 0.5 s after it
     const tr = trails.find(t => !t.obj) || trails.reduce((a, b) => (a.born < b.born ? a : b)) // all busy: reuse the oldest
     v3(tr.base, base); v3(tr.tip, tip)
     Object.assign(tr, { obj, live: true, born: clock, n: 0, life })
@@ -242,7 +244,7 @@ export async function createVfx(ctx) {
   }
 
   // ── Hit flash: the struck meshes' emissive goes white and decays (colour only, so nothing recompiles) ─────────
-  const FLASH_T = 0.12, WARM = new THREE.Color(1.0, 0.6, 0.25), tc = new THREE.Color(), flashing = new Map() // albedo × (1 + k·(2.4·WARM−1)): about ×1.2 red … ×0.85 blue at k=.35
+  const FLASH_T = 0.12, WARM = new THREE.Color(1.0, 0.6, 0.25), tc = new THREE.Color(), flashing = new Map() // albedo × (1 + k·(2·WARM−1)): ×1.35 red, ×1.07 green, ×0.825 blue at k=.35
   function flash(obj) {
     fired.flash++
     obj.traverse(o => {
@@ -260,8 +262,8 @@ export async function createVfx(ctx) {
       if (left <= 0) { m.emissive.copy(orig); m.color.copy(base); flashing.delete(m); continue }
       // A warm lift of the albedo (it multiplies the texture, so the texture stays) plus a faint emissive: 35% at most.
       const k = 0.35 * left / FLASH_T
-      m.color.copy(base).multiply(tc.copy(WARM).multiplyScalar(2.4).addScalar(-1).multiplyScalar(k).addScalar(1))
-      m.emissive.copy(orig).add(tc.copy(WARM).multiplyScalar(0.25 * k / Math.max(m.emissiveIntensity, 1e-3)))
+      m.color.copy(base).multiply(tc.copy(WARM).multiplyScalar(2).addScalar(-1).multiplyScalar(k).addScalar(1))
+      m.emissive.copy(orig).add(tc.copy(WARM).multiplyScalar(0.12 * k / Math.max(m.emissiveIntensity, 1e-3)))
       flashing.set(m, left)
     }
   }
@@ -303,7 +305,7 @@ export async function createVfx(ctx) {
   ctx.vfx = { trail, slash, sparks, flash, shake, dust, blast, hitstop }
   window.__probes.vfx = () => ({
     glow: glow.n, soft: soft.n, dropped: glow.dropped + soft.dropped, trails: trails.filter(t => t.obj).length,
-    slashes: [...aS.array].filter(p => p < 1).length, flashing: flashing.size, timeScale: ctx.timeScale, fired, worstMs: Math.round(worstMs), maxFrameMs: Math.round(worstMs),
+    slashes: [...aS.array].filter(p => p < 1).length, flashing: flashing.size, timeScale: ctx.timeScale, fired, worstMs: Math.round(worstMs), maxFrameMs: Math.round(cutMs), firstCutMs: Math.round(cutMs),
   })
 
   const demo = params.get('vfx') === 'demo' && makeDemo()
@@ -311,6 +313,7 @@ export async function createVfx(ctx) {
     update(dt) {
       const now = performance.now(), rdt = Math.min((now - lastNow) / 1000, 0.1)
       if (++frames > 30) worstMs = Math.max(worstMs, now - lastNow) // proof that effects never hitch (load frames excluded)
+      if (cutAt !== null && now - cutAt < 500) cutMs = Math.max(cutMs, now - lastNow) // worst frame gap in 0.5 s after the first trail()
       lastNow = now
       if (stopUntil && now >= stopUntil) release()
       clock += dt
