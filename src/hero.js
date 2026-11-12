@@ -32,7 +32,7 @@ export async function createHero(ctx) {
   addEventListener('blur', () => keys.clear())
 
   // Orbit: drag the mouse/finger. Camera starts behind the hero (hero faces -Z).
-  let yaw = 0, pitch = 0.22, dragging = false
+  let yaw = 0, pitch = 0.10, dragging = false
   const el = ctx.renderer.domElement
   el.addEventListener('pointerdown', e => { dragging = true; el.setPointerCapture(e.pointerId) })
   el.addEventListener('pointerup', () => (dragging = false))
@@ -86,7 +86,7 @@ export async function createHero(ctx) {
       camGoal.set(camTarget.x + Math.sin(yaw) * cp * DIST, camTarget.y + Math.sin(pitch) * DIST, camTarget.z + Math.cos(yaw) * cp * DIST)
       camGoal.y = Math.max(camGoal.y, ctx.heightAt(camGoal.x, camGoal.z) + 0.4)
       camera.position.lerp(camGoal, 1 - Math.exp(-dt * 12))
-      camera.lookAt(camTarget)
+      camera.lookAt(camTarget.x, camTarget.y + 0.3, camTarget.z)
     },
   }
 }
