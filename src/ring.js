@@ -3,8 +3,8 @@
 // contact shade go to the field through ctx.groundPatch (one texture the grass and terrain read).
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
-  vertexColor, positionLocal, positionWorld, positionView, uniform, vec3, float, smoothstep, saturate, length, mx_fractal_noise_float,
-  viewportDepthTexture, perspectiveDepthToViewZ, cameraNear, cameraFar, cameraPosition,
+  vertexColor, positionLocal, positionWorld, positionView, uniform, vec2, vec3, float, smoothstep, length, mx_fractal_noise_float,
+  viewportDepthTexture, perspectiveDepthToViewZ, cameraNear, cameraFar, cameraPosition, select, exp, abs, max, min, sqrt, dot, mix,
 } from 'three/tsl'
 
 const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k) }
@@ -196,27 +196,35 @@ export async function createRing(ctx) {
   gp.rect.set(x0, z0, S)
   gp.tex.needsUpdate = true
 
-  // --- mist: five thin layers pooled on the floor. Each fades where the bank or mound rises through it and, per pixel,
-  // where it nears whatever is behind it (scene depth), so no layer ever draws a hard line across a stone or the grass.
+  // --- mist: one height-fog volume pooled in the bowl. Density falls off exponentially above the floor and is integrated
+  // in closed form along each view ray (from 2 m out to whatever the ray hits, clipped to a cylinder round the bowl), so
+  // it has no surface and no edge: it reads the same from the rim, at eye level in the fight, or edge-on.
   const uT = uniform(0), uMist = uniform(1), mistCol = ctx.fogColor.clone().multiplyScalar(1.1)
-  const bank = d => DEPTH * ss(RF, RR, d)
+  const MRAD = RR + 3, H = 0.75, SIG = 0.26 // cylinder radius, scale height (m), density at the floor (/m)
   const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture(), cameraNear, cameraFar)
-  const soft = saturate(positionView.z.sub(sceneZ).div(1.6)).mul(smoothstep(2, 8, length(positionWorld.sub(cameraPosition))))
-  const mists = [0.25, 0.7, 1.25, 1.9, 2.7].map((y, i) => {
-    let rOut = RF; while (rOut < RR + 4 && bank(rOut) < y + 0.3) rOut += 0.25
-    let rIn = 0; while (rIn < MR && mound(rIn) > y - 0.2) rIn += 0.25
-    const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false })
-    const dc = length(positionWorld.xz.sub(vec3(C.x, 0, C.z).xz))
-    const drift = vec3(positionWorld.x.mul(0.06).sub(uT.mul(0.1)), positionWorld.z.mul(0.06).sub(uT.mul(0.035)), float(i * 3.1).add(uT.mul(0.02)))
-    const wisp = smoothstep(-0.35, 0.65, mx_fractal_noise_float(drift, 4))
-    m.colorNode = vec3(mistCol.r, mistCol.g, mistCol.b)
-    m.opacityNode = wisp.mul(soft).mul(smoothstep(rIn, rIn + 2.5, dc)).mul(float(1).sub(smoothstep(rOut - 5, rOut, dc))).mul(uMist).mul([0.26, 0.22, 0.17, 0.11, 0.06][i])
-    const mesh = new THREE.Mesh(new THREE.CircleGeometry(rOut, 96).rotateX(-Math.PI / 2), m)
-    mesh.position.set(C.x, floorY + y, C.z)
-    mesh.renderOrder = 2 + i
-    scene.add(mesh)
-    return mesh
-  })
+  const ray = positionWorld.sub(cameraPosition), tExit = length(ray), v = ray.div(tExit)
+  const tHit = tExit.mul(sceneZ.div(positionView.z)) // distance to the scene along this ray
+  const oc = cameraPosition.xz.sub(vec2(C.x, C.z)), a = max(dot(v.xz, v.xz), 1e-4), b = dot(oc, v.xz)
+  const tIn = b.negate().sub(sqrt(max(b.mul(b).sub(a.mul(dot(oc, oc).sub(MRAD * MRAD))), 0))).div(a)
+  const t0 = max(tIn, 2), t1 = max(min(tExit, tHit), t0)
+  const hAt = t => cameraPosition.y.add(v.y.mul(t)).sub(floorY).div(H) // height above the floor in scale heights
+  const y0 = hAt(t0), y1 = hAt(t1), dy = y1.sub(y0)
+  const mean = select(abs(dy).lessThan(1e-3), exp(y0.negate()), exp(y0.negate()).sub(exp(y1.negate())).div(dy)) // mean density
+  // wisps: drifting noise sampled at three points on the ray, weighted by the density there
+  let nw = float(0), ws = float(0)
+  for (const f of [0.2, 0.55, 0.9]) {
+    const p = cameraPosition.add(v.mul(mix(t0, t1, f))), w = exp(hAt(mix(t0, t1, f)).negate()).add(1e-4)
+    nw = nw.add(w.mul(mx_fractal_noise_float(vec3(p.x.mul(0.06).sub(uT.mul(0.1)), p.z.mul(0.06).sub(uT.mul(0.035)), p.y.mul(0.3).add(uT.mul(0.02))), 3)))
+    ws = ws.add(w)
+  }
+  const wisp = mix(0.35, 1.4, smoothstep(-0.35, 0.65, nw.div(ws)))
+  const mm = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, side: THREE.BackSide })
+  mm.colorNode = vec3(mistCol.r, mistCol.g, mistCol.b)
+  mm.opacityNode = float(1).sub(exp(mean.mul(t1.sub(t0)).mul(SIG).mul(wisp).negate())).mul(uMist).min(0.85)
+  const mist = new THREE.Mesh(new THREE.CylinderGeometry(MRAD, MRAD, 16, 64, 1), mm)
+  mist.position.set(C.x, floorY + 7, C.z) // floor - 1 m to floor + 15 m
+  mist.renderOrder = 2
+  scene.add(mist)
 
   ctx.ring = {
     center: C, radius: 22,
@@ -245,7 +253,7 @@ export async function createRing(ctx) {
     update(dt, t) {
       uT.value = t
       uMist.value += (ctx.ring.mist - uMist.value) * Math.min(1, dt * 0.8)
-      for (const m of mists) m.visible = uMist.value > 0.01
+      mist.visible = uMist.value > 0.01
     },
   }
 }
