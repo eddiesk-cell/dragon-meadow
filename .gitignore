@@ -10,3 +10,6 @@ art/hero/rig/hero.markers.json
 art/troll/rig/*.glb
 art/troll/rig/*.fbx
 art/troll/rig/troll.markers.json
+art/bestiary/*/hunyuan.glb
+art/bestiary/*/full.glb
+art/bestiary/*/markers-auto.json

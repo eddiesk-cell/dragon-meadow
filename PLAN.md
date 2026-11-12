@@ -382,3 +382,26 @@ Your entry is WEAPONS.md "## 6. Windgap Warden". Files: `tools/weapons/windgap-w
 
 ### Lane weapon-ribfire-staff
 Your entry is WEAPONS.md "## 7. Ribfire Staff". Files: `tools/weapons/ribfire-staff.py` → `public/models/weapons/ribfire-staff.glb`. CHECK above.
+
+### Lanes rig-<id> — one Opus rigger per monster (Phase 4c)
+Each lane owns `art/bestiary/<id>/` (except `concept.png`, `hunyuan.glb`) and `public/models/bestiary/<id>.glb`. The
+mesh `art/bestiary/<id>/hunyuan.glb` is already paid for — never call Higgsfield. Rigging runs on the Mac Studio
+through `tools/bestiary/studio-rig.sh` (run it with dangerouslyDisableSandbox: true; several lanes may run at once).
+Your entry is `BESTIARY.md` → your monster (look, body plan, clips). Eddie's rules: golems and big creatures have LONG
+arms; the hero's and troll's lessons — joints go where the body BENDS, checked by eye on the textured skeleton.
+1. `tools/bestiary/studio-rig.sh <id> rig` → open `art/bestiary/<id>/skeleton.png` (2/5 scale of the Studio render)
+   and `markers.png`. The command prints `SCALE {W,H,S,cx,cz}`: a pixel (px, py) in skeleton.png is world
+   x = (px·2.5 − W/2)·S/W + cx, z = cz − (py·2.5 − H/2)·S/W (metres, the mesh is 1.80 m tall, x across, z up).
+2. Write `art/bestiary/<id>/markers-fixed.json` with every joint the auto pass got wrong — `lshoulder`/`rshoulder`
+   (where the arm meets the torso, on the arm's centre line — never up in a shoulder hump, hull, cap or moss),
+   `lelbow`/`relbow`, `lwrist`/`rwrist` (where the hand starts), `groin` (between the legs), `lknee`/`rknee`, `chin`
+   (under the jaw) — each `[x, z]`. Rerun `rig art/bestiary/<id>/markers-fixed.json` until every joint sits on a
+   bend. A worked example: `art/troll/rig/troll-markers-fixed.json` and `art/troll/rig/troll.skeleton.png`.
+3. `tools/bestiary/studio-rig.sh <id> clips "Idle" … (your entry's clips, Idle first, only clips that exist in the
+   hero's 51) [-- pose offsets]` → open `art/bestiary/<id>/idle.png` (front + side). If the hanging arms sink into
+   the body, or the head tips up, add offsets (`leftUpperArm=Y,-20 rightUpperArm=Y,20 neck=X,10 head=X,10`, see
+   `tools/monster/pose_offset.py`; the troll needed 28°) and rerun clips.
+4. Commit `art/bestiary/<id>/{markers-fixed.json,skeleton.png,markers.png,idle.png}` and
+   `public/models/bestiary/<id>.glb` (only your files).
+- **CHECK:** skeleton.png — every joint on a bend (reviewer looks, joint by joint); idle.png — arms hang clear of the
+  body at full length, head looks ahead, feet flat; the glb lists exactly the entry's available clips; ≤ 8 MB.
