@@ -38,7 +38,7 @@ DEEP = (0.09, 0.36, 0.07)   # linear-ish colours: jade-yellow green, lighter tow
 LIGHT = (0.42, 0.66, 0.07)
 VEIN = (0.20, 0.50, 0.08)   # vein tint by day; the violet glow colour comes from the material at night
 
-N = 26  # rachis samples
+N = 56  # rachis samples
 
 
 def clamp01(x):
@@ -46,34 +46,42 @@ def clamp01(x):
 
 
 def frond(az, L, k_arch, k_curl, tilt):
-    """One frond: rachis in a vertical plane at azimuth az; rises upright, arches a little, then rolls into a fat spiral."""
+    """One frond: rachis in a vertical plane at azimuth az; rises, leans out, then winds into a closed spiral (curvature grows linearly along the last LC m)."""
     r_dir = Vector((cos(az), 0, sin(az)))
+    LC = 1.1 * k_curl / 15.0  # coil arc length: ~k_curl rad of turning
+    n1, n2 = 14, 34
+    sig = [(L - LC) * i / n1 for i in range(n1)] + [L - LC + LC * j / n2 for j in range(n2 + 1)]
+    K0, K1 = 3.5, 2 * k_curl / LC - 3.5  # curvature at coil start / tip
     pts, tans = [], []
     p = Vector((0, 0, 0))
-    ds = L / (N - 1)
-    for i in range(N):
-        s = i / (N - 1)
-        phi = tilt + k_arch * s + k_curl * clamp01((s - 0.5) / 0.5) ** 2   # angle from vertical, toward r_dir
+    for i, sg_ in enumerate(sig):
+        v = clamp01((sg_ - (L - LC)) / LC)
+        phi = tilt + k_arch * sg_ / L + LC * (K0 * v + (K1 - K0) * v * v / 2)
         t = Vector((0, 1, 0)) * cos(phi) + r_dir * sin(phi)
         pts.append(p.copy()); tans.append(t)
-        p = p + t * ds
+        if i + 1 < len(sig):
+            p = p + t * (sig[i + 1] - sg_)
+    n = len(sig)
     side = Vector((-sin(az), 0, cos(az)))
     rows = []  # glowing midrib, 2 verts wide
     for i, (p, t) in enumerate(zip(pts, tans)):
-        w = 0.012 * (1 - i / N) + 0.004
+        w = 0.012 * (1 - i / n) + 0.006 + (0.012 if i > n1 else 0)
         rows.append([(p - side * w, DEEP, 1), (p + side * w, DEEP, 1)])
     quad_strip(rows)
-    M = 24
+    M = 30
+    M1 = 11  # half the leaflets on the straight part, half packed into the coil so it reads as a leafy roll
     for m in range(M):
-        s = 0.05 + 0.92 * m / (M - 1)
-        i = min(int(s * (N - 1)), N - 2); f = s * (N - 1) - i
+        s = (0.05 * L + (L - LC - 0.05 * L) * m / M1 if m < M1 else L - LC + LC * 0.97 * (m - M1 + 1) / (M - M1)) / L
+        x_ = s * L
+        i = max(j for j in range(n - 1) if sig[j] <= x_); f = (x_ - sig[i]) / (sig[i + 1] - sig[i])
         p = pts[i].lerp(pts[i + 1], f); t = tans[i].lerp(tans[i + 1], f).normalized()
         # full size mid-frond, only gently smaller toward the coil so the roll reads thick
-        size = 0.46 * (1 - 0.68 * clamp01((s - 0.4) / 0.55)) * (0.55 + 0.45 * clamp01(s / 0.2))
+        size = 0.46 * (1 - 0.75 * clamp01((s * L - (L - LC)) / LC * 2 + 0.1)) * (0.55 + 0.45 * clamp01(s / 0.2))
         for sg in (-1, 1):
-            d = (side * sg * 0.9 + t * 0.55 + Vector((0, -0.15, 0)) + r_dir * 0.1).normalized()
+            k = clamp01((s * L - (L - LC)) / LC * 1.5)  # inside the coil, aim leaflets along the tangent so it reads as a leafy roll
+            d = (side * sg * (0.9 - 0.6 * k) + t * (0.55 + 1.2 * k) + Vector((0, -0.15, 0)) * (1 - k) + r_dir * 0.1).normalized()
             w_axis = (t - d * t.dot(d)).normalized()
-            wid = size * 0.24
+            wid = size * (0.13 + 0.17 * k)
             blade, vein = [], []
             for u in range(3):
                 x = u / 2
@@ -90,8 +98,8 @@ def frond(az, L, k_arch, k_curl, tilt):
 
 # 7 upright fronds, each rolling into a fat spiral at the top
 specs = [  # azimuth deg, length, arch, curl, initial tilt
-    (0, 2.9, 0.50, 7.0, 0.14), (50, 2.5, 0.45, 6.8, 0.30), (100, 2.8, 0.55, 7.2, 0.20), (155, 2.3, 0.45, 6.8, 0.34),
-    (205, 2.7, 0.50, 7.0, 0.24), (255, 2.4, 0.45, 6.8, 0.32), (310, 2.6, 0.50, 7.0, 0.27),
+    (0, 2.9, 0.6, 16.0, 0.45), (50, 2.5, 0.6, 16.0, 0.45), (100, 2.8, 0.6, 17.0, 0.45), (155, 2.3, 0.6, 16.0, 0.45),
+    (205, 2.7, 0.6, 16.5, 0.45), (260, 2.4, 0.6, 16.0, 0.45),
 ]
 for a, L, ka, kc, t0 in specs:
     frond(radians(a + random.uniform(-8, 8)), L, ka, kc, t0)
