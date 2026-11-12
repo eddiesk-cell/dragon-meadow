@@ -39,7 +39,6 @@ const lowNoise = (p, a, b) => sin(p.x.mul(a).add(sin(p.y.mul(b)).mul(2))).mul(si
 
 export async function createField(ctx) {
   const { THREE, scene, camera } = ctx
-  ctx.heightAt = heightAt
 
   const uTime = uniform(0), uCam = uniform(new THREE.Vector2()), uHero = uniform(new THREE.Vector3()), uSun = uniform(ctx.sunDir)
   const WIND = vec2(0.94, 0.34) // blowing across the view, left → right
@@ -58,15 +57,50 @@ export async function createField(ctx) {
     return g
   }
 
-  // Ground patch hook — src/ring.js fills it (PLAN.md Lane ring): one HalfFloat texture over rect (x0, z0, size in m),
-  // texel = (metres added to the ground, grass height ×, bare chalk 0..1, light ×). Clamped edges hold (0, 1, 0, 1): outside it nothing changes.
-  const PN = 256, one = THREE.DataUtils.toHalfFloat(1)
-  const ptex = new THREE.DataTexture(new Uint16Array(PN * PN * 4).map((_, i) => i % 2 ? one : 0), PN, PN, THREE.RGBAFormat, THREE.HalfFloatType)
-  ptex.magFilter = ptex.minFilter = THREE.LinearFilter
-  ptex.needsUpdate = true
-  const uPatch = uniform(new THREE.Vector3(0, 0, 1))
-  ctx.groundPatch = { tex: ptex, rect: uPatch.value, size: PN }
-  const patchAt = xz => texture(ptex, xz.sub(uPatch.xy).div(uPatch.z)).level(0)
+  // Ground patches: four HalfFloat textures, each over a rect (x0, z0, size in m), texel = (metres added to the ground,
+  // grass height ×, bare chalk 0..1, light ×). Slot 0 is ctx.groundPatch (src/ring.js fills it); ctx.addGroundPatch hands
+  // out the rest, callable any time after create (water loads later). Overlaps combine: metres add, grass and light
+  // multiply, bare takes the max. Edges clamp, so border texels must hold (0, 1, 0, 1): outside a patch nothing changes.
+  const PN = 256, one = THREE.DataUtils.toHalfFloat(1), fromHalf = THREE.DataUtils.fromHalfFloat
+  const patches = Array.from({ length: 4 }, () => {
+    const tex = new THREE.DataTexture(new Uint16Array(PN * PN * 4).map((_, i) => i % 2 ? one : 0), PN, PN, THREE.RGBAFormat, THREE.HalfFloatType)
+    tex.magFilter = tex.minFilter = THREE.LinearFilter
+    tex.needsUpdate = true
+    return { tex, rect: new THREE.Vector3(0, 0, 1), size: PN }
+  })
+  let used = 1
+  ctx.groundPatch = patches[0]
+  ctx.addGroundPatch = (x0, z0, sizeM) => {
+    if (used === patches.length) throw new Error(`field: only ${patches.length} ground patches`)
+    const p = patches[used++]
+    p.rect.set(x0, z0, sizeM)
+    return p // { tex, size, rect }: write tex.image.data as ring does, then tex.needsUpdate = true
+  }
+  const uRects = patches.map(p => uniform(p.rect))
+  const patchOne = (k, xz) => texture(patches[k].tex, xz.sub(uRects[k].xy).div(uRects[k].z)).level(0)
+  const patchAt = xz => patches.reduce((a, _, k) => { const s = patchOne(k, xz); return vec4(a.x.add(s.x), a.y.mul(s.y), a.z.max(s.z), a.w.mul(s.w)) }, vec4(0, 1, 0, 1))
+  // CPU twin of the metres in the added patches, bilinear like the GPU. Slot 0 is left out: ring wraps ctx.heightAt with its own.
+  const patchHeight = (x, z) => {
+    let h = 0
+    for (let k = 1; k < used; k++) {
+      const { tex, rect } = patches[k], d = tex.image.data
+      if (x < rect.x || z < rect.y || x > rect.x + rect.z || z > rect.y + rect.z) continue
+      const u = (x - rect.x) / rect.z * PN - 0.5, v = (z - rect.y) / rect.z * PN - 0.5, i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j
+      const at = (a, b) => fromHalf(d[(Math.min(PN - 1, Math.max(0, b)) * PN + Math.min(PN - 1, Math.max(0, a))) * 4])
+      h += (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv
+    }
+    return h
+  }
+  ctx.heightAt = (x, z) => heightAt(x, z) + patchHeight(x, z)
+  // ?carvetest=1: field carves a test dip through its own public hook — 20 m patch at (0, −30), −2 m, bare, no grass inside r 6.
+  if (ctx.params.get('carvetest')) {
+    const p = ctx.addGroundPatch(-10, -40, 20), d = p.tex.image.data, put = THREE.DataUtils.toHalfFloat
+    for (let j = 0; j < PN; j++) for (let i = 0; i < PN; i++) {
+      const r = Math.hypot((i + 0.5) / PN * 20 - 10, (j + 0.5) / PN * 20 - 10), k = ss(6, 9.5, r), o = (j * PN + i) * 4
+      d[o] = put(-2 * (1 - k)); d[o + 1] = put(k); d[o + 2] = put(1 - ss(5, 8, r))
+    }
+    p.tex.needsUpdate = true
+  }
   // CPU twin of the grass gust below (front / ripple / gust): wind velocity on the ground plane in m/s, ~1 calm → 7 in a gust.
   // Cloth (src/springs.js) reads it so it moves with the grass. Keep in lockstep with the TSL lines.
   ctx.windAt = (x, z, t) => {
@@ -178,7 +212,6 @@ export async function createField(ctx) {
     const mesh = new THREE.Mesh(geo, m)
     mesh.frustumCulled = false
     mesh.receiveShadow = true
-    scene.add(mesh)
     return mesh
   }
 
@@ -192,6 +225,8 @@ export async function createField(ctx) {
     layer({ side: 110, cell: 0.6, segs: 2, width: 0.05, fadeIn: 18, fadeOut: 32, flowers: 0.6, head: 0.06, salt: 400 }),
     layer({ side: 104, cell: 1.6, segs: 1, width: 0.1, fadeIn: 32, fadeOut: 80, flowers: 0.35, head: 0.11, salt: 500 }),
   ]
+  ctx.grass = { blades: new THREE.Group().add(...layers), flowers: new THREE.Group().add(...flowerLayers) } // e.g. water hides both for its mirror pass
+  scene.add(ctx.grass.blades, ctx.grass.flowers)
 
   // --- terrain: one mesh from heightAt; meadow green, rock on the cliff, darker under the near grass
   const tg = new THREE.PlaneGeometry(800, 800, 400, 400).rotateX(-Math.PI / 2)
@@ -208,8 +243,11 @@ export async function createField(ctx) {
   tg.setAttribute('color', new THREE.BufferAttribute(col, 3))
   const tm = new THREE.MeshLambertNodeMaterial() // colour comes in colorNode as vc² (vertexColors: true squared it before; look kept)
   const near = mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz)))) // shade under the near grass
-  const tp = patchAt(positionWorld.xz), pe = uPatch.z.div(PN), ph = o => patchAt(positionWorld.xz.add(o)).x
-  const dh = vec2(ph(vec2(pe, 0)).sub(ph(vec2(pe.negate(), 0))), ph(vec2(0, pe)).sub(ph(vec2(0, pe.negate())))).div(pe.mul(2))
+  const tp = patchAt(positionWorld.xz)
+  const dh = patches.reduce((a, _, k) => { // slope of the patch metres, each patch at its own texel step
+    const e = uRects[k].z.div(PN), ph = o => patchOne(k, positionWorld.xz.add(o)).x
+    return a.add(vec2(ph(vec2(e, 0)).sub(ph(vec2(e.negate(), 0))), ph(vec2(0, e)).sub(ph(vec2(0, e.negate())))).div(e.mul(2)))
+  }, vec2(0, 0))
   const n0 = attribute('normal', 'vec3') // terrain sits at the origin: local = world
   tm.positionNode = positionLocal.add(vec3(0, patchAt(positionLocal.xz).x, 0))
   tm.normalNode = normalize(cameraViewMatrix.mul(vec4(normalize(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y))), 0)).xyz)
@@ -227,6 +265,7 @@ export async function createField(ctx) {
   const r2 = v => Math.round(v * 100) / 100
   const flowerCells = flowerLayers.reduce((a, l) => a + l.geometry.instanceCount, 0)
   window.__probes.field = () => ({ blades, flowerCells, h0: r2(heightAt(0, 0)), crest: r2(heightAt(0, -200)), sea: r2(heightAt(0, -320)),
+    patches: used, carve: r2(ctx.heightAt(0, -30)),
     night: r2(uNight.value), rings: ringSlots.filter(s => uTime.value - s.z < 2).length, stepRings })
 
   // A ring for every ~0.8 m walked (a footfall), a brighter one on landing, and at night a slow pulse while standing.
