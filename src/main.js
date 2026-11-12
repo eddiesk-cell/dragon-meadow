@@ -24,8 +24,11 @@ const ctx = {
   THREE, renderer, scene, camera, params,
   heroPos: new THREE.Vector3(),                              // writer: hero.js, every frame
   heightAt: () => 0,                                         // writer: field.js (replaces this at create)
-  sunDir: new THREE.Vector3(-0.45, 0.42, -0.78).normalize(), // writer: main (fixed) — sun low, ahead of the hero: backlit grass
-  fogColor: new THREE.Color(0xd9dcdf),                       // writer: main (fixed) — field, sky and post all match it
+  sunDir: new THREE.Vector3(-0.45, 0.42, -0.78).normalize(), // writer: sky (live, follows ctx.tod) — direction TO the sun
+  fogColor: new THREE.Color(0xd9dcdf),                       // writer: sky (live) — field, sky and post all match it
+  tod: 0.35,                                                 // writer: sky — time of day 0..1 (0.25 sunrise, 0.5 noon, 0.75 sunset)
+  night: 0,                                                  // writer: sky — 0 day … 1 full night: how much the plants glow
+  keepClear: [],                                             // append-only {x, z, r}: ring, landmarks, settlements, water push; flora skips
   time: 0,                                                   // writer: main
   timeScale: 1,                                              // writer: vfx (hitstop); main scales every dt by it
 }
@@ -42,6 +45,11 @@ async function load(name, fn) {
 // lights + fog; springs hang off the hero's bones; vfx before the fighters that call it; pet follows heroPos; dragon last.
 await load('field', 'createField')
 await load('ring', 'createRing')
+await load('landmarks', 'createLandmarks')     // rock island, stone face
+await load('settlements', 'createSettlements') // towns, castles, the city
+await load('water', 'createWater')
+await load('flora', 'createFlora')             // after everything that pushes ctx.keepClear
+await load('skyisles', 'createSkyisles')
 await load('sky', 'createSky')
 await load('hero', 'createHero')
 await load('springs', 'createSprings') // cloth on the hero: needs ctx.heroRig
@@ -50,6 +58,8 @@ await load('monster', 'createMonster')
 await load('combat', 'createCombat')
 await load('pet', 'createPet')
 await load('dragon', 'createDragon')
+await load('birds', 'createBirds')
+await load('motes', 'createMotes')
 let post = null
 try { post = await (await import('./post.js')).createPost(ctx) } catch (e) { fail('post', e) }
 

@@ -12,6 +12,9 @@ grass with wildflowers, distance dissolving into pale haze, the dragon flying ov
 
 ## Look (from the two reference frames — open them, they are the spec)
 
+> **Phases 1–5 only.** Every Phase 6 lane follows the Phase 6 look at the end of this file (`refs/world/mix-day.png`
+> is the master picture); where the two disagree, Phase 6 wins.
+
 - **Meadow:** dense, knee-to-thigh-high grass (0.5–1.0 m) to the horizon. Muted green, lighter
   yellow-green tips, cool teal in shade. Scattered wildflowers: white, orange-red, yellow — small
   dots, thicker near the camera. Visible wind: slow travelling gusts, not uniform wobble.
@@ -433,6 +436,58 @@ main loads `flora`, `landmarks`, `water`, `skyisles`, `motes`, `birds` after `ri
 starts when the three flora models pass. ring-glow starts when the monster and combat lanes pass (they read the ring).
 Last: a day→night walk clip (`auto=walk&tod=cycle`), final review, show Eddie.
 
+**Eddie, later the same hour: "make it a mixture of the world I showed you and the Pandora feel" — and "we should
+add towns, and castles, and cities".** So the day leans to the reference videos (crisp stylized 3D, dense saturated
+yellow-green grass full of small flowers, the rock island with puff trees over mirror water, birds, depth of field)
+and the night leans to the glow (grass, flowers and vines light up, seed lights, aurora). The scale and wonder are
+shared: giant vine trees, bell flowers, spiral ferns, floating islands with waterfalls. **The mixed day frame is the
+master picture:** `refs/world/mix-day.png` (except its castle, which is too white and spired: the castle follows
+`mix-settlements.png`); towns, castle and city: `refs/world/mix-settlements.png`.
+Settlements follow the Sanctuary lesson (`~/.claude/projects/-Users-eddie/memory/sanctuary-castles-villages.md`):
+castles HUGE and mostly grey stone, every wall reads as STACKED stone (never plaster), not Disney; warm windows at
+night, chimney smoke; they emerge from the haze. Read-only code to borrow from:
+`~/PROJECTS CODING/sanctuary-world` → `settlements.ts` (masonry shader, window glow, clearance).
+
+**Where they stand (fixed here so no lane waits on another):** Castle Crestwatch on the cliff headland at
+(−520, −240), seen ahead-left from the start; the town of Springwell at (−75, 500) at the foot of the Holloway; the
+harbour city Asterhaven at (−1500, 650) where the Spill meets the sea, glimpsed far off from the meadow's rise;
+Reedholt stays the stilt village on Mirrormere; the Windgap Gate stays a ruined fortress.
+
+**Waves, because the desk ran at load 60 on 18 cores when this was written:** wave A now — `sky6`, the three
+`flora-*` models, `town-kit`, `castle-kit`, `world-doc` (mostly Blender, one browser lane). Wave B when the monster,
+combat and rig fleets finish — `field6`, `landmarks`, `water`, `skyisles`, `motes`, `birds`, `settlements`; then
+`flora-place` and `ring-glow`. Wave C — `dragon-ride`, then the day→night walk clip and the final review.
+
+**Contract rows added (main.js):** `tod`, `night` (writer: sky); `sunDir`, `fogColor` now live (writer: sky);
+`keepClear` — an append-only list of `{x, z, r}` circles that ring, landmarks, settlements and water push at create,
+so flora never grows through a wall, a stone or the lake. Load order: field, ring, landmarks, settlements, water,
+flora, skyisles, sky, hero, springs, vfx, monster, combat, pet, dragon, birds, motes; stubs exist for each new one.
+
+### Lane town-kit — `tools/world/town_kit.py` → `public/models/world/town-kit.glb` (Opus)
+One glb, one named node per piece: `cottage_s`, `cottage_l`, `house`, `market`, `church` (nave + belfry), `well`,
+`lantern`, `bridge` (one stone arch). Walls of visible stacked stone (geometry courses or a baked masonry texture, not
+flat plaster); roofs red clay and slate; timber trim. Window panes carry a glow mask (vertex colour alpha 1) so one
+material lights them gold at night. True scale: a cottage door 2.0 m.
+- **CHECK:** the script prints each piece's size and triangles (each ≤ 3k, whole kit ≤ 25k); a Blender render of the
+  kit beside the hero glb, by day and with the window mask lit, reads like the town in `mix-settlements.png`.
+
+### Lane castle-kit — `tools/world/castle_kit.py` → `public/models/world/castle-kit.glb` (Opus)
+Pieces: `wall` (10 m segment, crenellated, walkway), `tower_round` (conical slate roof), `tower_square`, `gatehouse`
+(arched gate, portcullis), `keep` (40–60 m, battlements, corner turrets, spire), `banner`. Mostly grey stacked stone,
+few colours. Window glow mask as in town-kit.
+- **CHECK:** sizes and triangles printed (whole kit ≤ 40k); a render of a test castle (keep + 4 towers + walls +
+  gate) beside the hero reads HUGE and stone like the castle in `mix-settlements.png`, not Disney.
+
+### Lane settlements — `src/settlements.js` (Opus, wave B, after town-kit and castle-kit pass)
+Assemble from the kits: Springwell (12–20 houses, church, well, lanterns, a bridge over the stream), Castle
+Crestwatch (keep, curtain wall, 6–8 towers, gatehouse, a road down to the meadow), Asterhaven as a far city (a walled
+hill of a few hundred merged houses climbing to a palace, a harbour) — far detail only, it is seen across the
+island. Haze-matched materials so they emerge from the fog; windows glow by `ctx.night`; chimney smoke; push
+`ctx.keepClear`; everything on `heightAt`.
+- **CHECK:** default view at `tod=day` shows Crestwatch ahead-left like `mix-day.png`; `tod=night` shows lit
+  windows; a fieldcam at Springwell reads like `mix-settlements.png`; fps ≥ 50; probe: settlements 3, max
+  |base − heightAt| ≤ 0.1 m.
+
 **From Eddie's two reference videos (watched 2026-11-12; frames in `refs/video/*-sheet.jpg`, local only — someone
 else's footage, kept out of the public repo; posts instagram.com/reel/Dfg82wLNHmw and /DfmTQFqBYRQ):** the grey haze
 in our old spec was one moment of the meadow clip, not the look. Within seconds the fog thins and shows the world:
@@ -510,7 +565,9 @@ mist at night; by day the same moss is soft green.
   11, fallen 3; the monster and combat probes are unchanged.
 
 ### Lane world-doc — `WORLD.md` (Opus)
-Rewrite each land's Look and palette in the new language (`island.png`); keep geography, connections, the travel loop
-and every creature's home.
+Rewrite each land's Look and palette in the new language (`island.png`, `mix-day.png`, `mix-settlements.png`); keep
+geography, connections, the travel loop and every creature's home. Add Castle Crestwatch, the town of Springwell
+(grown from a village) and the city of Asterhaven at the positions above, each with its people, landmark and why it
+stands there.
 - **CHECK:** every land keeps its position, landmark and connection; every BESTIARY creature's land still exists;
   each Look names its day and night palette and what glows.
