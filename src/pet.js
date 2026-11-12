@@ -22,16 +22,18 @@ export async function createPet(ctx) {
   const fur = new THREE.MeshStandardNodeMaterial({ roughness: 1, metalness: 0 })
   fur.positionNode = pg.add(ng.mul(L.mul(k))).add(uComb.add(sway).mul(L.mul(k).mul(k)))
   const kv = varying(k), pb = varying(pg), nb = normalize(varying(ng))
-  const q0 = pb.mul(DENS) // + a little curl up the strand
+  // lattice turned off the axes, so flat parts (ears) never show a woven grid; plus a little curl up the strand
+  const q0 = vec3(dot(pb, vec3(0.8, 0.36, -0.48)), dot(pb, vec3(-0.6, 0.48, -0.64)), dot(pb, vec3(0, 0.8, 0.6))).mul(DENS)
   const q = q0.add(vec3(sin(q0.y.mul(0.37).add(kv.mul(5))), sin(q0.z.mul(0.41).add(kv.mul(4))), sin(q0.x.mul(0.39).add(kv.mul(4.6)))).mul(kv.mul(0.45)))
-  const f = fract(q).sub(0.5), h = fract(sin(dot(floor(q), vec3(127.1, 311.7, 74.7))).mul(43758.5453))
+  const h = fract(sin(dot(floor(q), vec3(127.1, 311.7, 74.7))).mul(43758.5453))
+  const f = fract(q).sub(0.5).sub(fract(vec3(h.mul(13.1), h.mul(71.7), h.mul(37.3))).sub(0.5).mul(0.35)) // jittered strand centre
   const ft = f.sub(nb.mul(dot(f, nb))) // offset from the strand centre, in the surface plane
   const tuft = sin(pb.x.mul(70).add(sin(pb.y.mul(55)).mul(2))).mul(sin(pb.z.mul(64).add(sin(pb.x.mul(48)).mul(1.7)))).mul(0.18).add(0.82)
   const len = h.mul(0.45).add(0.55).mul(tuft) // per-strand length, clumped into tufts → ragged fluffy outline
-  fur.opacityNode = max(step(length(ft), float(0.46).mul(float(1).sub(kv.div(len)))), step(kv, 0.001)) // tapered strands; shell 0 is solid skin
+  fur.opacityNode = max(step(length(ft), float(0.56).mul(float(1).sub(pow(kv.div(len), 1.6)))), step(kv, 0.001)) // full strands that taper late; shell 0 is solid skin
   fur.alphaTest = 0.5
-  const coat = mix(color(0xf4e8d4), color(0xf6ae94), varying(attribute('aTint', 'float'))) // cream, peach blush
-  fur.colorNode = mix(color(0x7d6656), coat, smoothstep(0, 0.6, kv)).mul(h.mul(0.14).add(0.93)) // dark roots → light tips
+  const coat = mix(color(0xfbf2e4), color(0xf9b49c), varying(attribute('aTint', 'float'))) // cream, peach blush
+  fur.colorNode = mix(coat.mul(color(0xc4ab92)), coat, max(smoothstep(0, 0.7, kv), float(1).sub(varying(L).mul(25)))).mul(h.mul(0.12).add(0.94)) // warm shaded roots → light tips (short fur stays light)
   fur.emissiveNode = coat.mul(pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 3).mul(kv).mul(0.3)) // soft halo where light skims the tips
 
   const aK = new THREE.InstancedBufferAttribute(Float32Array.from({ length: SHELLS }, (_, i) => i / (SHELLS - 1)), 1)
@@ -56,7 +58,7 @@ export async function createPet(ctx) {
   const cheek = [-1, 1].map(s => new THREE.Vector3(0.62 * s, -0.2, 0.76).normalize())
   const near = (n, dirs, a, b) => Math.max(...dirs.map(d => ss(a, b, n.dot(d))))
   body.add(furry(new THREE.SphereGeometry(R, 48, 32).scale(1, 0.94, 1),
-    (p, n) => 0.06 * (1 - 0.45 * ss(0.45, 0.9, n.z)) * (1 - 0.7 * near(n, eyeDir, 0.86, 0.97)), // shorter on the face, short round the eyes
+    (p, n) => 0.07 * (1 - 0.45 * ss(0.45, 0.9, n.z)) * (1 - 0.7 * near(n, eyeDir, 0.86, 0.97)), // shorter on the face, short round the eyes
     (p, n) => 0.9 * near(n, cheek, 0.84, 0.97)))
 
   // big dark glossy eyes, each with two catchlights
@@ -90,7 +92,7 @@ export async function createPet(ctx) {
   const ears = [-1, 1].map(s => {
     const pivot = new THREE.Group()
     pivot.position.set(0.075 * s, 0.115, -0.01)
-    pivot.add(furry(earGeo(s), () => 0.013, p => 0.75 * ss(0.12, 0.26, Math.hypot(p.x, p.y)))) // peach tips
+    pivot.add(furry(earGeo(s), () => 0.014, (p, n) => 0.45 * ss(0.5, 0.92, n.z) * ss(0.03, 0.09, Math.hypot(p.x, p.y)))) // peach inner ear, cream rim
     body.add(pivot)
     return pivot
   })
@@ -108,6 +110,7 @@ export async function createPet(ctx) {
   body.add(paws)
 
   const root = new THREE.Group()
+  root.name = 'pet'
   root.add(body)
   scene.add(root)
 
@@ -165,10 +168,10 @@ export async function createPet(ctx) {
       const dx = p.x - heroPos.x, dz = p.z - heroPos.z, dh = Math.hypot(dx, dz), lim = Math.min(Math.max(dh, 0.9), 2.8)
       if (dh !== lim && dh > 1e-4) { p.x = heroPos.x + (dx / dh) * lim; p.z = heroPos.z + (dz / dh) * lim }
 
-      // face where it goes; when slow, look at him (or at the flower)
-      const sp = Math.hypot(v.x, v.z)
-      const look = mode === 'sniff' ? sniffAt : heroPos
-      const want = sp > 0.35 ? Math.atan2(v.x, v.z) : Math.atan2(look.x - p.x, look.z - p.z)
+      // face where it goes, glancing back at him now and then; when slow, look at him (or at the flower)
+      const sp = Math.hypot(v.x, v.z), look = mode === 'sniff' ? sniffAt : heroPos
+      const atLook = Math.atan2(look.x - p.x, look.z - p.z), go = Math.atan2(v.x, v.z), glance = Math.max(0, Math.sin(t * 0.9) - 0.6) * 2
+      const want = sp > 0.35 ? go + wrap(atLook - go) * (mode === 'sniff' ? 0 : glance) : atLook
       const dy = wrap(want - yaw) * Math.min(1, dt * 5)
       yaw += dy
       root.position.copy(p)
