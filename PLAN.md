@@ -37,6 +37,8 @@ the shared `ctx` and returning `{ update(dt, t) }`. A module that throws is logg
 | `THREE, renderer, scene, camera, params` | main | all | `params` = URLSearchParams of the page |
 | `heightAt(x, z)` | field (replace at create) | hero, dragon, sky | ground height in metres, pure JS, fast |
 | `heroPos` (Vector3) | hero, every frame | field (grass push), sky (shadow follow) | hero feet position |
+| `heroRig` `{model, sheath, sword, rightHand}` | hero, at create | springs (cloth bones), combat (draw: re-attach `sword` to `rightHand`) | absent if the sword props failed to load |
+| `windAt(x, z, t)` → Vector2 | field, at create | springs | the grass's own wind, for cloth |
 | `sunDir` (Vector3) | main, fixed | field, sky | direction TO the sun |
 | `fogColor` (Color) | main, fixed | field, sky, post | haze/horizon colour |
 | `time` | main | all | seconds since start |
@@ -156,7 +158,7 @@ Skeleton over the body: `art/hero/rig/hero.markers.png`, shoulders fixed by hand
   feels gravity, drag and `ctx.windAt` at the hero. Collision spheres keep the hem out of the thighs and the
   bandana out of the head. Stable at 20–144 fps (substep), never explodes, no jitter at rest. Frame-rate
   independent. Probe: `window.__probes.springs = () => ({ chains, bones, maxSwingDeg })`.
-- **CHECK:** `node tools/hero/build.sh art/hero/raw/hero-hunyuan.glb art/hero/rig/hero-markers-fixed.json`
+- **CHECK:** `tools/hero/build.sh art/hero/raw/hero-hunyuan.glb art/hero/rig/hero-markers-fixed.json`
   prints every chain with > 0 vertices and `public/models/hero.glb` has 51 animations (count them).
   `node tools/shot.mjs shots/springs-front.png "fieldcam=0.6,2.5,-3.2,0,2.2,0" 6000` → no `springs:` error,
   `chains ≥ 6`; picture: bandana tails and shirt hem look like his reference, nothing torn or spiked.

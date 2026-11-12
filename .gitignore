@@ -3,3 +3,7 @@ dist/
 shots/
 graphify-out/
 art/hero/*-small.png
+# rig intermediates: rebuilt by tools/hero/build.sh from art/hero/raw + the markers file
+art/hero/rig/*.glb
+art/hero/rig/*.fbx
+art/hero/rig/hero.markers.json
