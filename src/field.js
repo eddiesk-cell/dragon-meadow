@@ -4,7 +4,7 @@
 import {
   Fn, uniform, attribute, varying, vec2, vec3, vec4, float, int, uint,
   floor, sin, cos, mix, smoothstep, step, saturate, length, normalize, dot, pow, min,
-  cameraPosition, cameraViewMatrix, positionWorld, vertexColor,
+  cameraPosition, cameraViewMatrix, positionWorld, positionLocal, vertexColor, texture,
 } from 'three/tsl'
 
 const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k) }
@@ -43,6 +43,16 @@ export async function createField(ctx) {
 
   const uTime = uniform(0), uCam = uniform(new THREE.Vector2()), uHero = uniform(new THREE.Vector3()), uSun = uniform(ctx.sunDir)
   const WIND = vec2(0.94, 0.34) // blowing across the view, left → right
+
+  // Ground patch hook — src/ring.js fills it (PLAN.md Lane ring): one HalfFloat texture over rect (x0, z0, size in m),
+  // texel = (metres added to the ground, grass height ×, bare chalk 0..1, light ×). Clamped edges hold (0, 1, 0, 1): outside it nothing changes.
+  const PN = 256, one = THREE.DataUtils.toHalfFloat(1)
+  const ptex = new THREE.DataTexture(new Uint16Array(PN * PN * 4).map((_, i) => i % 2 ? one : 0), PN, PN, THREE.RGBAFormat, THREE.HalfFloatType)
+  ptex.magFilter = ptex.minFilter = THREE.LinearFilter
+  ptex.needsUpdate = true
+  const uPatch = uniform(new THREE.Vector3(0, 0, 1))
+  ctx.groundPatch = { tex: ptex, rect: uPatch.value, size: PN }
+  const patchAt = xz => texture(ptex, xz.sub(uPatch.xy).div(uPatch.z)).level(0)
   // CPU twin of the grass gust below (front / ripple / gust): wind velocity on the ground plane in m/s, ~1 calm → 7 in a gust.
   // Cloth (src/springs.js) reads it so it moves with the grass. Keep in lockstep with the TSL lines.
   ctx.windAt = (x, z, t) => {
@@ -78,7 +88,7 @@ export async function createField(ctx) {
     const ci = floor(lattice.div(cell).add(0.5))
     const r = k => hash(ci, salt + k)
     const world = lattice.add(vec2(r(1), r(2)).sub(0.5).mul(cell))
-    const g = groundTSL(world), ground = g.x
+    const g = groundTSL(world), pt = patchAt(world), ground = g.x.add(pt.x)
     const dist = length(world.sub(uCam))
     const fadeA = fadeIn > 0 ? smoothstep(fadeIn * 0.72, fadeIn, dist) : float(1)
     const keep = fadeA.mul(float(1).sub(smoothstep(fadeOut * 0.75, fadeOut, dist)))
@@ -88,7 +98,7 @@ export async function createField(ctx) {
     const under = step(r(4), 0.35) // short under-mat closes the gaps between tall crowns
     const fl = step(r(6), bloom.mul(1.4).add(0.2).mul(flowers)).mul(float(1).sub(under)) // patchy wildflowers
     const H = mix(r(5).mul(0.45).add(0.6).mul(patch.mul(0.4).add(0.75)), r(5).mul(0.2).add(0.25), under)
-      .mul(mix(float(1), r(13).mul(0.3).add(0.75), fl)).mul(alive) // flower heads sit at mixed depths in the grass
+      .mul(mix(float(1), r(13).mul(0.3).add(0.75), fl)).mul(alive).mul(pt.y) // flower heads sit at mixed depths in the grass; pt.y tramples
 
     // --- wind: two travelling fronts (not a uniform wobble) + a light per-blade flutter; push away from the hero
     const along = dot(world, WIND), across = dot(world, vec2(-0.34, 0.94))
@@ -119,7 +129,7 @@ export async function createField(ctx) {
     // --- colour, worked out per vertex: dark root → muted green → lighter yellow-green tip; flowers white / yellow / orange-red
     const tipCol = mix(vec3(0.42, 0.45, 0.15), vec3(0.5, 0.45, 0.2), r(10).mul(patch).mul(0.7))
     const grassCol = mix(vec3(0.03, 0.06, 0.05), mix(vec3(0.15, 0.21, 0.075), tipCol, smoothstep(0.35, 1, tt)), smoothstep(0, 0.5, tt).max(smoothstep(15, 60, dist)))
-      .mul(r(11).mul(0.3).add(0.85)).mul(lowNoise(world.add(13), 0.035, 0.05).mul(0.35).add(0.8)) // broad darker / lighter patches
+      .mul(r(11).mul(0.3).add(0.85)).mul(lowNoise(world.add(13), 0.035, 0.05).mul(0.35).add(0.8)).mul(pt.w) // broad darker / lighter patches
     const r12 = r(12)
     const flowerCol = mix(mix(vec3(0.82, 0.82, 0.76), vec3(0.88, 0.62, 0.1), step(0.6, r12)), vec3(0.8, 0.22, 0.06), step(0.8, r12))
     const back = pow(saturate(dot(normalize(stem.sub(cameraPosition)), uSun)), 3).mul(pow(tt, 1.5)).mul(float(1).sub(hh))
@@ -157,7 +167,13 @@ export async function createField(ctx) {
   }
   tg.setAttribute('color', new THREE.BufferAttribute(col, 3))
   const tm = new THREE.MeshLambertNodeMaterial({ vertexColors: true })
-  tm.colorNode = vertexColor().mul(mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz)))))
+  const near = mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz)))) // shade under the near grass
+  const tp = patchAt(positionWorld.xz), pe = uPatch.z.div(PN), ph = o => patchAt(positionWorld.xz.add(o)).x
+  const dh = vec2(ph(vec2(pe, 0)).sub(ph(vec2(pe.negate(), 0))), ph(vec2(0, pe)).sub(ph(vec2(0, pe.negate())))).div(pe.mul(2))
+  const n0 = attribute('normal', 'vec3') // terrain sits at the origin: local = world
+  tm.positionNode = positionLocal.add(vec3(0, patchAt(positionLocal.xz).x, 0))
+  tm.normalNode = normalize(cameraViewMatrix.mul(vec4(normalize(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y))), 0)).xyz)
+  tm.colorNode = mix(vertexColor().mul(mix(float(1), near, tp.y)), vec3(0.55, 0.53, 0.47), tp.z).mul(tp.w)
   const terrain = new THREE.Mesh(tg, tm)
   terrain.receiveShadow = true
   scene.add(terrain)
