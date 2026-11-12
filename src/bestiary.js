@@ -15,7 +15,6 @@ const ROSTER = [
   ['marrowkeeper', 'The Marrowkeeper', 'The Redwaste', 3.5],
   ['rime-warden', 'The Rime Warden', 'Wyrmcrown', 4.5],
 ]
-const BACKWARD = ['marrowkeeper'] // rigs whose front is -Z (seen from behind otherwise)
 const RIG = 1.8, R = 18, SPAN = 1.0, PLINTH = 0.75 // arc radius (m), half-angle (rad), plinth height (m)
 
 export async function createBestiary(ctx) {
@@ -78,7 +77,7 @@ export async function createBestiary(ctx) {
         act.reset().fadeIn(0.3).play(); cur?.fadeOut(0.3)
         cur = act; cur.name = n
       }
-      play('Idle'); mixer.update(0)
+      play('Idle'); mixer.update(0.4) // let the fade-in finish, else this measures the rest pose
       const [lo, hi] = extent(root)
       const el = document.createElement('div')
       el.style.cssText = 'position:absolute;transform:translate(-50%,-100%);text-align:center;white-space:nowrap'
@@ -99,12 +98,12 @@ export async function createBestiary(ctx) {
     for (const it of items) {
       it.clipName = cur(it, t); it.play(it.clipName); it.mixer.update(dt)
       it.yaw = target === it
-        ? Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + (BACKWARD.includes(it.id) ? Math.PI : 0) + Math.sin(t * 0.4) * 0.25 // faces the camera, a gentle sway
-        : Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + (BACKWARD.includes(it.id) ? Math.PI : 0) + (params.get('still') ? 0 : t * 0.3)
+        ? Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + Math.sin(t * 0.4) * 0.25 // faces the camera, a gentle sway
+        : Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + (params.get('still') ? 0 : t * 0.3)
       it.root.rotation.y = it.yaw
     }
     if (target) {
-      const p = target.pos, d = target.size * 2.4 + 1.5
+      const p = target.pos, d = target.size * 1.3 + 1
       cp.set(A.x - p.x, 0, A.z - p.z).normalize().multiplyScalar(d).add(p)
       cp.y = ctx.heightAt(cp.x, cp.z) + target.size * 0.6 + PLINTH
       tp.set(p.x, p.y + target.size * 0.5, p.z)
