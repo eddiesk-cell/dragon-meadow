@@ -137,6 +137,9 @@ export async function createCombat(ctx) {
   const HEAVY = { clip: 'Greatsword Swing', path: PATH.heavy, dur: 3.25, speed: 1.7, hit: [0.42, 0.53], chain: 0.8, dmg: 50, lunge: 0.8, heavy: true }
   const BLADE = [0.3, 0.5, 0.75, 1.0, 1.12].map(y => new THREE.Vector3(0, y, 0)) // sword-local sample points
   let swing = null, combo = -1, comboUntil = 0, want = null, hits = 0
+  // shortcut: a still (zero-area) trail for the first frames compiles the trail shader at load, not on the first cut
+  // (that froze a loaded desk ~4 s); vfx.js should warm it beside its particle layers, then this goes.
+  let warm = ctx.vfx?.trail(sword, { base: BLADE[1], tip: BLADE[4] }), warmN = 0
   const tip = V(), tipPrev = V(), P = V(), dir = V()
   function startSwing(a) {
     if (!drawn || move) return
@@ -310,6 +313,7 @@ export async function createCombat(ctx) {
   window.__probes.combat = () => ({ drawn, w: +w.toFixed(2), u: swing ? +(swing.t / swing.a.dur).toFixed(3) : move ? +move.u.toFixed(3) : null, inHand: sword.parent === rightHand, hp, dead, doing, combo, hits, swing: swing?.a.clip ?? null, troll: ctx.monster ? { hp: ctx.monster.hp, state: ctx.monster.state } : null })
   return {
     update(dt) {
+      if (warm && ++warmN > 4) { warm.stop(); warm = null }
       if (press && !press.heavy && performance.now() - press.t > 280) { press.heavy = true; want = 'heavy' }
       // Next attack: the first when free, the next combo step once the current swing has passed its chain point.
       if (want && !drawn && !move && !dead) toggle() // the first attack draws the sword
@@ -362,14 +366,14 @@ export async function createCombat(ctx) {
         }
       }
       if (m.state === 'asleep') return // let it wake on camera
-      if (!drawn && !move && m.alive) fire('r') // draw as it stands up
       if (!m.alive || dead) {
         steer(); if (held.has('k')) key('k', false)
         if (!m.alive && drawn && !move && ctx.time - (won ??= ctx.time) > 2.5) fire('r') // the troll is down: sword home
         return
       }
       const dx = m.pos.x - hero.x, dz = m.pos.z - hero.z, d = Math.hypot(dx, dz)
-      // Each troll attack: every other one rolled through just before it lands, the rest blocked.
+      if (!drawn && !move && (m.state === 'stalk' || d < 9)) fire('r') // draw as it comes
+      // Each troll attack: the first rolled through just before it lands, the rest blocked and punished.
       if (m.state === 'attack' && prev !== 'attack') {
         atkN++; atkT = 0; plan = atkN === 1 ? 'roll' : 'guard' // roll through the first, then block and punish
         lands = LANDS[window.__probes.monster?.().attack] ?? 0.8
