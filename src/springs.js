@@ -6,10 +6,10 @@
 
 export const PART = {
   // k: pull to rest (1/s²)  air: body speed (m/s) at which that pull has halved, so the air of a run beats the knot's shape
-  // wind: air-drag coupling (1/s)  grav: share of gravity  damp: internal (1/s)  max: swing cap (rad)  flutter: ripple on the
+  // wind: air-drag coupling (1/s)  grav: share of gravity  lift: tails raised above the sculpt (rad)  damp: internal (1/s)  max: swing cap (rad)  flutter: ripple on the
   // wind  inertia: share of the body's own jolts (start, stop, jump) the cloth lags behind; the rest it is simply carried
   // The knot is starched cotton: standing, it holds the tails out to his side (as drawn) and only a third of their weight sags them.
-  bandana: { k: 380, air: 1.5, wind: 2.2, grav: 0.35, damp: 12, max: 1.75, flutter: 1.6, inertia: 0.6 },
+  bandana: { k: 380, air: 1.5, wind: 2.6, grav: 0.35, lift: 0.3, damp: 12, max: 1.75, flutter: 1.6, inertia: 0.6 },
   // leg: how far a hem panel's resting place follows its thigh (0 at the belt → leg at the hem), so it swings with the stride
   hem: { k: 230, air: 0, wind: 1.0, grav: 1, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3, leg: 0.55 },
 }
@@ -65,10 +65,14 @@ export async function createSprings(ctx) {
     const rest = nodes.map(wp), cols = kind === 'bandana' ? UPPER : LOWER
     for (const c of cols) { c.A.copy(c.A1); c.B.copy(c.B1) }
     const restQ = bones.map(b => b.quaternion.clone())
-    // The sculpt's tails stick out sideways and a little forward; aim them 35° back (about the head's up axis) so wind and
-    // running sweep them behind the head, not over the face. From the front they still stream out to his side.
-    // (which side: in the model's own frame, so a root already turned at load cannot flip it forward)
-    if (kind === 'bandana') restQ[0].premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.6 * Math.sign(model.worldToLocal(rest[1].clone()).x - model.worldToLocal(rest[0].clone()).x)))
+    // The sculpt's tails stick out sideways, a little forward and droopier than drawn: lift them `lift` and aim them 35° back
+    // (about the head's up axis) so wind and running sweep them behind the head, not over the face. From the front they
+    // still stream out to his side, as in art/hero/hero-front-nosword.png. (Which side: in the model's own frame, so a root
+    // already turned at load cannot flip it forward.)
+    if (kind === 'bandana') {
+      const sg = Math.sign(model.worldToLocal(rest[1].clone()).x - model.worldToLocal(rest[0].clone()).x)
+      restQ[0].premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.6 * sg, PART.bandana.lift * sg, 'YXZ')))
+    }
     const leg = kind === 'hem' && bone(rest[0].x > 0 ? 'leftUpperLeg' : 'rightUpperLeg') // the thigh on this panel's side
     chains.push({
       name: m[1], p: PART[kind], cols, bones, nodes, restQ, leg, legLocal: leg && rest.map(r => leg.worldToLocal(r.clone())),

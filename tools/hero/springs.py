@@ -1,11 +1,13 @@
 """Add spring-bone chains for the hero's cloth: two bandana tails (on `head`) and six hem panels below the belt (on `hips`).
   blender -b --python-exit-code 1 -P tools/hero/springs.py -- <rigged-vrm.glb> <out.glb>
 Cloth is found by position + the base-colour texture (bandana = green above the neck, hem = anything not the olive
-trousers between the belt and the hem). Weights fall off smoothly from the knot / belt line, which stay on head / body.
+trousers between the belt and the hem). Weights fall off smoothly from the headband / belt line, which stay on head / body.
+The generated mesh welds the two bandana ribbons together in places; they are ripped apart (vertices split) so each tail
+moves on its own chain, and every bandana vertex is weighted along ONE chain in order: head -> 0 -> 1 -> 2.
 Bones: spring_<chain>_<n> (simulated by src/springs.js) and spring_<chain>_end (the last bone's tip, no weights).
 Prints one line per chain (name, bones, vertices); a chain with 0 vertices is a failure.
 """
-import bpy, sys, math
+import bpy, bmesh, sys, math
 import numpy as np
 
 src, out = sys.argv[sys.argv.index("--") + 1:][:2]
@@ -32,8 +34,14 @@ mx, mn = rgb.max(1), rgb.min(1); d = np.maximum(mx - mn, 1e-6)
 r_, g_, b_ = rgb.T
 hue = np.where(mx == r_, ((g_ - b_) / d) % 6, np.where(mx == g_, (b_ - r_) / d + 2, (r_ - g_) / d + 4)) * 60
 sat = (mx - mn) / np.maximum(mx, 1e-6)
-ed = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ed); ed = ed.reshape(-1, 2)
-deg = np.bincount(ed.ravel(), minlength=N).astype(np.float32)
+
+
+def topo():
+    ed = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ed); ed = ed.reshape(-1, 2)
+    return ed, np.bincount(ed.ravel(), minlength=N).astype(np.float32)
+
+
+ed, deg = topo()
 
 
 def smooth(s, region, iters=4):
@@ -82,20 +90,70 @@ while len(front_):
     lab[b_[hit]] = lab[a_[hit]]; front_ = b_[hit]
 lab[tail & (lab < 0)] = (ang[tail & (lab < 0)] < cut).astype(int)  # anything the flood could not reach
 print(f"SPRINGS bandana tails at {np.degrees(c).round(0)} deg, split at {np.degrees(cut):.0f}, by connectivity {(lab[tail] == 0).sum()} / {(lab[tail] == 1).sum()}")
-for nm, m in (("bandana_upper", tail & (lab == 0)), ("bandana_lower", tail & (lab == 1))):
-    dist = np.linalg.norm(co - K, axis=1)
-    dmax = np.percentile(dist[m], 98)
-    J = [K] + [co[m & (np.abs(dist - dmax * k / 3) < dmax / 8)].mean(0) for k in (1, 2)] + [co[m & (dist > 0.9 * dmax)].mean(0)]
-    # u: position along the polyline J0..J3, 0 at the knot, 1 at the tip
-    idx = np.nonzero(bd)[0]; P = co[idx]; L = [np.linalg.norm(J[k + 1] - J[k]) for k in range(3)]; cum = np.cumsum([0] + L)
-    best = np.full(len(idx), 1e9); u = np.zeros(len(idx))
-    for k in range(3):
-        a, e = J[k], J[k + 1]; t = np.clip(((P - a) @ (e - a)) / L[k] ** 2, 0, 1)
-        dd = np.linalg.norm(P - (a + t[:, None] * (e - a)), axis=1)
-        sel = dd < best; best[sel] = dd[sel]; u[sel] = (cum[k] + t[sel] * L[k]) / cum[-1]
-    s0 = np.zeros(N, np.float32); s0[idx] = sstep(0.0, 0.35, u) * m[idx]
-    s = smooth(s0, m | (bd & (dist < 0.03)))  # spreads a little into the knot, never into hair or face
-    chains[nm] = dict(parent="head", joints=J, base={"head": 1.0}, idx=idx[s[idx] > 1e-3], u=u[s[idx] > 1e-3], s=s[idx][s[idx] > 1e-3], nb=3)
+
+# The mesh welds the ribbons where they touch (out to ~9 cm from the knot). One vertex cannot follow two tails, so rip the
+# mesh along the seam between upper-ribbon and lower-ribbon faces: each side keeps its own copy of the seam vertices.
+fv = np.empty(len(me.polygons) * 3, np.int64); me.polygons.foreach_get("vertices", fv); fv = fv.reshape(-1, 3)
+lv = np.where(tail, lab, -1)
+fl = np.where((lv[fv] >= 0).all(1), (lv[fv] == 1).sum(1) >= 2, -1).astype(int)  # a ribbon face goes with most of its corners
+bm = bmesh.new(); bm.from_mesh(me); bm.edges.ensure_lookup_table()
+seam = [e for e in bm.edges if {fl[f.index] for f in e.link_faces} >= {0, 1}]
+cut_v, n_seam = np.unique([v.index for e in seam for v in e.verts]), len(seam)
+bmesh.ops.split_edges(bm, edges=seam)
+bm.to_mesh(me); bm.free()
+N0, N = N, len(me.vertices)
+co0 = co; co = np.empty(N * 3, np.float32); me.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
+assert np.allclose(co[:N0], co0), "rip renumbered the vertices"
+src = np.arange(N)  # each new vertex is a copy of a seam vertex: find which, and copy every per-vertex fact from it
+for j in range(N0, N):
+    src[j] = cut_v[np.argmin(np.linalg.norm(co0[cut_v] - co[j], axis=1))]
+hue, sat, bd, tail, lab, lat, above, ang = (a[src] for a in (hue, sat, bd, tail, lab, lat, above, ang))
+ed, deg = topo()
+fv = np.empty(len(me.polygons) * 3, np.int64); me.polygons.foreach_get("vertices", fv); fv = fv.reshape(-1, 3)
+for lb in (0, 1):  # a vertex on ribbon faces only takes that ribbon's label
+    on = np.zeros(N, bool); on[fv[fl == lb].ravel()] = True; off_ = np.zeros(N, bool); off_[fv[fl == 1 - lb].ravel()] = True
+    lab[tail & on & ~off_] = lb
+cross = tail[ed[:, 0]] & tail[ed[:, 1]] & (lab[ed[:, 0]] != lab[ed[:, 1]])
+print(f"SPRINGS bandana: ripped {n_seam} seam edges ({N - N0} vertices split), upper-lower edges left {cross.sum()}")
+
+
+def spread(f, region, iters, fixed=None):
+    """Average f over mesh neighbours inside region only (outside neighbours do not count); `fixed` vertices keep f."""
+    e = ed[region[ed[:, 0]] & region[ed[:, 1]]]
+    cnt = np.maximum(np.bincount(e.ravel(), minlength=N), 1)
+    for _ in range(iters):
+        acc = np.zeros(N); np.add.at(acc, e[:, 0], f[e[:, 1]]); np.add.at(acc, e[:, 1], f[e[:, 0]])
+        g = np.where(np.bincount(e.ravel(), minlength=N) > 0, 0.5 * f + 0.5 * acc / cnt, f)
+        f = np.where(region if fixed is None else region & ~fixed, g, f)
+    return f
+
+
+# Weights as one number per vertex, mb: 0 = head, 1 = bone 0, 2 = bone 1, 3 = bone 2, and a vertex between two whole
+# numbers blends just those two bones, so every bandana vertex is weighted along ONE chain, in order. mb is smoothed over
+# the surface with the headband held at 0 and the tips at 3, so neighbours never differ much and a swing spreads over the
+# ribbon. The knot near the tails is cloth too and gives a little (the mesh sews it to the ribbons with long slivers that
+# tear when the knot stays rigid); the band round his head rides the head.
+dK = np.linalg.norm(co - K, axis=1)
+band = bd & ~tail & (dK > 0.07)
+free = bd & ~tail & ~band
+mb, own, fix, uu = np.zeros(N), np.full(N, -1), band.copy(), np.zeros(N)
+ind = []
+for lb in (0, 1):
+    m = tail & (lab == lb)
+    ind.append(spread(m.astype(float), m | free, 12, fixed=m))  # which tail a knot vertex hangs nearer to
+    e = ed[(m[ed[:, 0]] & free[ed[:, 1]]) | (m[ed[:, 1]] & free[ed[:, 0]])]
+    A = co[np.unique(e[free[e]])].mean(0)  # pivot: where the ribbon is sewn to the knot
+    dist = np.linalg.norm(co - A, axis=1); dmax = np.percentile(dist[m], 98)
+    uu[m] = dist[m] / dmax; mb[m] = 3 * np.minimum(uu[m], 1); fix |= m & (uu > 0.9); own[m] = lb
+    chains[("bandana_upper", "bandana_lower")[lb]] = dict(parent="head", A=A, m=m, nb=3)
+own[free] = np.argmax(ind, 0)[free]
+mb = spread(mb, bd, 150, fixed=fix)
+print(f"SPRINGS bandana: band {band.sum()} verts on the head, knot {free.sum()} verts give with the tails (max mb {mb[free].max():.2f})")
+for lb, nm in enumerate(("bandana_upper", "bandana_lower")):
+    ch = chains[nm]; m = ch["m"]
+    J = [ch["A"]] + [co[m & (np.abs(mb - c) < 0.25)].mean(0) for c in (1.5, 2.5)] + [co[m & (uu > 0.9)].mean(0)]  # joints mid-blend
+    idx = np.nonzero((own == lb) & (mb > 1e-3))[0]
+    ch.update(joints=J, idx=idx, u=(np.clip(mb[idx] - 1, 0, 2) + 0.5) / 3, s=np.minimum(mb[idx], 1).astype(np.float32))
 
 # --- hem: everything that is not the olive trousers, from the belt (spine root) down to the shirt tails
 z_root = B["spine"].head_local.z
@@ -156,7 +214,7 @@ for nm, ch in chains.items():
         for k in range(ch["nb"]):
             if wi[k] * si > 1e-4:
                 acc[f"spring_{nm}_{k}"] = acc.get(f"spring_{nm}_{k}", 0) + float(wi[k] * si)
-bset = set(np.nonzero(bd)[0].tolist())
+bset = bset_all = set(np.nonzero(bd)[0].tolist())
 for i, acc in new.items():
     old = {"head": 1.0} if i in bset else {gname[g.group]: g.weight for g in me.vertices[i].groups if g.weight > 0}
     tot = sum(old.values()) or 1
@@ -166,22 +224,10 @@ for i, acc in new.items():
             acc[k] *= f
     sp = sum(acc.values())
     for k, v in old.items():
-        acc[k] = acc.get(k, 0) + (1 - sp) * v / tot
+        if (1 - sp) * v / tot > 1e-4:
+            acc[k] = acc.get(k, 0) + (1 - sp) * v / tot
 for i in bset - set(new):  # the knot and the headband ride the head only
     new[i] = {"head": 1.0}
-# The two ribbons are welded where they cross near the knot: average each bandana vertex's weights with its bandana
-# neighbours so that weld stretches smoothly instead of tearing into shards when the tails part.
-cols = ["head"] + [f"spring_{nm}_{k}" for nm in ("bandana_upper", "bandana_lower") for k in range(3)]
-Wd = np.zeros((N, len(cols)), np.float32)
-for i in bset:
-    Wd[i] = [new[i].get(c_, 0) for c_ in cols]
-eb_ = ed[bd[ed[:, 0]] & bd[ed[:, 1]]]
-dg = np.maximum(np.bincount(eb_.ravel(), minlength=N), 1)[:, None]
-for _ in range(4):
-    acc = np.zeros_like(Wd); np.add.at(acc, eb_[:, 0], Wd[eb_[:, 1]]); np.add.at(acc, eb_[:, 1], Wd[eb_[:, 0]])
-    Wd = np.where(bd[:, None], 0.5 * Wd + 0.5 * acc / dg, Wd)
-for i in bset:
-    new[i] = {c_: float(w) for c_, w in zip(cols, Wd[i] / Wd[i].sum()) if w > 1e-4}
 vg = {g.name: g for g in body.vertex_groups}
 for nm in chains:
     for k in range(chains[nm]["nb"]):
@@ -193,6 +239,12 @@ for i, acc in new.items():
     for nm, w in top:
         vg[nm].add([i], w / t, "REPLACE")
 
+# Proof the bandana is weighted in order: no vertex mixes the head with a tail's last bone, or the two tails.
+bw = {i: new[i] for i in bset_all if i in new}
+mixh = sum(1 for w in bw.values() if "head" in w and any(k.endswith("_2") for k in w))
+mixt = sum(1 for w in bw.values() if any("upper" in k for k in w) and any("lower" in k for k in w))
+print(f"SPRINGS bandana weights: {len(bw)} verts, head+tip-bone {mixh}, upper+lower {mixt}")
+assert mixh == 0 and mixt == 0, "bandana weights out of order"
 bad = []
 for nm, ch in chains.items():
     nv = sum(1 for i in ch["idx"] if any(n.startswith(f"spring_{nm}_") for n, _ in sorted(new[int(i)].items(), key=lambda kv: -kv[1])[:4]))
