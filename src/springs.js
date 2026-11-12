@@ -15,7 +15,7 @@ export const PART = {
   // his skull; the air bends only the loose ends. lee: share of the ambient gust a run hides (an art call — the run sets
   // where the tails point, gusts only stir them; at full strength a crosswind wraps them round the back of his head).
   // max per bone: the knot swings at most 1.1 rad, the loose ends take the rest of the bend.
-  bandana: { k: 380, air: 1.5, wind: 2.6, grav: 0.35, lift: 0.3, damp: 12, max: [1.1, 1.75, 1.75], flutter: 1.6, inertia: 0.6, stream: [0.55, 0.81], taut: 2, lee: 0.6 },
+  bandana: { k: 380, air: 1.5, wind: 2.6, grav: 0.35, lift: 0.3, damp: 12, max: [1.1, 1.75, 1.75], flutter: 1.6, inertia: 0.6, stream: [0.7, 0.71], taut: 2, lee: 0.6 },
   // leg: how far a hem panel's resting place follows its thigh (0 at the belt → leg at the hem), so it swings with the stride
   hem: { k: 230, air: 0, wind: 1.0, grav: 1, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3, leg: 0.55 },
 }
@@ -105,9 +105,9 @@ export async function createSprings(ctx) {
   const wind = V(), wc = V(), rel = V(), wj = V(), acc = V(), off = V(), d = V(), cur = V(), vroot = V(), pOld = V(), carry = V(), vlag = V()
   const COLS = [...UPPER, ...LOWER], nrm = V(), vcol = V()
   let fresh = true
-  let maxSwing = 0
+  let maxSwing = 0, knotSwing = 0
   const nb = chains.reduce((a, c) => a + c.bones.length, 0)
-  window.__probes.springs = () => ({ chains: chains.length, bones: nb, maxSwingDeg: Math.round(maxSwing * 57.3) })
+  window.__probes.springs = () => ({ chains: chains.length, bones: nb, maxSwingDeg: Math.round(maxSwing * 57.3), knotSwingDeg: Math.round(knotSwing * 57.3) })
 
   return {
     update(dt, t) {
@@ -116,7 +116,7 @@ export async function createSprings(ctx) {
       const w = ctx.windAt?.(heroPos.x, heroPos.z, t)
       wind.set(w?.x ?? 0, 0, w?.y ?? 0)
       const n = Math.min(12, Math.ceil(dt / STEP)), h = dt / n
-      maxSwing = 0
+      maxSwing = knotSwing = 0
       for (const k of COLS) {
         k.A0.copy(k.A1); k.B0.copy(k.B1)
         k.on.localToWorld(k.A1.copy(k.a)); k.on.localToWorld(k.B1.copy(k.b))
@@ -200,7 +200,9 @@ export async function createSprings(ctx) {
           b.matrixWorld.decompose(hp, wq, sc)
           d.setFromMatrixPosition(c.nodes[i + 1].matrixWorld).sub(hp).normalize()
           off.subVectors(c.x[i + 1], hp).normalize()
-          maxSwing = Math.max(maxSwing, off.angleTo(tmp.subVectors(c.rest[i + 1], c.rest[i]).normalize()))
+          const sw = off.angleTo(tmp.subVectors(c.rest[i + 1], c.rest[i]).normalize())
+          maxSwing = Math.max(maxSwing, sw)
+          if (c.runQ && !i) knotSwing = Math.max(knotSwing, sw) // the bandana knot's own swing (capped at max[0])
           q.setFromUnitVectors(d, off).multiply(wq)
           b.parent.matrixWorld.decompose(tmp, pq, sc)
           b.quaternion.copy(pq.invert().multiply(q))
