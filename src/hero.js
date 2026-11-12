@@ -192,7 +192,7 @@ export async function createHero(ctx) {
   const tt = camtest === 'tree' && trunks.reduce((a, m) => !a || Math.hypot(m.position.x, m.position.z) < Math.hypot(a.position.x, a.position.z) ? m : a, null)
   const rc = tt && crest(0) * tt.scale.x + 1.5
   if (tt) { pos.set(tt.position.x + rc, 0, tt.position.z); pos.y = ctx.heightAt(pos.x, pos.z) }
-  let rocks = [], real = null // real: what the independent check rays hit — ring stones, or the trees' own trunk triangles
+  let rocks = [], real = null // real: the trees' own trunk triangles, for the independent check
   const findRocks = () => { // the mesh standing at the first ring stone, then every mesh in its group with the same stone material
     const p = ctx.ring?.stones?.[0]?.pos
     if (p) scene.traverse(o => { if (!rocks.length && o.isMesh && o.getWorldPosition(corner).setY(p.y).distanceTo(p) < 0.01) rocks = o.parent.children.filter(m => m.material === o.material) })
@@ -259,7 +259,7 @@ export async function createHero(ctx) {
       }
       const checks = tt ? (real ? [real] : []) : rocks
       if (real) real.count = real.src.count
-      // Swing ±30° across the nearest stone (2.5 m beyond it) or the test trunk (16 m in, past its axis), low: the goal keeps landing behind it.
+      // Swing ±30° across the nearest stone (2.5 m beyond it) or the test trunk (up to 16 m toward its axis), low: the goal keeps landing behind it.
       let R = DIST, near = Infinity
       if (tt) { near = 0; R = Math.min(Math.hypot(tt.position.x - pos.x, tt.position.z - pos.z), 16); aimAt.copy(tt.position) }
       else if (camtest) for (const o of rocks) {
