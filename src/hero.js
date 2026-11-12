@@ -225,7 +225,6 @@ export async function createHero(ctx) {
         scanT = 1; solids.length = 0
         scene.traverse(o => o.userData.cameraBlock && o.traverse(m => m.isMesh && solids.push(m)))
         if (!rocks.length) findRocks()
-        for (const m of rocks) solids.includes(m) || solids.push(m) // shortcut: ring.js:121 does not flag its stones yet (Contract); drop this line once it does
         blocks.length = 0; blocks.push(...solids.map(hullOf))
       }
       let R = DIST, near = Infinity

@@ -155,7 +155,7 @@ export async function createCombat(ctx) {
     const s = swing, a = s.a, f = s.t / a.dur, keys = a.path.keys
     // From the top of the wind-up to the end of the cut, then the whole arc fades as one (following the slow recovery
     // would shrink it to a sliver at the blade).
-    if (s.trail === null && f > keys[0][0]) s.trail = ctx.vfx?.trail(blade, { base: BLADE[0], tip: BLADE[4] })
+    if (s.trail === null && f > keys[0][0]) s.trail = ctx.vfx?.trail(blade, { base: BLADE[0], tip: BLADE[4], life: 0.35 })
     if (s.trail && f > keys[keys.length - 2][0]) { s.trail.stop(); s.trail = false }
     sword.updateWorldMatrix(true, false)
     sword.localToWorld(tip.copy(BLADE[4]))

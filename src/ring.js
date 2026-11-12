@@ -116,6 +116,7 @@ export async function createRing(ctx) {
   const place = (geo, x, z, yaw, opts = {}) => {
     const m = new THREE.Mesh(geo, mat)
     m.castShadow = m.receiveShadow = true
+    m.userData.cameraBlock = true // Contract: the hero camera pulls in rather than pass through stone
     m.position.set(x, 0, z)
     m.rotation.set(opts.tilt || 0, yaw, opts.lean || 0, 'YXZ')
     group.add(m)
