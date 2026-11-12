@@ -134,7 +134,7 @@ export async function createSettlements(ctx) {
   const clear = (x, z, r) => ctx.keepClear.push({ x, z, r })
 
   // --- shared materials
-  const lamp = vec3(1, 0.55, 0.2), dusk = smoothstep(0.03, 0.45, uNight) // windows are all lit by dusk
+  const lamp = vec3(1, 0.55, 0.2), uLamps = uniform(0), dusk = uLamps // 0 by day → 1 once the sun is low or the night has come (update)
   const glass = lit => {
     const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.3, metalness: 0 })
     m.colorNode = vec3(0.045, 0.04, 0.035)
@@ -142,7 +142,7 @@ export async function createSettlements(ctx) {
     return m
   }
   const rnd = fract(sin(dot(floor(positionWorld.mul(vec3(0.55, 0.42, 0.55))), vec3(12.9898, 78.233, 37.719))).mul(43758.5453))
-  const winMat = glass(step(0.2, rnd).mul(rnd.mul(1.2).add(2))) // ~4 in 5 windows lit, each its own warmth
+  const winMat = glass(step(0.1, rnd).mul(rnd.mul(1.5).add(2.6))) // 9 in 10 windows lit, each its own warmth
   const lampMat = glass(float(5))
   const swaps = new Map() // kit material → ours
   const swap = (m, name) => m.name === 'window' ? (name === 'lantern' ? lampMat : winMat) : swaps.get(m) || m
@@ -296,10 +296,10 @@ export async function createSettlements(ctx) {
   const water = new THREE.MeshStandardNodeMaterial({ roughness: 0.12, metalness: 0 })
   {
     const fres = pow(float(1).sub(saturate(dot(normalView, positionViewDirection))), 3)
-    const sky = mix(uSky.mul(vec3(0.5, 0.7, 1)), uSky, fres) // looking down it mirrors the higher, bluer sky
+    const sky = mix(uSky.mul(vec3(0.42, 0.66, 1.05)), uSky, fres.mul(fres)) // looking down it mirrors the higher, bluer sky
     const streak = pow(sin(uv().y.mul(0.9).add(uT.mul(1.4)).add(mx_noise_float(positionWorld.xz.mul(0.15)).mul(4))).mul(0.5).add(0.5), 24)
-    water.colorNode = mix(vec3(0.012, 0.05, 0.06), sky, fres.mul(0.6).add(0.12)).add(streak.mul(0.05))
-    water.emissiveNode = sky.mul(fres.mul(0.25).add(0.04))
+    water.colorNode = mix(vec3(0.01, 0.05, 0.065), sky, fres.mul(0.45).add(0.08)).add(streak.mul(0.05))
+    water.emissiveNode = sky.mul(fres.mul(0.22).add(0.03))
   }
   const st = STREAM[1].s, lead = Array.from({ length: 12 }, (_, k) => ({ ...STREAM[0], x: STREAM[0].x - STREAM[0].tx * (24 - 2 * k), z: STREAM[0].z - STREAM[0].tz * (24 - 2 * k), s: 0 }))
   const surf = new THREE.Mesh(new THREE.BufferGeometry(), water)
@@ -405,13 +405,19 @@ export async function createSettlements(ctx) {
     if (placed.some(h => Math.hypot(h.x - x, h.z - z) < Math.hypot(...half[h.name]) + 1.5) || lanterns.some(([lx, , lz]) => Math.hypot(lx - x, lz - z) < 2.5)) continue
     trees[nearHouse || (z > 585 && rand() < 0.4) ? 0 : 1].push([x, z])
   }
-  trees.forEach((list, k) => {
+  // one InstancedMesh per tree kind under a settlement group (cypress 0, round 1)
+  const plant = (group, list, k) => {
     const im = new THREE.InstancedMesh(k ? roundTree : cypress, treeMat, list.length), q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0)
-    list.forEach(([x, z], i) => { const sc = 0.75 + rand() * 0.6; im.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(x - TOWN.x, ctx.heightAt(x, z) - 0.2, z - TOWN.z), q.setFromAxisAngle(Y, rand() * 6.28), new THREE.Vector3(sc, sc * (0.85 + rand() * 0.3), sc))); clear(x, z, 2.5) })
+    list.forEach(([x, z], i) => {
+      const sc = 0.75 + rand() * 0.6
+      im.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(x - group.position.x, ctx.heightAt(x, z) - 0.2, z - group.position.z), q.setFromAxisAngle(Y, rand() * 6.28), new THREE.Vector3(sc, sc * (0.85 + rand() * 0.3), sc)))
+      clear(x, z, 2.5)
+    })
     im.computeBoundingSphere()
     im.castShadow = im.receiveShadow = true
-    townG.add(im)
-  })
+    group.add(im)
+  }
+  trees.forEach((list, k) => plant(townG, list, k))
 
   // warm pools of lamplight on the ground at night
   const poolMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 })
@@ -494,17 +500,26 @@ export async function createSettlements(ctx) {
   for (const x of [-6.5, 6.5]) C.add('banner', KEEP.x + x, cy(0, 44) + 21, KEEP.z + 51.2)
   C.build({ block: true })
   clear(KEEP.x, KEEP.z, 80)
+  { // trees on the castle hill outside the curtain, none on the cliff lip or across the road from the gate
+    const list = [[], []]
+    for (let k = 0; k < 90; k++) {
+      const a = rand() * Math.PI * 2, r = 58 + rand() * 20, lx = r * Math.cos(a), lz = r * Math.sin(a), x = KEEP.x + lx, z = KEEP.z + lz
+      if ((lz > 30 && Math.abs(lx) < 12) || [0, 1.6, 3.2, 4.7].some(b => crag(x + 4 * Math.cos(b), z + 4 * Math.sin(b)) < 38)) continue
+      list[rand() < 0.3 ? 0 : 1].push([x, z])
+    }
+    list.forEach((l, k) => plant(castleG, l, k))
+  }
 
   // the beacon on the keep: the one warm light on the north cliffs
   const beaconMat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })
   {
     const r = saturate(float(1).sub(length(uv().sub(0.5).mul(2))))
     const flick = sin(uT.mul(13)).mul(0.08).add(sin(uT.mul(7.3)).mul(0.07)).add(1)
-    beaconMat.colorNode = vec4(vec3(1, 0.45, 0.12).mul(pow(r, 2.2)).mul(uNight.mul(5).add(0.15)).mul(flick), 1)
+    beaconMat.colorNode = vec4(vec3(1, 0.36, 0.07).mul(pow(r, 1.8)).mul(uNight.mul(7).add(0.1)).mul(flick), 1)
   }
   const beacon = new THREE.Sprite(beaconMat)
-  beacon.position.set(KEEP.x, keepY + 40.5, KEEP.z - 6 + 11)
-  beacon.scale.setScalar(9)
+  beacon.position.set(KEEP.x, keepY + 44, KEEP.z - 6 + 9)
+  beacon.scale.setScalar(13)
   scene.add(beacon)
 
   // the road from the gate along the neck and down the crest toward the meadow
@@ -548,7 +563,7 @@ export async function createSettlements(ctx) {
     bases.push({ x, y, z, name: 'city' })
     houses++
   }
-  for (let r = 38; r < 250; r += 11) for (let a = rng() * 0.2; a < Math.PI * 2; a += 11.5 / r * (0.85 + rng() * 0.3)) {
+  for (let r = 66; r < 250; r += 11) for (let a = rng() * 0.2; a < Math.PI * 2; a += 11.5 / r * (0.85 + rng() * 0.3)) {
     if (r > 196 && Math.abs(Math.atan2(Math.sin(a), Math.cos(a)) - Math.PI) > 0.9 && Math.abs(Math.atan2(Math.sin(a), Math.cos(a)) + Math.PI) > 0.9) continue // outside the wall only the harbour quarter (west)
     if (r > 190 && r < 206) continue // the wall
     if (rng() > 0.55) continue
@@ -597,16 +612,16 @@ export async function createSettlements(ctx) {
     if (k % 9 === 0) ap('tower_round', x, z, -a + Math.PI / 2)
     else ap('wall', x, z, -a - Math.PI / 2 + Math.PI, new THREE.Vector3(1.0, 1, 1))
   }
-  ap('keep', CITY.x + 12, CITY.z + 6, -Math.PI / 2)
-  for (const [x, z] of [[-24, -20], [-24, 30], [40, -22], [40, 32]]) ap('tower_round', CITY.x + x, CITY.z + z)
+  ap('keep', CITY.x - 18, CITY.z, Math.PI / 2) // the palace: its hall to the meadow side (east), the dome beside it
+  for (const [x, z] of [[-46, -34], [-46, 34], [52, -36], [52, 36]]) ap('tower_round', CITY.x + x, CITY.z + z)
   A.build()
   const domeMat = new THREE.MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0 })
   domeMat.colorNode = vec3(0.78, 0.72, 0.6)
   domeMat.emissiveNode = vec3(1, 0.7, 0.4).mul(dusk.mul(0.35))
-  const topY = ctx.heightAt(CITY.x - 22, CITY.z + 6)
+  const topY = ctx.heightAt(CITY.x + 26, CITY.z)
   const drum = new THREE.Mesh(new THREE.CylinderGeometry(14, 15, 22, 32).translate(0, 11, 0), stoneOf(castleKit, 'stone'))
   const dome = new THREE.Mesh(new THREE.SphereGeometry(14.5, 32, 14, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 22, 0), domeMat)
-  for (const o of [drum, dome]) { o.position.set(CITY.x - 22, topY, CITY.z + 6); scene.add(o) }
+  for (const o of [drum, dome]) { o.position.set(CITY.x + 26, topY - 2, CITY.z); scene.add(o) }
   clear(CITY.x, CITY.z, 260)
 
   const r2 = v => Math.round(v * 100) / 100
@@ -616,7 +631,7 @@ export async function createSettlements(ctx) {
     return {
       settlements: 3, springwell: { houses: placed.filter(b => !['market', 'well', 'church'].includes(b.name)).length, trees: trees.map(l => l.length), lanterns: lanterns.length, chimneys: T.tops.length, bridgeDeck: r2(R), water: [r2(Wl[0]), r2(Wl[Wl.length - 1])], patchEdge: r2(edge) },
       crestwatch: { at: [KEEP.x, KEEP.z], plateau: r2(cy(0, 0)), towers: towers.length, bearingDeg: r2(Math.atan2(-KEEP.x, -KEEP.z + 6) * 180 / Math.PI) },
-      asterhaven: { at: [CITY.x, CITY.z], houses }, bases: bases.length, maxBaseGap: r2(gap), worst, night: r2(uNight.value),
+      asterhaven: { at: [CITY.x, CITY.z], houses }, bases: bases.length, maxBaseGap: r2(gap), worst, night: r2(uNight.value), lamps: r2(uLamps.value),
     }
   }
 
@@ -624,6 +639,7 @@ export async function createSettlements(ctx) {
     update(dt, tt) {
       uT.value = tt
       uNight.value = ctx.night
+      uLamps.value = Math.max(ss(0.03, 0.45, ctx.night), ss(0.2, 0.03, ctx.sunDir.y))
       uSky.value.copy(ctx.fogColor)
     },
   }
