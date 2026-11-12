@@ -218,7 +218,7 @@ export async function createHero(ctx) {
 
   window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), strapSkin: strap?.skin.length ?? 0, strapLift: strap?.lift.map(x => +x.toFixed(3)),
     cam: { blocks: blocks.length, trunks: blocks.filter(b => b.geometry === trunkGeo).length, pulled, frames, // frames: pulled in front of a block, goal behind one, camera inside one
-      ...(camtest && (tt ? { tree: [tt.position.x, tt.position.z, rc].map(Math.round), trunkTris: real?.geometry.index.count / 3, behind, inTrunk: inside } : { rocks: rocks.length, behind, inStone: inside })) },
+      ...(camtest && { secs: +ctx.time.toFixed(1) }), ...(camtest && (tt ? { tree: [tt.position.x, tt.position.z, rc].map(Math.round), trunkTris: real?.geometry.index.count / 3, behind, inTrunk: inside } : { rocks: rocks.length, behind, inStone: inside })) },
     hold: held && { secs: +(ctx.time - held.t).toFixed(2), drift: +Math.max(...snap().map((q, i) => Math.abs(q - held.pose[i]))).toFixed(5) } })
 
   return {
