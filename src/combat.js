@@ -141,9 +141,9 @@ export async function createCombat(ctx) {
   function startSwing(a) {
     if (!drawn || move) return
     faceMonster(7)
-    swing = { a, t: 0, struck: false, from: { g: cur.g.clone(), q: cur.q.clone() }, trail: null }
+    const s = swing = { a, t: 0, struck: false, from: { g: cur.g.clone(), q: cur.q.clone() }, trail: null }
     sword.localToWorld(tipPrev.copy(BLADE[4]))
-    act('swing', a.clip, { speed: a.speed, fade: 0.08, lockMove: true }).then(() => { if (swing?.a === a) endSwing() })
+    act('swing', a.clip, { speed: a.speed, fade: 0.08, lockMove: true }).then(() => { if (swing === s) endSwing() })
   }
   function endSwing() { if (swing?.trail) swing.trail.stop(); if (swing && !swing.a.heavy) comboUntil = ctx.time + 0.6; swing = null }
   function strike(dt) { // after the arms have moved this frame
