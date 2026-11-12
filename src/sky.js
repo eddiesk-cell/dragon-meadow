@@ -18,12 +18,12 @@ const sunAt = (tod, v) => { const a = (tod - 0.5) * TAU; return v.set(-0.8434 * 
 // Linear-light palette keyed by sun height (sunDir.y). Night ← twilight ← sunset ← dusk ← golden ← noon.
 // zenith, horizon (= fog), sun-side glow, key-light colour, hemi sky, hemi ground, cloud lit, cloud shade | key I, hemi I, cloud cover
 const KEYS = [
-  [-0.25, [.008, .012, .060], [.050, .060, .170], [0, 0, 0], [.55, .66, 1], [.25, .45, .85], [.02, .045, .06], [.07, .08, .17], [.012, .015, .045], 0, 1.15, .1],
-  [-0.08, [.020, .030, .130], [.17, .11, .24], [.30, .09, .08], [.55, .66, 1], [.42, .38, .70], [.05, .05, .06], [.32, .13, .20], [.04, .035, .09], 0, .8, -.12],
+  [-0.25, [.008, .012, .060], [.140, .190, .370], [0, 0, 0], [.55, .66, 1], [.25, .45, .85], [.02, .045, .06], [.07, .08, .17], [.012, .015, .045], 0, 1.15, .1],
+  [-0.08, [.020, .030, .130], [.24, .17, .33], [.30, .09, .08], [.55, .66, 1], [.42, .38, .70], [.05, .05, .06], [.32, .13, .20], [.04, .035, .09], 0, .8, -.12],
   [0.03, [.060, .080, .280], [.66, .38, .38], [1.4, .45, .12], [1, .45, .2], [.80, .58, .62], [.12, .10, .08], [1.3, .55, .38], [.22, .14, .26], 1.3, .9, -.2],
   [0.15, [.070, .140, .460], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.6, .95, .66], [.34, .28, .42], 1.9, 1.0, -.26],
-  [0.32, [.022, .105, .520], [.50, .62, .88], [1.3, .90, .50], [1, .86, .68], [.72, .84, 1], [.30, .36, .16], [1.9, 1.75, 1.6], [.46, .50, .72], 2.6, 1.2, -.3],
-  [0.60, [.018, .095, .500], [.46, .60, .92], [.80, .75, .60], [1, .96, .90], [.70, .82, 1], [.30, .36, .16], [2.0, 2.0, 2.0], [.52, .58, .78], 3.0, 1.3, -.3],
+  [0.32, [.035, .140, .620], [.80, .84, 1.25], [1.3, .90, .50], [1, .86, .68], [.72, .84, 1], [.30, .36, .16], [1.9, 1.75, 1.6], [.46, .50, .72], 2.6, 1.2, -.3],
+  [0.60, [.030, .130, .600], [.72, .80, 1.22], [.80, .75, .60], [1, .96, .90], [.70, .82, 1], [.30, .36, .16], [2.0, 2.0, 2.0], [.52, .58, .78], 3.0, 1.3, -.3],
 ]
 
 export async function createSky(ctx) {
@@ -40,10 +40,10 @@ export async function createSky(ctx) {
   // Haze: horizon→zenith gradient, a warm glow round the sun and along its horizon, a cool halo round the moon.
   const haze = Fn(([d]) => {
     const e = max(d.y, 0)
-    const base = mix(uHorizon, uZenith, pow(smoothstep(0, 0.75, e), 0.55))
+    const base = mix(uHorizon, uZenith, pow(smoothstep(0, 0.75, e), 0.5))
     const mu = max(dot(d, uSun), 0)
     const az = max(dot(normalize(d.xz.add(1e-4)), normalize(uSun.xz.add(1e-4))), 0)
-    const glow = pow(mu, 12).mul(0.3).add(pow(az, 4).mul(exp(e.mul(-9))).mul(0.3))
+    const glow = pow(mu, 12).mul(0.3).add(pow(mu, 64).mul(0.8)).add(pow(az, 4).mul(exp(e.mul(-9))).mul(0.3))
     const halo = pow(max(dot(d, uMoon), 0), 40).mul(uNight).mul(vec3(0.07, 0.09, 0.18))
     return base.add(uGlow.mul(glow)).add(halo)
   })
@@ -61,7 +61,7 @@ export async function createSky(ctx) {
     const lit = smoothstep(-0.09, 0.09, n.sub(n2))
     const rim = pow(max(dot(d, uSun), 0), 6).mul(dens.oneMinus()).mul(1.6)
     const col = mix(uCloudShade, uCloudLit, lit).add(uCloudLit.mul(rim))
-    return vec4(mix(col, uHorizon, exp(d.y.mul(-8)).mul(0.6)), dens.mul(smoothstep(0.015, 0.15, d.y)))
+    return vec4(mix(col, uHorizon, exp(d.y.mul(-7)).mul(0.75)), dens.mul(smoothstep(0.07, 0.25, d.y))) // clear haze band above the land
   })
 
   // Stars: one per lit cell of a 3-D grid on the sphere, twinkling; the Milky Way band crowds them and glows faintly.
@@ -102,7 +102,7 @@ export async function createSky(ctx) {
     const up = smoothstep(0, 0.14, d.y)
     // The sun's bright core lives in the sky only, cut by the horizon, so land in front of the sun hides it.
     const mu = max(dot(d, uSun), 0)
-    const sunDisc = uDisc.mul(smoothstep(0.999925, 0.999955, mu)).add(uGlow.mul(pow(mu, 64).mul(0.8).add(pow(mu, 600).mul(2)))).mul(smoothstep(-0.01, 0.03, d.y))
+    const sunDisc = uDisc.mul(smoothstep(0.999925, 0.999955, mu)).add(uGlow.mul(pow(mu, 600).mul(2))).mul(smoothstep(-0.01, 0.03, d.y))
     const extra = vec3(0).toVar()
     If(uNight.greaterThan(0.01), () => {
       const moon = vec3(2.2, 2.15, 2.0).mul(smoothstep(0.99974, 0.99979, dot(d, uMoon))).mul(float(0.85).add(mx_fractal_noise_float(d.mul(900), 2, 2, 0.5).mul(0.25)))
@@ -116,13 +116,21 @@ export async function createSky(ctx) {
 
   // Aerial perspective, Phase 6: the world shows through. Thin air (scale height 200 m): ~40 % at 600 m, ~65 % at 1 km,
   // ~92 % at 2 km, finished by 2.9 km; plus a low haze (scale height 20 m) that softens the land near the ground — ~20 %
-  // at 100 m, the 200 m crest ~30 % — while the castle on its headland and the sky islands stay readable. Thicker at night.
+  // at 100 m — while the sky islands stay readable. Thicker at night.
   const uFogK = uniform(1)
   const toFrag = positionWorld.sub(cameraPosition), dist = length(toFrag), x = max(dist.sub(15), 0)
   const avgY = clamp(positionWorld.y.add(cameraPosition.y).mul(0.5), -40, 600)
   const air = x.mul(0.0008).add(x.mul(0.0005).pow(2)).mul(exp(avgY.mul(-1 / 200)))
   const ground = x.mul(0.002).mul(exp(max(avgY, 0).mul(-1 / 20)))
-  scene.fogNode = fog(haze(normalize(toFrag)), max(float(1).sub(exp(air.add(ground).mul(uFogK).negate())), smoothstep(2300, 2900, dist)))
+  // Sea mist along the north cliffs (PLAN: crest ~25 m by z ≈ −200, lip ≈ −222…−242). It pools at the lip and thins with
+  // height (12 m), so the crest dissolves into the sky behind it while the meadow stays clear and Castle Crestwatch
+  // (−520, −240) rises out of it: base ~80 %, walls at 50 m ~55 %, towers at 70 m ~45 %. Clear within 50 m of the eye.
+  const lip = positionWorld.z.add(225).div(60)
+  const mist = exp(lip.mul(lip).negate()).mul(exp(max(positionWorld.y.sub(18), 0).mul(-1 / 12))).mul(smoothstep(50, 200, dist)).mul(7)
+  const fogF = max(float(1).sub(exp(air.add(ground).add(mist).mul(uFogK).negate())), smoothstep(2300, 2900, dist))
+  // A thin veil scatters more blue (same brightness); as it thickens it whitens to the horizon itself, so the far land reads pale blue
+  // and a fully hazed ridge is exactly the sky behind it.
+  scene.fogNode = fog(haze(normalize(toFrag)).mul(mix(vec3(0.83, 1.0, 1.32), vec3(1), fogF.mul(fogF))), fogF)
   scene.fog = scene.background = null
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1)
