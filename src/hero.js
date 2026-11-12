@@ -87,12 +87,13 @@ export async function createHero(ctx) {
   }
 
   // Actions for other lanes (combat): a clip plays on top of locomotion until it ends (or stop()), and walking
-  // keys are ignored while it holds lockMove. Contract: PLAN.md Phase 3, ctx.heroAct.
-  let act = null // { action, lockMove, resolve }
+  // keys are ignored while it holds lockMove. With hold the promise still resolves when the clip ends, but the last
+  // pose stays until stop() (Death lies still). Contract: PLAN.md Phase 3, ctx.heroAct.
+  let act = null // { action, lockMove, hold, resolve }
   const endAct = () => { const r = act?.resolve; act = null; r?.() }
-  mixer.addEventListener('finished', e => { if (e.action === act?.action) endAct() })
+  mixer.addEventListener('finished', e => { if (e.action === act?.action) act.hold ? act.resolve() : endAct() })
   ctx.heroAct = {
-    play(name, { loop = false, fade = 0.15, speed = 1, lockMove = false } = {}) {
+    play(name, { loop = false, fade = 0.15, speed = 1, lockMove = false, hold = false } = {}) {
       const a = actions[name.toLowerCase()]
       if (!a) return Promise.reject(new Error(`hero has no clip "${name}"`))
       endAct()                                        // a new action cuts the one before it
@@ -101,18 +102,23 @@ export async function createHero(ctx) {
       a.fadeIn(fade).play()
       if (cur !== a) cur?.fadeOut(fade)
       cur = a; clip = name
-      return new Promise(resolve => { act = { action: a, lockMove, resolve } })
+      return new Promise(resolve => { act = { action: a, lockMove, hold, resolve } })
     },
     stop: endAct,                                     // hand the body back to walk / run / idle
     busy: () => !!act,
     face(x, z) { face = Math.atan2(x, z) },          // turn to face a world direction at once
   }
+  // ?hold=1 proof: Death (Collapse) held; the probe compares the pose now with the one it ended in (cloth bones swing).
+  const bones = []; model.traverse(o => o.isBone && !o.name.startsWith('spring_') && bones.push(o))
+  const snap = () => bones.flatMap(b => [...b.position.toArray(), ...b.quaternion.toArray()])
+  let held = null
+  if (params.get('hold')) ctx.heroAct.play('Death (Collapse)', { hold: true, lockMove: true }).then(() => { held = { t: ctx.time, pose: snap() } })
 
-  // Input flags; ?auto= sets the same ones the keys do.
+  // Input flags; ?auto=walk|run sets the same ones the keys do (other autos, e.g. fight, steer themselves).
   const keys = new Set()
   let jumpQueued = false // latched on keydown: a tap shorter than one frame still jumps
   const auto = params.get('auto')
-  if (auto) { keys.add('w'); if (auto === 'run') keys.add('shift') }
+  if (auto === 'walk' || auto === 'run') { keys.add('w'); if (auto === 'run') keys.add('shift') }
   addEventListener('keydown', e => { keys.add(e.key.toLowerCase()); if (e.key === ' ') { e.preventDefault(); jumpQueued ||= !e.repeat } })
   addEventListener('keyup', e => keys.delete(e.key.toLowerCase()))
   addEventListener('blur', () => keys.clear())
@@ -139,6 +145,17 @@ export async function createHero(ctx) {
   const camTarget = new THREE.Vector3(), camGoal = new THREE.Vector3()
   const DIST = 4.5
 
+  // Camera collision: the ray from his head to the camera stops 0.3 m short of anything flagged userData.cameraBlock
+  // (stones, landmarks, buildings: Contract). The list is re-read every second, since modules add props late.
+  const ray = new THREE.Raycaster(), seg = new THREE.Vector3(), corner = new THREE.Vector3(), blocks = []
+  const hitAt = (from, to, pad) => { // distance to the first block on from→to (+pad), or undefined
+    seg.subVectors(to, from); const len = seg.length()
+    ray.set(from, seg.divideScalar(len)); ray.far = len + pad
+    return ray.intersectObjects(blocks, true)[0]?.distance
+  }
+  let scanT = 0, pulled = 0, frames = 0, inStone = 0
+  const camtest = params.get('camtest') // proof: an orbit swept out past the barrow-door stones, low over the ground
+
   const dirOf = () => {
     const f = (keys.has('w') || keys.has('arrowup')) - (keys.has('s') || keys.has('arrowdown'))
     const r = (keys.has('d') || keys.has('arrowright')) - (keys.has('a') || keys.has('arrowleft'))
@@ -146,7 +163,9 @@ export async function createHero(ctx) {
     return [-Math.sin(yaw) * f + Math.cos(yaw) * r, -Math.cos(yaw) * f - Math.sin(yaw) * r]
   }
 
-  window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), strapSkin: strap?.skin.length ?? 0, strapLift: strap?.lift.map(x => +x.toFixed(3)) })
+  window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), strapSkin: strap?.skin.length ?? 0, strapLift: strap?.lift.map(x => +x.toFixed(3)),
+    cam: { blocks: blocks.length, pulled, frames, inStone: camtest ? inStone : undefined }, // frames pulled in front of a block / inside one
+    hold: held && { secs: +(ctx.time - held.t).toFixed(2), drift: +Math.max(...snap().map((q, i) => Math.abs(q - held.pose[i]))).toFixed(5) } })
 
   return {
     update(dt) {
@@ -174,13 +193,29 @@ export async function createHero(ctx) {
       root.rotation.y = face
       if (strap) { root.updateMatrixWorld(true); aim(strap, dt) }
 
-      // Camera: orbit target at chest height, never under the ground.
+      // Camera: orbit target at head height, never under the ground, never inside a block.
       camTarget.set(pos.x, pos.y + 1.5, pos.z)
+      let R = DIST
+      if (camtest) {
+        yaw += dt * 0.5; pitch = 0.1 + 0.1 * Math.sin(ctx.time * 0.8)
+        const door = ctx.ring?.barrow.door
+        if (door) R = THREE.MathUtils.clamp(Math.hypot(door.x - pos.x, door.z - pos.z) + 1.5, DIST, 16)
+      }
       const cp = Math.cos(pitch)
-      camGoal.set(camTarget.x + Math.sin(yaw) * cp * DIST, camTarget.y + Math.sin(pitch) * DIST, camTarget.z + Math.cos(yaw) * cp * DIST)
+      camGoal.set(camTarget.x + Math.sin(yaw) * cp * R, camTarget.y + Math.sin(pitch) * R, camTarget.z + Math.cos(yaw) * cp * R)
       camGoal.y = Math.max(camGoal.y, ctx.heightAt(camGoal.x, camGoal.z) + 0.4)
       camera.position.lerp(camGoal, 1 - Math.exp(-dt * 12))
+      if ((scanT -= dt) <= 0) { scanT = 1; blocks.length = 0; scene.traverse(o => o.userData.cameraBlock && blocks.push(o)) }
+      const d = hitAt(camTarget, camera.position, 0.3) // after the lerp, so a lagging camera never trails through stone
+      if (d !== undefined) { camera.position.copy(camTarget).addScaledVector(seg, Math.max(d - 0.3, 0.2)); pulled++ }
       camera.lookAt(camTarget.x, camTarget.y + 0.3, camTarget.z)
+      frames++
+      if (camtest) { // independent check: the camera and its near-plane corners all on his side of every block
+        camera.updateMatrixWorld()
+        let inside = hitAt(camTarget, camera.position, 0) !== undefined
+        for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) inside ||= hitAt(camTarget, corner.set(x, y, -1).unproject(camera), 0) !== undefined
+        inStone += inside
+      }
     },
   }
 }
