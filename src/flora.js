@@ -8,11 +8,12 @@ import { uniform, vec3, float, attribute, vertexColor, positionLocal, positionWo
 // glow: emissive colour at full night × power; day: the bells keep a little of it by day (they leak the light they drink);
 // lift / trans: sunlight through the leaves by day, all round / when looking toward the sun (×1.5 where the mask is);
 // tint: base colour the leaves drift toward under the moon; lean: m the top moves per m/s of wind (× height² along the
-// plant); vine: the same for the tree's vines, growing toward their tips; tau: s the plant lags the wind; far: draw range m.
+// plant); vine: the same for the tree's vines, growing toward their tips; tau: s the plant lags the wind; far: draw range m;
+// foot: m (× scale) round the base that must stand on ground — the reach of leaves and bells, a tree's trunk and buttresses.
 const KINDS = {
-  bellflower: { glow: [1.0, 0.5, 0.14], power: 1.6, day: 0.25, lift: 0.06, trans: 0.25, lean: 0.06, tau: 0.6, far: 260, scale: [0.8, 1.45] },
-  fern: { glow: [0.6, 0.28, 1.0], power: 1.5, lift: 0.06, trans: 0.15, tint: [0.2, 0.1, 0.36], lean: 0.035, tau: 0.35, far: 180, scale: [1.0, 1.6] },
-  vinetree: { glow: [0.25, 1.0, 0.65], power: 1.4, lift: 0.04, trans: 0.2, lean: 0.006, vine: 0.09, tau: 1.6, far: 4000, scale: [0.9, 1.25] },
+  bellflower: { glow: [1.0, 0.5, 0.14], power: 1.6, day: 0.25, lift: 0.06, trans: 0.25, lean: 0.06, tau: 0.6, far: 260, scale: [0.8, 1.45], foot: 2.8 },
+  fern: { glow: [0.6, 0.28, 1.0], power: 1.5, lift: 0.06, trans: 0.15, tint: [0.2, 0.1, 0.36], lean: 0.035, tau: 0.35, far: 180, scale: [1.0, 1.6], foot: 1.4 },
+  vinetree: { glow: [0.25, 1.0, 0.65], power: 1.4, lift: 0.04, trans: 0.2, lean: 0.006, vine: 0.09, tau: 1.6, far: 4000, scale: [0.9, 1.25], foot: 8 },
 }
 // The start view (hero at the origin looking −Z, the rock and lake to the right, the castle 17° left): a giant tree on
 // the crest at the left, placed and turned so no vine crosses the castle or the egg, beside Crestwatch's road and beyond
@@ -30,6 +31,12 @@ const R = 560 // flora grows within this many metres of the start
 const OPEN = (x, z) => Math.abs(x) < 9 && z > -75 && z < 25 // the start meadow the hero walks into stays open
 // shortcut: the meadow end of Crestwatch's road (settlements.js) typed in here; read a road list if settlements publishes one
 const ROAD = [[-84, -158], [-94, -172], [-104, -186], [-110, -200]]
+// shortcut: ground rects typed in from field.js:238 (the 800 m terrain) / settlements.js:295 (its far tile); read ctx ground extents if field publishes them
+const GROUND = [[-400, 400, -400, 400], [-760, 640, 400, 1500]] // x0, x1, z0, z1
+const inGround = (x, z) => GROUND.some(([a, b, c, d]) => x > a && x < b && z > c && z < d)
+// The square of half-side r round (x, z) is on ground when its four corners are (exact for these two rects, joined at z 400).
+const onGround = (x, z, r) => inGround(x - r, z - r) && inGround(x + r, z - r) && inGround(x - r, z + r) && inGround(x + r, z + r)
+console.assert(onGround(0, 400, 8) && !onGround(437, 305, 8) && !onGround(-403, -200, 8) && !onGround(395, 395, 8), 'flora: onGround')
 const rnd = (s => () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296)(11)
 
 export async function createFlora(ctx) {
@@ -41,8 +48,8 @@ export async function createFlora(ctx) {
     .map((g, i) => { let geo; g.scene.traverse(o => { if (o.isMesh) geo = o.geometry }); return [names[i], geo] }))
 
   const H = (x, z) => ctx.heightAt(x, z)
-  function free(x, z, r, slope) {
-    if (Math.hypot(x, z) > R) return false
+  function free(x, z, r, slope, foot = r) {
+    if (Math.hypot(x, z) > R || !onGround(x, z, foot)) return false
     for (const c of ctx.keepClear) if (Math.hypot(x - c.x, z - c.z) < c.r + r) return false
     for (const t of lists.vinetree) if (Math.hypot(x - t.x, z - t.z) < 8 * t.s + r) return false // trunk and buttresses
     for (const [a, b] of ROAD) if (Math.hypot(x - a, z - b) < 6 + r) return false
@@ -58,12 +65,12 @@ export async function createFlora(ctx) {
   const pick = k => { const [a, b] = KINDS[k].scale; return a + (b - a) * rnd() }
 
   // Groves on the rises: grid points standing above the mean of a 45 m ring round them, best first, 170 m apart;
-  // none in the start vista (−28° … +40° of straight ahead) or across the dragon's figure-eight, which flies ~15 m up.
+  // none within 100 m of the start or in its vista (−28° … +40° of straight ahead) or across the dragon's figure-eight, which flies ~15 m up.
   const bearing = (x, z) => Math.atan2(x, -z) * 180 / Math.PI
   const cand = []
   for (let gx = -R; gx <= R; gx += 30) for (let gz = -R; gz <= R; gz += 30) {
     const x = gx + (rnd() - 0.5) * 20, z = gz + (rnd() - 0.5) * 20, b = bearing(x, z)
-    if (b > -28 && b < 40) continue
+    if ((b > -28 && b < 40) || Math.hypot(x, z) < 100) continue // and none round the start: a canopy reaches ~34 m
     if (x > -150 && x < 40 && z > -150 && z < -45) continue
     if (!free(x, z, 16, 0.12)) continue
     let ring = 0, low = 0
@@ -101,7 +108,7 @@ export async function createFlora(ctx) {
       d++
       for (let i = 0, k = 3 + Math.floor(rnd() * 7); i < k; i++) {
         const x = cx + (rnd() + rnd() - 1) * spread, z = cz + (rnd() + rnd() - 1) * spread
-        if (OPEN(x, z) || !free(x, z, 0.5, 0.35) || list.some(p => Math.abs(p.x - x) < gap && Math.abs(p.z - z) < gap)) continue
+        if (OPEN(x, z) || !free(x, z, 0.5, 0.35, KINDS[kind].foot * KINDS[kind].scale[1]) || list.some(p => Math.abs(p.x - x) < gap && Math.abs(p.z - z) < gap)) continue
         add(kind, x, z, pick(kind), rnd() * 6.28)
       }
     }
@@ -173,11 +180,11 @@ export async function createFlora(ctx) {
 
   // Every base against the live ground (heightAt may be re-wrapped after create): max |base − heightAt| in metres.
   window.__probes.flora = () => {
-    let gap = 0
-    for (const K of kinds) for (const p of K.list) gap = Math.max(gap, Math.abs(p.y - ctx.heightAt(p.x, p.z)))
+    let gap = 0, off = 0 // off: plants whose footprint leaves the ground (heightAt answers over the void too, so gap cannot see that)
+    for (const K of kinds) for (const p of K.list) gap = Math.max(gap, Math.abs(p.y - ctx.heightAt(p.x, p.z))), off += !onGround(p.x, p.z, K.cfg.foot * p.s)
     return {
       ...Object.fromEntries(kinds.map(K => [K.name, K.list.length])), drawn: kinds.map(K => K.mesh.count),
-      groves: groves.length, trees: lists.vinetree.map(t => [Math.round(t.x), Math.round(t.z)]), maxBaseGap: +gap.toFixed(3), night: +ctx.night.toFixed(2),
+      groves: groves.length, trees: lists.vinetree.map(t => [Math.round(t.x), Math.round(t.z)]), maxBaseGap: +gap.toFixed(3), offGround: off, night: +ctx.night.toFixed(2),
       cam: [camera.position.x, camera.position.y, camera.position.z].map(v => +v.toFixed(1)),
     }
   }
