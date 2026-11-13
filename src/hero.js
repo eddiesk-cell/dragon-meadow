@@ -142,7 +142,9 @@ export async function createHero(ctx) {
   })
 
   // Planted-foot slide (art/hero/motion: < 0.3 m/s): a ball of the foot on the ground should not move over it. Measured
-  // per clip, from 0.5 s after it starts (the crossfade slides by design); ?side=1 films him from the side for the proof.
+  // per clip, from 0.5 s after it starts (the crossfade slides by design); "on the ground" is his own sole plane (the root's
+  // height: the clip has no foot IK, so on a slope the terrain under a swinging foot would count it as planted).
+  // ?side=1 films him from the side for the proof.
   const balls = ['leftToes', 'rightToes'].map(n => ({ bone: model.getObjectByName(n), at: new THREE.Vector3(), down: false }))
   let slide = 0, slideN = 0, clipT = 0, slideClip = ''
   const sideView = params.get('side') ? Math.PI / 2 : 0
@@ -271,7 +273,7 @@ export async function createHero(ctx) {
       clipT += dt
       for (const b of balls) {
         const was = b.down, px = b.at.x, pz = b.at.z
-        b.bone.getWorldPosition(b.at); b.down = b.at.y - ctx.heightAt(b.at.x, b.at.z) < 0.03
+        b.bone.getWorldPosition(b.at); b.down = b.at.y - pos.y < 0.03
         if (was && b.down && clipT > 0.5 && dt > 0) { slide += Math.hypot(b.at.x - px, b.at.z - pz) / dt; slideN++ }
       }
 
