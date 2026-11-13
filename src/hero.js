@@ -126,7 +126,7 @@ export async function createHero(ctx) {
 
   // Orbit: drag the mouse/finger. Camera starts behind the hero (hero faces -Z).
   // Deltas from clientX/Y: movementX is 0 for touch in Safari and for synthetic events.
-  let yaw = 0, pitch = 0.10, drag = null
+  let yaw = (+params.get('yaw') || 0) * Math.PI / 180, pitch = 0.10, drag = null // ?yaw=deg: start heading, for proof clips
   const el = ctx.renderer.domElement
   // One pointer steers; a second finger is ignored instead of making yaw jump between the two.
   el.addEventListener('pointerdown', e => { if (drag) return; drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; el.setPointerCapture?.(e.pointerId) })
