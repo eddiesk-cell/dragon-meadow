@@ -5,7 +5,7 @@
 | wreckback | 32a447db-04f0-441e-8317-99569b741a3d | hf_20261112_144851_49c49b9f-33db-4848-aacb-e93f9a0c72fd.glb |
 | lantern-cap | 9d1dc30c-a99d-4db6-b279-7acbdbf2e46b | hf_20261112_144857_3c3de932-749c-4d0d-a89b-18e37583fc3e.glb |
 | driftwight | 6b5ba5ad-92d3-4c8a-a916-8876bf0f80f9 | hf_20261112_144921_436cb222-030c-4241-8759-3db8ce82b2e2.glb |
-| rootbinder | 92ca136c-8625-441a-a5b1-bb50fc129bd0 | job c1cd9fd2-f643-4738-a366-6234fdd0fc07 (2026-11-14, 11 credits; the 2026-11-12 one was lost) |
+| rootbinder | 92ca136c-8625-441a-a5b1-bb50fc129bd0 | hf_20261113_175433_c1cd9fd2-f643-4738-a366-6234fdd0fc07.glb (2026-11-14, 11 credits; the 2026-11-12 one was lost) |
 | stiltstalker | e2bc9716-176e-4585-852e-9703cb453a62 | job a2d43902-3b6e-4c66-b79c-7c31978d29b1 |
 | tolling-warden | long arms 8fd11c97-ceaf-48aa-bde6-045f2edaf9e5 (v1 81677460, v2 6f6569d5 too short) | job e2824a27-6318-429a-9913-d1bbdc146d25 |
 | scarhorn | long arms 33a69875-3700-4f9c-be40-c208cabf862e (v1 623a5bfa, v2 0e64aaf9) | job aa1ac42f-78fe-4354-b60e-0c3b8c3ce27c |
