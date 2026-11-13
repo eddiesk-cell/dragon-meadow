@@ -82,9 +82,9 @@ export async function createAudio(ctx) {
   // Hero: a step when a foot that swung clear (6 cm over its stance) plants: back within 3.5 cm of its stance AND its world
   // speed under 30 % of that swing's fastest. Not the end of a fall: a sprinting foot pauses mid-swing at ~0.4 m while still
   // moving at 9 m/s, and a walking one dips at toe-off. The stance is the foot's lowest over the last stride (0.8-1.6 s),
-  // so it follows the clip.
+  // so it follows the clip. And held planted 12 ms (two frames): a foot dipping through in a run-to-walk blend is no step.
   const bones = ['leftFoot', 'rightFoot'].map(n => ctx.heroRig?.model.getObjectByName(n)).filter(Boolean)
-  const foot = bones.map(() => ({ lo: Infinity, prev: Infinity, age: 0, armed: false, peak: 0, x: 0, z: 0 }))
+  const foot = bones.map(() => ({ lo: Infinity, prev: Infinity, age: 0, armed: false, peak: 0, held: -1, x: 0, z: 0 }))
   const ring = ctx.ring
   const surface = (x, z) => pond?.inside(x, z) > 0 ? 'step-water'
     : (ring && Math.hypot(x - ring.center.x, z - ring.center.z) < ring.radius + 3) || towns.some(t => Math.hypot(x - t.x, z - t.z) < t.r) ? 'step-stone' : 'step-grass'
@@ -119,8 +119,9 @@ export async function createAudio(ctx) {
         if (!onFoot) s.armed = false, s.peak = 0 // riding: the feet move with the dragon
         else if (h > floor + 0.06) s.armed = true
         if (s.armed) s.peak = Math.max(s.peak, fv)
-        if (s.armed && s.peak > 1 && fv < 0.3 * s.peak && h < floor + 0.035) {
-          s.armed = false; s.peak = 0
+        s.held = s.armed && s.peak > 1 && fv < 0.3 * s.peak && h < floor + 0.035 ? (s.held < 0 ? 0 : s.held + dt) : -1
+        if (s.held >= 0.012) {
+          s.armed = false; s.peak = 0; s.held = -1
           if (onFoot && speed > 0.5 && !air) {
             const n = surface(v.x, v.z)
             play(n, v, { gain: speed > 3 ? 0.75 : 0.55, rate: speed > 3 ? 1.08 : 1 }); note('step', k ? 'R' : 'L', n)
