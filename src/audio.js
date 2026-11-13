@@ -3,11 +3,12 @@
 // and land, sword swings and hits; the troll's grunts and club impacts; the dragon's wingbeats on each downstroke, its roar
 // when it comes down and lands, and the wind rising with its speed under the rider. Every file is in public/audio/, made
 // locally by tools/audio/gen.py (sounds.json lists them). Reads ctx and the other modules' probes only.
-// Silent until the first key or click (browsers require one); M mutes. Publishes ctx.audio = { listener, play }.
+// Silent until the first key or click (browsers require one); M mutes; ?audio=off leaves it out. Publishes ctx.audio = { listener, play }.
 // ?audio=log keeps a timeline in __probes.audio().log; __probes.audio(true) adds the traces of the feet (height, x, z) and
 // the wing tip (tools/audio/capture.mjs reads the feet's contacts from where they plant, not from this file's height rule).
 export async function createAudio(ctx) {
   const { THREE, scene, camera, params, heroPos } = ctx
+  if (params.get('audio') === 'off') return null // A/B: the world without its sound
   const { smoothstep } = THREE.MathUtils
   const listener = new THREE.AudioListener()
   camera.add(listener)
@@ -65,15 +66,16 @@ export async function createAudio(ctx) {
     return a
   }
   // shortcut: Springwell's centre is PLAN's fixed spot and its streets a 60 m disc; upgrade when settlements publishes them.
-  const crest = window.__probes.settlements?.().crestwatch?.at ?? [-122, -390]
-  const towns = [[-75, 500, 60], [crest[0], crest[1], 70]].map(([x, z, r]) => ({ x, z, r, p: new THREE.Vector3(x, ctx.heightAt(x, z) + 6, z) }))
+  // Crestwatch and the harbour city Asterhaven (198 m walls) from the settlements probe.
+  const st = window.__probes.settlements?.(), crest = st?.crestwatch?.at ?? [-122, -390], city = st?.asterhaven?.at ?? [-1500, 650]
+  const towns = [[-75, 500, 60], [crest[0], crest[1], 70], [city[0], city[1], 200]].map(([x, z, r]) => ({ x, z, r, p: new THREE.Vector3(x, ctx.heightAt(x, z) + 6, z) }))
   // The pond as points 2 m apart: the water source moves to the one nearest the camera, so it laps at the shore you are near.
   const pond = ctx.pond, wet = []
   if (pond) for (let x = -60; x <= 60; x += 2) for (let z = -60; z <= 60; z += 2) if (pond.inside(pond.x + x, pond.z + z) > 0) wet.push([pond.x + x, pond.z + z])
   function startLoops() {
     for (const n of ['theme-day', 'theme-night', 'bed-day', 'bed-night', 'chimes', 'wind']) loops[n] = loop(n)
     if (wet.length) loops.water = loop('water', v.set(pond.x, pond.level, pond.z), 3, 45)
-    towns.forEach((t, i) => (loops['town' + i] = loop('town', t.p, 20, 170)))
+    towns.forEach((t, i) => (loops['town' + i] = loop('town', t.p, t.r / 3, t.r * 2.8))) // heard ~2.8 radii out
     note('loops', Object.keys(loops).filter(k => loops[k]).join(' '))
   }
 
@@ -183,7 +185,7 @@ export async function createAudio(ctx) {
       Object.assign(mix, {
         'theme-day': 0.3 * Math.sqrt(1 - n), 'theme-night': 0.3 * Math.sqrt(n),
         'bed-day': 0.6 * (1 - n) * air2, 'bed-night': 0.55 * n * air2, chimes: 0.3 * n,
-        wind: 0.9 * windAmt, water: 0.8, town0: 0.7, town1: 0.7,
+        wind: 0.9 * windAmt, water: 0.8, town0: 0.7, town1: 0.7, town2: 0.8,
       })
       for (const [k, g] of Object.entries(mix)) loops[k]?.setVolume(g)
       loops.wind?.setPlaybackRate(0.85 + 0.35 * windAmt)
