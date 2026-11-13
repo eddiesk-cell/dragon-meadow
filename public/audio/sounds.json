@@ -1,0 +1,43 @@
+{
+ "bed-day": {
+  "files": [
+   "bed-day.m4a"
+  ],
+  "loop": true
+ },
+ "bed-night": {
+  "files": [
+   "bed-night.m4a"
+  ],
+  "loop": true
+ },
+ "chimes": {
+  "files": [
+   "chimes.m4a"
+  ],
+  "loop": true
+ },
+ "step-grass": {
+  "files": [
+   "step-grass-0.m4a",
+   "step-grass-1.m4a",
+   "step-grass-2.m4a",
+   "step-grass-3.m4a",
+   "step-grass-4.m4a",
+   "step-grass-5.m4a"
+  ],
+  "loop": false
+ },
+ "town": {
+  "files": [
+   "town.m4a"
+  ],
+  "loop": true
+ },
+ "water": {
+  "files": [
+   "water.m4a"
+  ],
+  "loop": true
+ }
+}
