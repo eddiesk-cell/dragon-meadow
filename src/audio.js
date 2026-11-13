@@ -5,7 +5,7 @@
 // locally by tools/audio/gen.py (sounds.json lists them). Reads ctx and the other modules' probes only.
 // Silent until the first key or click (browsers require one); M mutes; ?audio=off leaves it out. Publishes ctx.audio = { listener, play }.
 // ?audio=log keeps a timeline in __probes.audio().log; __probes.audio(true) adds the traces of the feet (height, x, z) and
-// the wing tip (tools/audio/capture.mjs reads the feet's contacts from where they plant, not from this file's height rule).
+// the wing tip (tools/audio/capture.mjs finds the feet's contacts in that trace by its own rule and checks the steps).
 export async function createAudio(ctx) {
   const { THREE, scene, camera, params, heroPos } = ctx
   if (params.get('audio') === 'off') return null // A/B: the world without its sound
