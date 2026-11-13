@@ -291,6 +291,7 @@ export async function createSettlements(ctx) {
   const gbAt = (x, z) => inPatch(x, z) ? [at(grass, x, z), at(bare, x, z)] : [1, 0]
   scene.add(tile(THREE, ctx, X0, 400, S, Z0 + S - 400, 2, groundMat, gbAt))
   scene.add(tile(THREE, ctx, -760, 400, 1400, 1100, 10, groundMat, undefined, (x, z) => x > X0 + 2 && x < X0 + S - 2 && z < Z0 + S - 2 ? 1.5 : 0))
+  ctx.ground.rects.push([-760, 640, 400, 1500]) // that tile's extent, for whoever places things on the ground (flora)
 
   // the Brightwater's surface: the sky in it at a glance, deep teal looking down, streaks drifting downstream
   const water = new THREE.MeshStandardNodeMaterial({ roughness: 0.12, metalness: 0 })

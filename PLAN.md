@@ -686,3 +686,11 @@ meshes. No per-frame cost growth: test only trees within 30 m of the hero.
   full table log one clear error instead of throwing mid-create.
 - **CHECK:** probe `field.ground` lists the rects; `?carvetest=1` with water2's patch present → `field.patches` counts every
   caller with no error; `controls-check` 7/7; default-view fps ≥ 50.
+
+## Wave B follow-ups, part 3 (2026-11-13, from the water2 / field-ground reviews, both passed round 1)
+Contract rows added: `water` also replaces `heightAt` — inside the pond the hero stands on a wading floor 0.45 m under
+the surface, not the 1.2 m bed (modules loaded before water never wade; harmless). `ctx.pond` (writer: water) is the
+meadow's own hollow flooded to -0.5 m (~2390 m², x -13..53, z -76..-28, deepest (14.4, -52.2)), no longer an ellipse:
+read its shape only through `ctx.pond.inside(x, z)`. `ctx.ground.rects` (writers: field = the 800 m terrain, settlements
+= its far tile [-760, 640, 400, 1500]) is what flora places on; ground patch slots are 6, 3 used by default (ring,
+settlements, water). Shore camera for water shots: `fieldcam=6,1.8,-25,-10,0,-62`.

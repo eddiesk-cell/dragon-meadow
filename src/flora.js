@@ -31,12 +31,6 @@ const R = 560 // flora grows within this many metres of the start
 const OPEN = (x, z) => Math.abs(x) < 9 && z > -75 && z < 25 // the start meadow the hero walks into stays open
 // shortcut: the meadow end of Crestwatch's road (settlements.js) typed in here; read a road list if settlements publishes one
 const ROAD = [[-84, -158], [-94, -172], [-104, -186], [-110, -200]]
-// shortcut: ground rects typed in from field.js:238 (the 800 m terrain) / settlements.js:295 (its far tile); read ctx ground extents if field publishes them
-const GROUND = [[-400, 400, -400, 400], [-760, 640, 400, 1500]] // x0, x1, z0, z1
-const inGround = (x, z) => GROUND.some(([a, b, c, d]) => x > a && x < b && z > c && z < d)
-// The square of half-side r round (x, z) is on ground when its four corners are (exact for these two rects, joined at z 400).
-const onGround = (x, z, r) => inGround(x - r, z - r) && inGround(x + r, z - r) && inGround(x - r, z + r) && inGround(x + r, z + r)
-console.assert(onGround(0, 400, 8) && !onGround(437, 305, 8) && !onGround(-403, -200, 8) && !onGround(395, 395, 8), 'flora: onGround')
 const rnd = (s => () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296)(11)
 
 export async function createFlora(ctx) {
@@ -46,6 +40,12 @@ export async function createFlora(ctx) {
   const names = Object.keys(KINDS)
   const geos = Object.fromEntries((await Promise.all(names.map(n => loader.loadAsync(`${import.meta.env.BASE_URL}models/flora/${n}.glb`))))
     .map((g, i) => { let geo; g.scene.traverse(o => { if (o.isMesh) geo = o.geometry }); return [names[i], geo] }))
+
+  // Ground rects [x0, x1, z0, z1]: field's 800 m terrain plus whatever later modules push (settlements' far tile).
+  const inGround = (x, z) => ctx.ground.rects.some(([a, b, c, d]) => x > a && x < b && z > c && z < d)
+  // The square of half-side r round (x, z) is on ground when its four corners are (exact for rects that join edge to edge).
+  const onGround = (x, z, r) => inGround(x - r, z - r) && inGround(x + r, z - r) && inGround(x - r, z + r) && inGround(x + r, z + r)
+  console.assert((ctx.ground.rects.length < 2 || onGround(0, 400, 8)) && !onGround(437, 305, 8) && !onGround(-403, -200, 8) && !onGround(395, 395, 8), 'flora: onGround')
 
   const H = (x, z) => ctx.heightAt(x, z)
   function free(x, z, r, slope, foot = r) {
