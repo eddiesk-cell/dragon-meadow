@@ -1,8 +1,8 @@
 #!/bin/bash
 # Scarhorn end to end from the desk (the work runs on the Mac Studio through studio-rig.sh): rig on the hand-placed
-# joints -> the entry's clips that exist in the hero's 51 (its Kimodo ram_charge is not made yet), long arms spread 30 deg
-# so they hang clear of the fleece and the head kept at its rest gaze -> fleece.py (arm icicles off the thighs) ->
-# idle.png, clips.png, measurements -> public/models/bestiary/scarhorn.glb.
+# joints -> the entry's clips that exist in the hero's 51, long arms spread 30 deg so they hang clear of the fleece and
+# the head kept at its rest gaze -> fleece.py (arm icicles off the thighs) -> idle.png, clips.png, measurements ->
+# public/models/bestiary/scarhorn.glb -> charge.sh adds the Kimodo ram_charge (on the desk).
 #   art/bestiary/scarhorn/build.sh
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
@@ -22,3 +22,4 @@ ssh -4 guru-studio "cd $R && $B -b -noaudio -P fleece.py -- full.glb full.glb > 
   $B -b -noaudio -P measure.py -- full.glb Idle:0,10,24,40 Walk:5,15 2>&1 | grep MEASURE"
 rsync -a guru-studio:$R/idle.png guru-studio:$R/clips.png guru-studio:$R/full.glb $A/
 $HOME/.local/homebrew/bin/python3.12 tools/hero/slim.py $A/full.glb public/models/bestiary/scarhorn.glb | tail -1
+$A/charge.sh
