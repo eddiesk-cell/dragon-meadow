@@ -3,8 +3,9 @@
 // identity hashed from the integer world cell, so the field stays nailed down as the tile slides.
 import {
   Fn, uniform, uniformArray, attribute, varying, vec2, vec3, vec4, float, int, uint,
-  floor, sin, cos, mix, smoothstep, step, saturate, length, normalize, dot, pow, min, max, exp,
+  floor, sin, cos, mix, smoothstep, step, saturate, length, normalize, dot, pow, min, max, exp, reflect,
   cameraPosition, cameraViewMatrix, positionWorld, positionLocal, positionViewDirection, normalView, vertexColor, texture,
+  mx_fractal_noise_float,
 } from 'three/tsl'
 
 const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k) }
@@ -164,6 +165,7 @@ export async function createField(ctx) {
     const fadeA = fadeIn > 0 ? smoothstep(fadeIn * 0.72, fadeIn, dist) : float(1)
     const keep = fadeA.mul(float(1).sub(smoothstep(fadeOut * 0.75, fadeOut, dist)))
       .mul(smoothstep(-36, -30, ground)).mul(float(1).sub(smoothstep(0.02, 0.2, g.y))) // no grass in the sea or down the cliff
+      .mul(uAloft.oneMinus()) // from the dragon's back a blade is under a pixel: the ground carries the meadow (meadowFar)
     const alive = step(r(3), keep)
     const patch = lowNoise(world, 0.11, 0.07), bloom = lowNoise(world.add(57), 0.045, 0.06)
     const under = head ? float(0) : step(r(4), 0.35) // short under-mat closes the gaps between tall crowns
@@ -247,22 +249,33 @@ export async function createField(ctx) {
   ]
   ctx.grass = { blades: new THREE.Group().add(...layers), flowers: new THREE.Group().add(...flowerLayers) } // e.g. water hides both for its mirror pass
   scene.add(ctx.grass.blades, ctx.grass.flowers)
+  const grassMeshes = [...layers, ...flowerLayers]
 
   // --- the meadow from the air. Up there a blade is smaller than a pixel, so the ground under the blades must carry the
   // field's own look: the grass's jade / yellow-green drifts and broad light-dark patches (same noise as the blades), flower
   // drifts as colour, darker hollows, slopes that catch the sun or fall into shade, and wide warm and cool meadows.
+  // Colours are the blades' own hues pulled greener (seen from above the gold tips no longer stack up into olive).
   const meadowFar = xz => {
-    const drift = lowNoise(xz.add(31), 0.06, 0.04), patch = lowNoise(xz, 0.11, 0.07), bloomN = lowNoise(xz.add(57), 0.045, 0.06)
-    const body = mix(vec3(0.012, 0.09, 0.06), vec3(0.045, 0.15, 0.025), smoothstep(0.3, 0.75, drift))
-    const blades = mix(body, mix(vec3(0.36, 0.33, 0.07), vec3(0.27, 0.34, 0.08), patch.mul(0.5)), 0.42)
-      .mul(lowNoise(xz.add(13), 0.035, 0.05).mul(0.35).add(0.8))
-      .mul(mix(vec3(0.86, 1, 1.12), vec3(1.12, 1, 0.8), lowNoise(xz.add(97), 0.008, 0.006))) // wide jade and gold meadows
-    const flowers = mix(blades, vec3(0.6, 0.48, 0.44), smoothstep(0.55, 0.95, bloomN).mul(0.22))
+    const dist = length(xz.sub(cameraPosition.xz)), fine = smoothstep(700, 200, dist), speckW = smoothstep(320, 140, dist)
+    const wide = lowNoise(xz.add(97), 0.008, 0.006), drift = lowNoise(xz.add(31), 0.06, 0.04), patch = lowNoise(xz, 0.11, 0.07)
+    const bloom = smoothstep(0.5, 0.9, lowNoise(xz.add(57), 0.045, 0.06)) // the blades' own flower drifts
+    const jade = vec3(0.03, 0.12, 0.05), fresh = vec3(0.08, 0.19, 0.02), gold = vec3(0.15, 0.22, 0.03)
+    const tuft = mx_fractal_noise_float(vec3(xz.mul(0.13), 0), 2, 2, 0.5).mul(fine) // 4–10 m tufts and clumps, gone before they alias
+    const col = mix(mix(jade, fresh, smoothstep(0.2, 0.8, drift.mul(0.6).add(wide.mul(0.4)))), gold, smoothstep(0.55, 0.95, patch).mul(wide.mul(0.4).add(0.12)))
+      .mul(tuft.mul(0.3).add(1))
+      .mul(mix(float(0.7), float(1.08), smoothstep(-2.5, 2, rollTSL(xz.x, xz.y)))) // hollows darker, crowns catch the light
+    // Flowers: within a drift, a head every few metres (white, gold, poppy, blush, as on foot) — dots from the air, a warm
+    // tint once they are smaller than a pixel.
+    const cell = floor(xz.div(2.6)), h = hash(cell, 700), at = vec2(hash(cell, 701), hash(cell, 702)).mul(1.8).add(0.4)
+    const head = smoothstep(0.42, 0.26, length(xz.div(2.6).sub(cell).mul(2.6).sub(at))).mul(step(h, bloom.mul(0.55).add(0.04)))
+    const hp = hash(cell, 703)
+    const petal = mix(mix(vec3(0.8, 0.78, 0.68), vec3(0.85, 0.55, 0.05), step(0.4, hp)), mix(vec3(0.75, 0.16, 0.04), vec3(0.85, 0.45, 0.55), step(0.85, hp)), step(0.7, hp))
+    const flowers = mix(mix(col, vec3(0.3, 0.25, 0.05), bloom.mul(0.25).mul(speckW.oneMinus())), petal, head.mul(speckW))
     const swell = p => lowNoise(p, 0.045, 0.03).mul(4).add(lowNoise(p.add(71), 0.1, 0.075).mul(1.5)) // a fake swell, metres
     const g = vec2(swell(xz.add(vec2(1.5, 0))).sub(swell(xz.sub(vec2(1.5, 0)))), swell(xz.add(vec2(0, 1.5))).sub(swell(xz.sub(vec2(0, 1.5))))).div(3)
     // the sun's share of the light (~3/4 by day) follows the swell's slope: Lambert relative to flat ground, 1 − g·L.xz / L.y
-    const lit = mix(float(1), min(max(float(1).sub(dot(g, uSun.xz).div(max(uSun.y, 0.15)).mul(0.45)), 0), 1.6), smoothstep(-0.05, 0.1, uSun.y))
-    return flowers.mul(mix(float(0.72), float(1.06), smoothstep(-2.5, 2, rollTSL(xz.x, xz.y)))).mul(lit.mul(0.75).add(0.25))
+    const lit = mix(float(1), min(max(float(1).sub(dot(g, uSun.xz).div(max(uSun.y, 0.15)).mul(0.3)), 0), 1.5), smoothstep(-0.05, 0.1, uSun.y))
+    return flowers.mul(lit.mul(0.75).add(0.25))
   }
   // Meadow ground from the terrain's vertex colour (grass green, or rock on steep faces: b/g 0.33 vs 0.86), grass × and bare.
   // w = 0 is the look on foot, unchanged; w = 1 the look from the air.
@@ -370,10 +383,18 @@ export async function createField(ctx) {
   }
   let farTris = 0
 
-  // --- sea, far below the cliff: deep teal looking down, the sky in it toward the horizon (so it meets the haze softly)
-  const seaMat = new THREE.MeshStandardNodeMaterial({ roughness: 0.25, metalness: 0 })
-  seaMat.colorNode = vec3(0.025, 0.1, 0.14)
+  // --- sea, far below the cliff: deep teal looking down, the sky in it toward the horizon (so it meets the haze softly), and
+  // the sun's glitter as a gold path broken by small swells (its own term, not a GGX lobe, so it never burns white)
+  const seaMat = new THREE.MeshLambertNodeMaterial()
+  seaMat.colorNode = vec3(0.02, 0.085, 0.13)
+  const sw = positionWorld.xz, V = normalize(cameraPosition.sub(positionWorld))
+  const calm = smoothstep(900, 200, length(positionWorld.sub(cameraPosition))) // swells under a pixel alias: far off the glitter is one soft gold lane
+  const wave = (a, b, f, t) => sin(sw.x.mul(a).add(sw.y.mul(b)).add(uTime.mul(t))).mul(f).mul(calm)
+  const N = normalize(vec3(wave(0.21, 0.13, 0.05, 1.1).add(wave(0.67, -0.43, 0.035, -1.9)), 1, wave(-0.17, 0.29, 0.05, 1.3).add(wave(0.49, 0.71, 0.035, 2.3))))
+  const glint = pow(max(dot(reflect(V.negate(), N), uSun), 0), mix(float(14), float(90), calm)).mul(mix(float(0.3), float(1), calm))
+    .mul(smoothstep(-0.02, 0.08, uSun.y)).mul(float(1).sub(uNight))
   seaMat.emissiveNode = uniform(ctx.fogColor).mul(vec3(0.62, 0.8, 1)).mul(pow(float(1).sub(saturate(dot(normalView, positionViewDirection))), 5).mul(0.5).add(0.04)) // the bluer sky above the haze band
+    .add(vec3(1.1, 0.72, 0.32).mul(glint.mul(0.9)))
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(6000, 3000).rotateX(-Math.PI / 2), seaMat)
   sea.position.set(0, -40, -1650)
   scene.add(sea)
@@ -419,6 +440,7 @@ export async function createField(ctx) {
       uNight.value = ctx.night
       uCam.value.set(camera.position.x, camera.position.z)
       uHero.value.copy(ctx.heroPos)
+      for (const m of grassMeshes) m.visible = uAloft.value < 0.999 // gone, not just thinned to nothing, so flight pays no vertex cost
       steps(dt, t)
     },
   }

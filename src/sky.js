@@ -3,7 +3,7 @@
 // so a fully hazed hill is exactly the sky behind it: no hard line. Clouds, stars, aurora and the moon live above the haze.
 import {
   Fn, If, vec2, vec3, vec4, float, uniform, normalize, dot, max, min, pow, exp, smoothstep, mix, length, clamp, atan, abs,
-  sin, fract, floor, step, positionWorld, cameraPosition, normalWorldGeometry, fog, mx_fractal_noise_float, mx_worley_noise_float,
+  sin, fract, floor, step, positionWorld, cameraPosition, normalWorldGeometry, fog, mx_fractal_noise_float, mx_worley_noise_float, renderGroup,
 } from 'three/tsl'
 
 const TAU = Math.PI * 2
@@ -33,15 +33,19 @@ export async function createSky(ctx) {
   const moonDir = new THREE.Vector3()
   ctx.moonDir = moonDir // extra, read-only for others: direction TO the moon
 
-  const uSun = uniform(ctx.sunDir), uMoon = uniform(moonDir), uHorizon = uniform(ctx.fogColor)
-  const uZenith = uniform(pal.zenith), uGlow = uniform(pal.glow), uCloudLit = uniform(pal.cloudLit), uCloudShade = uniform(pal.cloudShade)
-  const uDisc = uniform(C()), uNight = uniform(0), uCover = uniform(0.1), uTime = uniform(0)
+  // Every live uniform sits in the render group: the fog is compiled into every material in the scene, and an object-group
+  // uniform is only re-sent with a material three refreshes — a plain glb or MeshStandard material (settlements' harbour sea)
+  // kept its first frame's values, so its fog never went to night or took the aerial tint. One shared buffer, sent per render.
+  const live = v => uniform(v).setGroup(renderGroup)
+  const uSun = live(ctx.sunDir), uMoon = live(moonDir), uHorizon = live(ctx.fogColor)
+  const uZenith = live(pal.zenith), uGlow = live(pal.glow), uCloudLit = live(pal.cloudLit), uCloudShade = live(pal.cloudShade)
+  const uDisc = live(C()), uNight = live(0), uCover = live(0.1), uTime = live(0)
   // ctx.aloft (field): 0 on foot … 1 on the dragon's back. Looking down from up there the air between eye and land is lit
   // from above with the land dark behind it: a bluer, deeper veil than the pale horizon band seen on foot. It ramps in over
-  // the first 3° below the horizon, so the land (fogged) and the sky dome below the horizon (where the land runs past the far
+  // the first 0.8° below the horizon, so the land (fogged) and the sky dome below the horizon (where the land runs past the far
   // plane) take the same colour and the far land still melts into the horizon with no line.
-  const uAloft = uniform(0)
-  const aerial = d => mix(vec3(1), vec3(0.42, 0.56, 0.8), smoothstep(0, 0.05, d.y.negate()).mul(uAloft))
+  const uAloft = live(0).onRenderUpdate(() => ctx.aloft ?? 0)
+  const aerial = d => mix(vec3(1), vec3(0.46, 0.6, 0.8), smoothstep(0, 0.014, d.y.negate()).mul(uAloft))
 
   // Haze: horizon→zenith gradient, a warm glow round the sun and along its horizon, a cool halo round the moon.
   // The pale band holds to ~2° (the crest at ~4° dissolves in it); above, the zenith takes over: by ~10° by day,
@@ -51,7 +55,8 @@ export async function createSky(ctx) {
     const base = mix(uHorizon, uZenith, pow(smoothstep(0.03, mix(0.3, 0.15, uNight), e), mix(0.5, 1, uNight)))
     const mu = max(dot(d, uSun), 0)
     const az = max(dot(normalize(d.xz.add(1e-4)), normalize(uSun.xz.add(1e-4))), 0)
-    const glow = pow(mu, 150).mul(0.3).add(pow(mu, 500).mul(0.6)).add(pow(az, 6).mul(exp(e.mul(-14))).mul(0.3))
+    // the glow along the sun's horizon; from the air it fades below the horizon too (on foot the land there is the horizon)
+    const glow = pow(mu, 150).mul(0.3).add(pow(mu, 500).mul(0.6)).add(pow(az, 6).mul(exp(max(e, d.y.negate().mul(uAloft)).mul(-14))).mul(0.3))
     const halo = pow(max(dot(d, uMoon), 0), 120).mul(uNight).mul(vec3(0.06, 0.08, 0.16))
     // By day the glow partly replaces the blue rather than adding to it, so round the sun the sky turns gold, not white.
     // Round the sun by day the blue gives way to a gold sky (mixed, not added: gold over blue would turn pink).
@@ -127,7 +132,7 @@ export async function createSky(ctx) {
   // Aerial perspective, Phase 6: the world shows through. Thin air (scale height 200 m): ~40 % at 600 m, ~65 % at 1 km,
   // ~92 % at 2 km, finished by 2.9 km; plus a low haze (scale height 20 m) that softens the land near the ground — ~20 %
   // at 100 m — while the sky islands stay readable. Thicker at night.
-  const uFogK = uniform(1)
+  const uFogK = live(1)
   const toFrag = positionWorld.sub(cameraPosition), dist = length(toFrag), x = max(dist.sub(15), 0)
   const avgY = clamp(positionWorld.y.add(cameraPosition.y).mul(0.5), -40, 600)
   const air = x.mul(0.0008).add(x.mul(0.0005).pow(2)).mul(exp(avgY.mul(-1 / 200)))
@@ -143,8 +148,8 @@ export async function createSky(ctx) {
   const lip = pw.z.add(225).div(60)
   const mist = exp(lip.mul(lip).negate()).mul(exp(max(pw.y.sub(21), 0).mul(-1 / 8))).mul(smoothstep(50, 200, dist)).mul(7)
     .mul(mix(float(1), bank.mul(0.1).add(0.02), uAloft))
-  const thick = air.add(ground).mul(mix(float(1), 0.6, uAloft)).add(mist) // and clearer air up there: distance softens, never milks
-  const fogF = max(float(1).sub(exp(thick.mul(uFogK).negate())), smoothstep(2300, 2900, dist))
+  const thick = air.add(ground).mul(mix(float(1), 0.45, uAloft)).add(mist) // and clearer air up there: distance softens, never milks
+  const fogF = max(float(1).sub(exp(thick.mul(uFogK).negate())), smoothstep(mix(2300, 1600, uAloft), mix(2900, 2500, uAloft), dist)) // whole by the far plane
   // A thin veil scatters a little more blue (strongly at night, faintly by day so the golden afternoon stays warm); as it thickens it whitens to the horizon itself, so the far land reads pale
   // and a fully hazed ridge is exactly the sky behind it.
   const fogDir = normalize(toFrag), veil = haze(fogDir).mul(mix(mix(vec3(0.96, 1.0, 1.08), vec3(0.83, 1.0, 1.32), uNight), vec3(1), fogF.mul(fogF)))
@@ -192,7 +197,6 @@ export async function createSky(ctx) {
     uTime.value = t
     uCover.value = pal.cover
     uFogK.value = 1 + 0.6 * ctx.night
-    uAloft.value = ctx.aloft ?? 0
 
     const sunUp = ss(-0.02, 0.06, s), moonUp = ss(-0.02, -0.14, s)
     uDisc.value.copy(pal.glow).multiplyScalar(25 * sunUp) // gold, so the capped bloom round it stays gold instead of ivory
