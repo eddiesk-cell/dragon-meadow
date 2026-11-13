@@ -14,6 +14,7 @@ export async function createDragon(ctx) {
   const holder = new THREE.Group() // holder carries the flight pose; model carries scale (its root bone lifts it 4 m in flight)
   model.scale.setScalar(3) // ~7 m shipped span -> ~20 m
   model.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true } })
+  const glow = []; model.traverse(o => { if (o.material?.name === 'dragon2-body') glow.push(o.material) }) // the cyan spots (emissive map)
   holder.add(model)
   scene.add(holder)
 
@@ -229,6 +230,7 @@ export async function createDragon(ctx) {
       if (state === 'rejoin' && w >= 1) { w = 0; go('free') }
     }
     mixer.update(dt)
+    for (const m of glow) m.emissiveIntensity = ctx.night ** 2 // spots glow only at night, as the flora do
     if (near) ctx.camera.lookAt(holder.position) // proof mode only: hero camera is level, a 16 m-high dragon would sit out of frame
     holder.updateMatrixWorld(true)
     ride.update(dt)
