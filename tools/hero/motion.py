@@ -3,7 +3,7 @@
 #   python3 tools/hero/motion.py <retargeted hero.glb (build.sh)> <out.glb>
 # Angles are degrees, relative to the T-pose rest (glTF: +Y up, he faces +Z, his left is +X).
 import sys, numpy as np
-from glbanim import load, save, add_acc, Rig, qmul, qinv, qrot, qbetween, slerp, strike as landing
+from glbanim import load, save, acc, add_acc, Rig, qmul, qinv, qrot, qbetween, slerp, strike as landing
 
 g, B = load(sys.argv[1]); R = Rig(g); I = R.idx; N = len(R.names)
 assert 'motion' not in g['asset'].get('extras', {}), 'this file already has the new motion: feed motion.py the retarget output'
@@ -94,12 +94,46 @@ def write(name, t, L):
         ch['sampler'] = len(a['samplers'])
         a['samplers'].append({'input': ti, 'output': add_acc(g, B, v, 'VEC4' if p == 'rotation' else 'VEC3'), 'interpolation': 'LINEAR'})
 
+def flat_feet():
+    """The Drifter's own clips hold each foot ~14° toes-up against its rest (its Idle does too: the clip data, not the
+    retarget), so he stands on his heels and leans back. Turn each foot down by its mean tilt in the Idle, in every clip but
+    the Walk: its stance is laid flat by plant() and its swing keeps the lift that clears the toes."""
+    a = anim('Idle'); Q, _ = solve(R.sample(B, a, grid(dur(a))), {})
+    for sd in ('left', 'right'):
+        f = I[sd + 'Foot']; fz = qrot(qmul(Q[f], qinv(RQ[f])), Z)
+        tilt = np.mean(np.arctan2(-fz[:, 1], np.hypot(fz[:, 0], fz[:, 2])))     # < 0: toes up
+        C = qmul(qinv(RQ[f]), qmul(qa(X, -tilt), RQ[f]))                         # that turn, in the foot's own frame
+        for an in g['animations']:
+            for ch in an['channels'] if an['name'] != 'Walk' else ():
+                if ch['target'] == {'node': f, 'path': 'rotation'}:
+                    smp = an['samplers'][ch['sampler']]; smp['output'] = add_acc(g, B, qmul(acc(g, B, smp['output']), C), 'VEC4')
+        print(f'FEET {sd} foot turned {np.degrees(-tilt):.1f}° toes-down in every clip but the Walk')
+
 def idle():
-    a = anim('Idle'); T = dur(a); t = grid(T); L = R.sample(B, a, t)
-    Q, P = solve(L, {}); w = 2 * np.pi * t / T; W = {}
+    """Standing: the Drifter's idle, stacked upright from the side (ankle, hip, shoulder, ear over each other, weight over
+    the middle of the foot; it leant back with the pelvis pushed forward), arms hanging at the sides."""
+    a = anim('Idle'); T = dur(a); t = grid(T); n = len(t); L = R.sample(B, a, t); Q0, P0 = solve(L, {}); hips = I['hips']
+    side = lambda P, b: (P[I['left' + b]] + P[I['right' + b]]) / 2
+    sag = lambda v: np.arctan2(v[:, 2], v[:, 1])                                # lean from plumb, + forward
+    ear = lambda P: P[I['head']] + 0.3 * (P[I['HeadTop_End']] - P[I['head']])
+    heel = lambda sd: P0[I[sd + 'Foot']] + qrot(qmul(Q0[I[sd + 'Foot']], qinv(RQ[I[sd + 'Foot']])), np.array([0, -RP[I[sd + 'Foot']][1], -0.099]))
+    midfoot = ((heel('left') + heel('right')) / 2 + side(P0, 'Toes')) / 2
+    L['translation'][hips][:, 2] += midfoot[:, 2] - side(P0, 'UpperLeg')[:, 2]   # hips back over the middle of the feet
+    W = {'head': Q0[I['head']]}                                                  # the head keeps its own level gaze
+    for _ in range(3):                                                           # then the trunk over the hips, the ear over the shoulders
+        Q, P = solve(L, W)
+        for sd in ('left', 'right'):                                             # feet stay planted; knees as the donor's
+            W |= leg(sd, P[I[sd + 'UpperLeg']], P0[I[sd + 'Foot']], P0[I[sd + 'LowerLeg']] - P0[I[sd + 'UpperLeg']])[1]
+            W[sd + 'Foot'], W[sd + 'Toes'] = Q0[I[sd + 'Foot']], Q0[I[sd + 'Toes']]
+        Q, P = solve(L, W); a1 = sag(side(P, 'UpperArm') - side(P, 'UpperLeg')); a2 = sag(ear(P) - side(P, 'UpperArm'))
+        for b, share in (('spine', 0.4), ('chest', 0.7), ('upperChest', 1.0)):
+            W[b] = qmul(qa(X, -a1 * share), Q[I[b]])
+        W['neck'] = qmul(qa(X, -a1 - a2), Q[I['neck']])
+    Q, P = solve(L, W); w = 2 * np.pi * t / T
     for s in (1, -1):  # arms hang at the sides, hands by the outer thigh; breathing sways them a little
         W |= arm(Q, P, s, th=1.5 + np.sin(w + (s < 0) * 0.7), al=7.5 + 0.5 * np.cos(w), ph=10 + 2 * np.sin(w), upright=True, carry=10)
-    solve(L, W); return t, L
+    Q, P = solve(L, W); print(f'IDLE upright: hips moved {100 * np.mean(midfoot[:, 2] - side(P0, "UpperLeg")[:, 2]):+.1f} cm to stand over the mid-foot, '
+          f'hip-shoulder {np.degrees(sag(side(P, "UpperArm") - side(P, "UpperLeg"))).mean():+.1f}°, shoulder-ear {np.degrees(sag(ear(P) - side(P, "UpperArm"))).mean():+.1f}°'); return t, L
 
 def plant(sd, A, F, u, T, v, H, hz, duty=0.6):
     """A walking foot's stance: the heel lands, the foot rolls flat, the heel rises over the ball, and whichever point bears
@@ -201,7 +235,7 @@ def run(v=6.0, T=0.56):
         yaw = rad(6) * np.cos(2 * np.pi * u)                           # the swinging leg's hip goes forward
         L['translation'][hips] = np.stack([-0.01 * np.cos(2 * np.pi * (u - c / 2)), 0.93 - 0.025 * mid, np.full(n, RP[hips][2])], -1)
         W = {'hips': qmul(qmul(qa(Y, yaw), qa(Z, -rad(3) * np.cos(2 * np.pi * (u - c / 2)))), qmul(qa(X, rad(6) * np.ones(n)), RQ[hips])),
-             'head': RQ[I['head']]}                                     # head level, eyes forward
+             'head': qmul(qa(X, rad(8) * np.ones(n)), RQ[I['head']])}  # head in line with the neck, eyes forward
         for b, lean, turn in (('spine', 11, 0.3), ('chest', 12, -0.4), ('upperChest', 13, -1.3), ('neck', 8, -0.6)):
             W[b] = qmul(qmul(qa(Y, turn * yaw), qa(X, rad(lean) * np.ones(n))), RQ[I[b]])
         return W, solve(L, W)[1]
@@ -225,7 +259,7 @@ def run(v=6.0, T=0.56):
         c = c_new
     for s, G in legs.items():
         nm, uu, H, off = G['side'], G['uu'], G['H'], G['off']; st = uu <= c
-        p_st = np.where(uu / c < 0.45, 12 - 8 * smooth(uu / c / 0.45), 4 + 44 * smooth((uu / c - 0.45) / 0.55) ** 1.5)
+        p_st = np.where(uu / c < 0.25, 12 - 11 * smooth(uu / c / 0.25), 1 + 47 * smooth((uu / c - 0.6) / 0.4) ** 1.5)  # the heel settles as he loads
         ball = np.stack([np.full(n, G['bx']), np.full(n, 0.009), G['zTD'] - v * np.minimum(uu, c) * T], -1)  # planted, rolls back at v
         A_st = ball - off(p_st)
         def angles(d):  # thigh angle from vertical (+ forward) and knee flexion for a hip->ankle vector
@@ -255,6 +289,7 @@ def run(v=6.0, T=0.56):
           f'ball lands {legs[1]["zTD"]:.2f} m, leaves {legs[1]["zTO"]:.2f} m')
     return t, L
 
+flat_feet()
 write('Idle', *idle())
 write('Walk', *walk())
 t, L = run(); write('Run', t, L); write('Sprint', t, L)

@@ -6,7 +6,7 @@
 # forward arm peaks as the opposite foot strikes; within 0.1 of a cycle passes), and the swing is opposite: in step with the
 # other side's thigh (correlation > 0) and against its own (< 0).
 import sys, numpy as np
-from glbanim import load, acc, Rig, qrot, strike as landing
+from glbanim import load, acc, Rig, qrot, qmul, qinv, strike as landing
 
 g, B = load(sys.argv[1]); R = Rig(g); I = R.idx
 anim = lambda name: next(a for a in g['animations'] if a['name'] == name)
@@ -99,4 +99,44 @@ for name, v in (('Walk', 1.6), ('Run', 6.0)):  # hero.js's speeds; the same meas
         b = P[I[side + 'Toes']] + np.outer(v * t, [0, 0, 1]); down = b[:, 1] < 0.03; both = down[1:] & down[:-1]
         sp += list(np.hypot(np.diff(b[:, 0]), np.diff(b[:, 2]))[both] * 60)
     print(name.upper(), ok('plantedFootSlide m/s', np.mean(sp) if sp else 99, 0, 0.3), f'({len(sp)} planted frames at {v} m/s)')
+# Feet flat: the sole (boot heel to toe tip) within 2 cm of level in the Idle and at each foot's mid-stance.
+L0 = {p: np.stack([r[p] for r in R.rest])[:, None] for p in ('translation', 'rotation', 'scale')}; RQ, RP = (x[:, 0] for x in R.fk(L0))
+def sole(Q, P, side):
+    f = I[side + 'Foot']; heel = P[f] + qrot(qmul(Q[f], qinv(RQ[f])), np.array([RP[f][0], 0, -0.137]) - RP[f])
+    toe = P[I[('Left' if side == 'left' else 'Right') + 'Toe_End']] - [0, 0.01, 0]; return heel, toe
+t, T, (Q, P) = sample('Idle', 60)
+for side in ('left', 'right'):
+    h, e = sole(Q, P, side)
+    print('IDLE', side, ok('soleTilt m (toe - heel)', np.abs(e[:, 1] - h[:, 1]).max(), 0, 0.02), ok('soleLow m', min(h[:, 1].min(), e[:, 1].min()), -0.02, 0.02))
+# Standing upright: ankle -> hip -> shoulder -> ear each within 4° of plumb from the side; hips over the middle of the foot.
+mid = lambda a, b: (P[I['left' + a]] + P[I['right' + b]]) / 2
+ank, hip, sho = mid('Foot', 'Foot'), mid('UpperLeg', 'UpperLeg'), mid('UpperArm', 'UpperArm')
+ear = P[I['head']] + 0.3 * (P[I['HeadTop_End']] - P[I['head']])                 # ~ ear height on the head's own axis
+lean = lambda a, b: np.degrees(np.arctan2((b - a)[:, 2], (b - a)[:, 1]))          # + forward
+hl, hr = sole(Q, P, 'left')[0], sole(Q, P, 'right')[0]
+midfoot = ((hl + hr) / 2 + (P[I['leftToes']] + P[I['rightToes']]) / 2) / 2
+print('IDLE side lean (+ forward)', *(ok(f'{n}° worst', lean(a, b)[np.argmax(np.abs(lean(a, b)))], -4, 4) for n, a, b in (('ankle-hip', ank, hip), ('hip-shoulder', hip, sho), ('shoulder-ear', sho, ear))),
+      ok('hipsOverMidfoot m', np.abs(hip[:, 2] - midfoot[:, 2]).max(), 0, 0.04))
+for name in ('Walk', 'Run'):
+    t, T, (Q, P) = sample(name, 240); u = t / T
+    for side in ('left', 'right'):
+        h, e = sole(Q, P, side); low = np.minimum(h[:, 1], e[:, 1]) < 0.02
+        k0 = np.argmin(low); runs = np.split(np.arange(len(u)), np.where(np.diff(np.roll(low, -k0)))[0] + 1)
+        stance = max((r for r in runs if np.roll(low, -k0)[r[0]]), key=len, default=None)  # the longest planted stretch, around the loop
+        if stance is None: print(name.upper(), side, ok('midStanceSoleTilt m (never planted)', 99, 0, 0.02)); continue
+        ks = (stance + k0) % len(u)                                              # mid-stance: the hip passes over the ankle
+        k = ks[np.argmin(np.abs(P[I[side + 'Foot']][ks, 2] - P[I[side + 'UpperLeg']][ks, 2]))]
+        print(name.upper(), side, ok('midStanceSoleTilt m', abs(e[k, 1] - h[k, 1]), 0, 0.02), f'(at u {u[k]:.2f})')
+# Sprint head and shoulders: head in line with the spine, chin level, shoulders not shrugged or rounded, turning <= 15°.
+def rel(P, k=None): return (P[I['neck']] - P[I['hips']]), (P[I['head']] + 0.3 * (P[I['HeadTop_End']] - P[I['head']]) - P[I['neck']])
+t, T, (Q, P) = sample('Run', 240)
+sp, hd = rel(P); spr, hdr = (RP[I['neck']] - RP[I['hips']]), (RP[I['head']] + 0.3 * (RP[I['HeadTop_End']] - RP[I['head']]) - RP[I['neck']])
+sag = lambda v: np.degrees(np.arctan2(v[..., 2], v[..., 1]))
+inline = (sag(hd) - sag(sp)) - (sag(hdr) - sag(spr))                            # 0: the head sits on the spine as in the T-pose
+face = qrot(qmul(Q[I['head']], qinv(RQ[I['head']])), np.array([0, 0, 1.0])); chin = np.degrees(np.arcsin(-face[:, 1]))  # + looking down
+sock = (P[I['leftUpperArm']] + P[I['rightUpperArm']]) / 2 - P[I['neck']]; sockr = (RP[I['leftUpperArm']] + RP[I['rightUpperArm']]) / 2 - RP[I['neck']]
+up, fwd = frame(P); shrug = np.sum(sock * up, -1) - sockr[1]; rounded = np.sum(sock * fwd, -1) - sockr[2]
+line = P[I['leftUpperArm']] - P[I['rightUpperArm']]; turn = np.degrees(np.arctan2(-line[:, 2], line[:, 0]))
+print('RUN head', ok('headVsSpine°', np.abs(inline).max(), 0, 10), ok('chinDown°', chin.mean(), -5, 12),
+      'shoulders', ok('shrug m', shrug.max(), -0.03, 0.015), ok('rounded m', rounded.max(), -0.03, 0.02), ok('turn°', np.abs(turn).max(), 0, 15))
 print('MOTIONCHECK', 'ok' if not bad else f'{bad} OUT'); sys.exit(1 if bad else 0)
