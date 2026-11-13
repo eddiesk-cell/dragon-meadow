@@ -104,13 +104,13 @@ for poly in body.data.polygons:
 vcol /= np.maximum(cnt, 1)[:, None]
 gi = {g.name: g.index for g in body.vertex_groups}
 wing_g = {gi[n] for n in gi if n.startswith('wing-')}
-saddle = 0
+saddle = []
 for v in body.data.vertices:
     c = vcol[v.index]; co = v.co
     brown = c[0] > c[1] * 1.12 and c[1] >= c[2] * 0.95 and max(c) < 0.62 and max(c) > 0.06
     if brown and (-1.45 < co.y < -0.95 and 0.72 < co.z < 1.28 and abs(co.x) < 0.42 or -1.9 < co.y < -1.45 and 0.8 < co.z < 1.1):  # saddle or chest strap   # saddle, its flaps and pouch: rigid on chest
         for gg in list(v.groups): body.vertex_groups[gg.group].remove([v.index])
-        body.vertex_groups['chest'].add([v.index], 1.0, 'REPLACE'); saddle += 1; continue
+        body.vertex_groups['chest'].add([v.index], 1.0, 'REPLACE'); saddle.append(v.index); continue
     ws = [(gg.group, gg.weight) for gg in v.groups if gg.group not in wing_g and gg.weight > 1e-4]
     for gg in list(v.groups):
         if gg.group in wing_g: body.vertex_groups[gg.group].remove([v.index])
@@ -125,7 +125,7 @@ for v in body.data.vertices:
         if n.startswith(('fore-', 'hind-')) and k < 1:
             body.vertex_groups[gid].add([v.index], w * k, 'REPLACE')
             body.vertex_groups['chest' if n.startswith('fore-') else 'spine'].add([v.index], w * (1 - k), 'ADD')
-print('SADDLE verts', saddle)
+print('SADDLE verts', len(saddle))
 # Soften the saddle's rigid edge and the heat seams (10 rounds of neighbour averaging, by inverse edge length), then keep the 4 largest, normalised.
 names = [g.name for g in body.vertex_groups]; Wm = np.zeros((len(body.data.vertices), len(names)))
 for v in body.data.vertices:
@@ -146,16 +146,64 @@ for vi in range(len(Wm)):
 body.parent = arm; body.matrix_parent_inverse = arm.matrix_world.inverted()
 body.modifiers.new('Armature', 'ARMATURE').object = arm
 
-# Rider seat: the dip of the new saddle, as high over it as the old seat was over the old saddle.
+# Rider seat: the middle of the saddle's seat on the midline, from the saddle's own faces (the mane overhangs its front,
+# the bare back lies behind its cantle; its pommel, under the mane, is skinned with the neck and not among them): the
+# lowest flat of the saddle top in front of the cantle (its highest point), at its back end (a rider sits back against
+# the cantle, and that keeps his head out of the mane), as high over it as the old seat sat over the old saddle.
 bpy.context.view_layer.update()
-bvh = BVHTree.FromObject(body, bpy.context.evaluated_depsgraph_get())
-tops = [(bvh.ray_cast(V((0, y, 3)), V((0, 0, -1)))[0], y) for y in np.arange(-1.35, -1.1, 0.01)]
-print('TOPS', [(round(y, 2), round(h.z, 3)) for h, y in tops if h]); low = min((h.z, y) for h, y in tops if h)
-seat = V((0, low[1], low[0] + old_seat_gap)); dseat = seat - seat0
+sad = set(saddle); faces = [p.vertices[:] for p in body.data.polygons if sad.issuperset(p.vertices)]
+bvh = BVHTree.FromPolygons([v.co for v in body.data.vertices], faces)
+prof = [(y, h[0].z) for y in np.arange(-1.7, -1.0, 0.01) if (h := bvh.ray_cast(V((0, y, 3)), V((0, 0, -1))))[0]]
+ys, zs = np.array(prof).T; c = int(zs.argmax())
+m = (ys < ys[c]) & (zs > zs[c] - 0.12)          # in front of the cantle, on the seat (not the chest strap below)
+m &= zs < zs[m].min() + 0.005                   # its flat bottom
+print('SADDLE top', [(round(y, 2), round(z, 3)) for y, z in prof[::3]], 'cantle', round(ys[c], 2), round(zs[c], 3),
+      'seat flat', round(ys[m].min(), 2), round(ys[m].max(), 2), round(zs[m].mean(), 3))
+k = np.flatnonzero(m)[-1]; seat = V((0, ys[k], zs[k] + old_seat_gap))
+# The refit moved chest, and the seat with it: move from where it is now (REST), not from seat0.
+dseat = seat - bpy.data.objects['rider-seat'].matrix_world.translation
 for e in [o for o in bpy.data.objects if o.name.startswith('rider-')]:
     e.matrix_world = Matrix.Translation(e.matrix_world.translation + dseat) @ e.matrix_world.to_3x3().to_4x4()
 bpy.data.objects['mouth'].matrix_world = Matrix.Translation(V((0, -2.03, 1.45))) @ bpy.data.objects['mouth'].matrix_world.to_3x3().to_4x4()
 print('SEAT', [round(x, 3) for x in seat], 'old', [round(x, 3) for x in seat0])
+# The mane's strands hang back over the seat and swing with the upper neck: comb them forward (in rest) until none enters
+# a capsule round the rider's neck and head in the rest pose or any frame of the clips he rides through. ride.js keeps
+# his hips on the seat, upright in the dragon's frame (hero.glb Ride Idle: head centre 0.65 m over his hips, 0.12 m
+# ahead; dragon at x3). Linear blend skinning, as the Armature modifier and three.js do; art/dragon2/seat.py measures it.
+R = 0.065
+sad = np.isin(np.arange(len(CO)), saddle); cand = np.flatnonzero(~sad & (np.linalg.norm(CO - np.array(seat), axis=1) < 0.5))
+Q0 = CO[cand].copy(); Q = Q0.copy(); Ph = lambda q: np.c_[q, np.ones(len(q))]
+ad = arm.animation_data; was = (ad.action, ad.action_slot, bpy.context.scene.frame_current); arm.data.pose_position = 'POSE'
+F = [(np.broadcast_to(np.eye(4), (len(cand), 4, 4)), np.array(seat))]   # per frame: each candidate's skinning matrix, the seat
+for a in ('idle', 'takeoff', 'fly', 'hover', 'land'):
+    for f in np.linspace(*bpy.data.actions[a].frame_range, 30):
+        ad.action = bpy.data.actions[a]; ad.action_slot = ad.action.slots[0]; bpy.context.scene.frame_set(int(round(f))); bpy.context.view_layer.update()
+        Mb = np.array([np.array(arm.matrix_world @ arm.pose.bones[n].matrix @ arm.pose.bones[n].bone.matrix_local.inverted() @ arm.matrix_world.inverted()) for n in names])
+        F.append((np.einsum('nk,nkij->nij', tw[cand], Mb[top[cand]]), np.array(bpy.data.objects['rider-seat'].matrix_world.translation)))
+# Push each vertex that is inside out to the capsule's front (along the dragon's forward axis, in that frame), then let
+# every edge round them take back its rest length (position-based, like a strand of hair): a strand bends forward as one
+# instead of being squashed against the capsule (projection alone halves edges at the neck's base: 8x stretch in fly).
+ci = -np.ones(len(CO), int); ci[cand] = np.arange(len(cand)); keep = (ci[E] >= 0).any(1); e, Eg = ci[E][keep], E[keep]
+L0 = np.linalg.norm(CO[Eg[:, 0]] - CO[Eg[:, 1]], axis=1); fr = e >= 0; share = fr.sum(1)[:, None]
+deg = np.bincount(e[fr[:, 0], 0], minlength=len(cand)) + np.bincount(e[fr[:, 1], 1], minlength=len(cand))
+end = lambda j: np.where(fr[:, j, None], Q[np.maximum(e[:, j], 0)], CO[Eg[:, j]])   # a fixed end stays where it was
+for rnd in range(300):
+    pushed = 0
+    for Mv, st in F:
+        ph = np.einsum('nij,nj->ni', Mv, Ph(Q))[:, :3]; A, B = st + (0, -0.035, 0.17), st + (0, -0.039, 0.218)
+        t = np.clip((ph - A) @ (B - A) / ((B - A) @ (B - A)), 0, 1); ax = A + t[:, None] * (B - A); o = ph - ax
+        i = (np.linalg.norm(o, axis=1) < R) & (o[:, 0] ** 2 + o[:, 2] ** 2 < R ** 2)
+        if i.any():
+            q = ph[i].copy(); q[:, 1] = np.minimum(q[:, 1], ax[i, 1] - np.sqrt(1.2 * R ** 2 - o[i, 0] ** 2 - o[i, 2] ** 2))
+            Q[i] = np.einsum('nij,nj->ni', np.linalg.inv(Mv[i]), Ph(q))[:, :3]; pushed += int(i.sum())
+    if not pushed: break
+    for _ in range(10):
+        d = end(0) - end(1); l = np.linalg.norm(d, axis=1); c = ((l - L0) / np.maximum(l, 1e-9))[:, None] * d / share
+        acc = np.zeros_like(Q); np.add.at(acc, e[fr[:, 0], 0], -c[fr[:, 0]]); np.add.at(acc, e[fr[:, 1], 1], c[fr[:, 1]])
+        Q += acc / np.maximum(deg, 1)[:, None]
+moved = np.linalg.norm(Q - Q0, axis=1); print('MANE combed in', rnd, 'rounds:', int((moved > 1e-4).sum()), 'verts, furthest', round(moved.max(), 3), 'left inside', pushed)
+for vi, co in zip(cand, Q): body.data.vertices[vi].co = co
+ad.action, ad.action_slot = was[0], was[1]; bpy.context.scene.frame_set(was[2]); arm.data.pose_position = 'REST'; bpy.context.view_layer.update()
 
 # ---- 3. the wings ----
 def mat_solid(name, col, rough=0.5):

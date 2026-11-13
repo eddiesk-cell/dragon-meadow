@@ -7,13 +7,13 @@
   "A": 0,
   "B": 19,
   "stretch": {
-   "dragon2-body": 4.19,
+   "dragon2-body": 4.43,
    "wing-l-bones": 1.0,
    "wing-l-membrane": 3.17,
    "wing-r-bones": 1.0,
    "wing-r-membrane": 3.17
   },
-  "worst": 4.191941375561507,
+  "worst": 4.434301677115263,
   "worstAt": "dragon2-body"
  },
  "hover": {
@@ -58,7 +58,7 @@
   "A": 57,
   "B": 76,
   "stretch": {
-   "dragon2-body": 2.66,
+   "dragon2-body": 2.54,
    "wing-l-bones": 1.0,
    "wing-l-membrane": 4.19,
    "wing-r-bones": 1.0,
@@ -75,7 +75,7 @@
   "A": 70,
   "B": 111,
   "stretch": {
-   "dragon2-body": 3.73,
+   "dragon2-body": 3.89,
    "wing-l-bones": 1.0,
    "wing-l-membrane": 4.21,
    "wing-r-bones": 1.0,
@@ -92,7 +92,7 @@
   "A": 65,
   "B": 27,
   "stretch": {
-   "dragon2-body": 2.04,
+   "dragon2-body": 1.95,
    "wing-l-bones": 1.0,
    "wing-l-membrane": 4.19,
    "wing-r-bones": 1.0,
@@ -126,7 +126,7 @@
   "A": 0,
   "B": 56,
   "stretch": {
-   "dragon2-body": 1.41,
+   "dragon2-body": 1.37,
    "wing-l-bones": 1.0,
    "wing-l-membrane": 4.19,
    "wing-r-bones": 1.0,
