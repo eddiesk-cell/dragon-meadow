@@ -78,6 +78,19 @@ export async function createAudio(ctx) {
   // Hero: a step when a foot comes down to its own stance height (its lowest lately) after lifting clear of it.
   const bones = ['leftFoot', 'rightFoot'].map(n => ctx.heroRig?.model.getObjectByName(n)).filter(Boolean)
   const foot = bones.map(() => ({ floor: Infinity, armed: false }))
+  // The soles: skinned vertices weighted to each foot, within 3 cm of its lowest in the bind pose (where it meets the ground).
+  let body = null
+  ctx.heroRig?.model.traverse(o => { if (o.isSkinnedMesh) body ||= o })
+  const soles = !body ? [] : ['left', 'right'].map(side => {
+    const g = body.geometry.attributes, ids = ['Foot', 'Toes'].map(p => body.skeleton.bones.findIndex(b => b.name === side + p)), vs = []
+    for (let i = 0; i < g.position.count; i++) {
+      let w = 0; for (let c = 0; c < 4; c++) if (ids.includes(g.skinIndex.getComponent(i, c))) w += g.skinWeight.getComponent(i, c)
+      if (w > 0.5) vs.push(i)
+    }
+    const lo = Math.min(...vs.map(i => g.position.getY(i)))
+    return vs.filter(i => g.position.getY(i) < lo + 0.03)
+  })
+  const soleAt = (k, ground) => { let m = Infinity; for (const i of soles[k]) m = Math.min(m, body.getVertexPosition(i, v).applyMatrix4(body.matrixWorld).y); return m - ground }
   const ring = ctx.ring
   const surface = (x, z) => pond?.inside(x, z) > 0 ? 'step-water'
     : (ring && Math.hypot(x - ring.center.x, z - ring.center.z) < ring.radius + 3) || towns.some(t => Math.hypot(x - t.x, z - t.z) < t.r) ? 'step-stone' : 'step-grass'
@@ -88,7 +101,7 @@ export async function createAudio(ctx) {
   if (ctx.dragon && !wing) console.warn('audio: the dragon has no wing-l-hand bone, so no wingbeats')
   const mix = {}
 
-  window.__probes.audio = full => ({ loaded: !!buf, state: ac.state, muted, sounds: buf && Object.keys(buf).length, leadMs: +leadMs.toFixed(1),
+  window.__probes.audio = full => ({ loaded: !!buf, state: ac.state, muted, sounds: buf && Object.keys(buf).length, leadMs: +leadMs.toFixed(1), soles: soles.map(s => s.length),
     mix: Object.fromEntries(Object.entries(mix).map(([k, g]) => [k, +g.toFixed(3)])), ...(LOG && { log }), ...(full && { feet, wings }) })
 
   return {
@@ -102,14 +115,15 @@ export async function createAudio(ctx) {
       const hs = []
       bones.forEach((b, k) => {
         b.getWorldPosition(v)
-        const h = v.y - ctx.heightAt(v.x, v.z), s = foot[k]
+        const ground = ctx.heightAt(v.x, v.z), h = v.y - ground, s = foot[k]
         hs.push(+h.toFixed(3))
+        if (LOG && soles[k]) hs.push(+soleAt(k, ground).toFixed(3))
         s.floor = Math.min(h, s.floor + dt * 0.02)
         if (h > s.floor + 0.05) s.armed = true
         if (s.armed && h < s.floor + 0.015) {
           s.armed = false
           if (onFoot && speed > 0.5 && !air) {
-            const n = surface(v.x, v.z)
+            b.getWorldPosition(v); const n = surface(v.x, v.z)
             play(n, v, { gain: speed > 3 ? 0.9 : 0.55, rate: speed > 3 ? 1.08 : 1 }); note('step', k ? 'R' : 'L', n)
           }
         }

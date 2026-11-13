@@ -18,7 +18,7 @@ if (!out) { console.error('usage: node tools/audio/capture.mjs <out.mp4> [query]
 const CHROME = process.env.CHROME || `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const abs = resolve(ROOT, out), webm = abs + '.webm', wav = abs + '.wav'
-let server, browser, report = { out, errors: [] }
+let server, browser, rec, report = { out, errors: [] }
 const unlock = await lock()
 try {
   server = await createServer({ root: ROOT, logLevel: 'error', server: { host: '127.0.0.1' } })
@@ -49,11 +49,11 @@ try {
     return ac.sampleRate
   })
   const aStart = Date.now()
-  const rec = await page.screencast({ path: webm })
+  rec = await page.screencast({ path: webm })
   const vStart = Date.now()
   const pcm = []
   for (let t = 0; t < +secs; t += 4) { await sleep(Math.min(4, +secs - t) * 1000); pcm.push(Buffer.from(await page.evaluate(() => window.__rec.take()), 'base64')) }
-  await rec.stop()
+  await rec.stop(); rec = null
   const data = await page.evaluate(() => ({ audio: window.__probes.audio(true), ride: window.__probes.ride?.(), errors: window.__errors }))
   report.errors.push(...data.errors)
 
@@ -67,10 +67,11 @@ try {
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', webm, '-i', wav, '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', abs])
   report = { ...report, ...analyse(data.audio, data.ride, ffmpegLoudness(wav)), audioSecs: +(body.length / 4 / rate).toFixed(1) }
-  writeFileSync(abs.replace(/\.mp4$/, '') + '.json', JSON.stringify({ ...report, log: data.audio.log, ride: data.ride?.log }, null, 1))
+  writeFileSync(abs.replace(/\.mp4$/, '') + '.json', JSON.stringify({ ...report, log: data.audio.log, ride: data.ride?.log, feet: data.audio.feet, wings: data.audio.wings }))
 } catch (e) {
   report.errors.push('capture: ' + String(e).slice(0, 300))
 } finally {
+  await rec?.stop().catch(() => {})
   await browser?.close().catch(() => {})
   await server?.close().catch(() => {})
   rmSync(webm, { force: true }); rmSync(wav, { force: true })
