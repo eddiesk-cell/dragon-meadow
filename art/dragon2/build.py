@@ -25,7 +25,7 @@ arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
 for pb in arm.pose.bones: pb.custom_shape = None
 old_body = bpy.data.objects['winter-dragon-body']
 for n in ('winter-dragon-mouth', 'wing-l-bones', 'wing-r-bones', 'wing-l-membrane', 'wing-r-membrane'):
-    bpy.data.objects.remove(bpy.data.objects[n])
+    bpy.data.objects.remove(bpy.data.objects[n]); bpy.data.meshes.remove(bpy.data.meshes[n]) if n in bpy.data.meshes else None
 arm.data.pose_position = 'REST'; bpy.context.view_layer.update()
 seat0 = bpy.data.objects['rider-seat'].matrix_world.translation.copy()
 old_bvh = BVHTree.FromObject(old_body, bpy.context.evaluated_depsgraph_get())
@@ -161,7 +161,7 @@ print('SEAT', [round(x, 3) for x in seat], 'old', [round(x, 3) for x in seat0])
 # ---- 3. the wings ----
 def mat_solid(name, col, rough=0.5):
     m = bpy.data.materials.new(name); m.use_nodes = True; b = m.node_tree.nodes['Principled BSDF']
-    b.inputs['Base Color'].default_value = (*col, 1); b.inputs['Roughness'].default_value = rough; return m
+    b.inputs['Base Color'].default_value = (*col, 1); b.inputs['Roughness'].default_value = rough; m.use_backface_culling = True; return m
 M_BONE, M_CLAW = mat_solid('dragon2-wing-bone', (0.035, 0.05, 0.11), 0.38), mat_solid('dragon2-claw', (0.80, 0.74, 0.62), 0.35)
 def scale_tex(name, N=256, K=8):
     # Tiling iridescent scales for the wing arms: K x K overlapping rows, each scale teal, navy or violet, lit at its crown.
