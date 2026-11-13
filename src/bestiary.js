@@ -1,17 +1,24 @@
 // Phase 4d lane bestiary — ?bestiary=1: every rigged creature on a plinth in the real world, turning and cycling its
 // clips, with a name + land label. &focus=<id> frames one large. Without the param it costs nothing. See PLAN.md.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { attribute, positionLocal, modelPosition, time, vec3, sin, cos, max, mod, floor, step } from 'three/tsl'
 
-// id, name, land, size in metres (BESTIARY.md; models are rigged at 1.80 m). Order = build order along the arc.
+// id, name, land, size in metres (BESTIARY.md; models are rigged at 1.80 m), options. Order = build order along the arc.
+// Options: real (the glb is already at true scale), idle (its resting loop), swarm (copies on the plinth), lie (lies
+// behind the arc, no plinth: Old Glim is 16 m long), prop [glb in models/props, bone that holds it, and if it would
+// reach below the plinth: 'slide' it up through the hand (a spear grounds its butt) or 'drag' it behind (the anchor)].
 const ROSTER = [
   ['chalk-hob', 'Chalk Hob', 'Dragon Meadow', 1.3],
   ['wreckback', 'Wreckback', 'The Undercliff', 2.2],
   ['lantern-cap', 'Lantern-cap', 'Lanternwood', 1.6],
+  ['rootbinder', 'The Rootbinder', 'Lanternwood', 4.0],
   ['driftwight', 'The Driftwight', 'The Undercliff', 3.2],
-  ['stiltstalker', 'Stiltstalker', 'Mirrormere', 2.8],
-  ['tolling-warden', 'The Tolling Warden', 'Bellholm', 3.4],
+  ['stiltstalker', 'Stiltstalker', 'Mirrormere', 2.8, { prop: ['reed-spear', 'rightHand', 'slide'] }],
+  ['old-glim', 'Old Glim', 'Mirrormere', 16, { real: true, idle: 'Swim', lie: true }],
+  ['tolling-warden', 'The Tolling Warden', 'Bellholm', 3.4, { prop: ['anchor', 'rightHand', 'drag'] }],
   ['scarhorn', 'Scarhorn', 'The Greyspine', 2.6],
   ['gapshrike', 'The Gapshrike', 'The Greyspine', 2.4],
+  ['ribmite', 'Ribmites', 'The Redwaste', 0.3, { real: true, swarm: 14 }],
   ['marrowkeeper', 'The Marrowkeeper', 'The Redwaste', 3.5],
   ['rime-warden', 'The Rime Warden', 'Wyrmcrown', 4.5],
 ]
@@ -25,13 +32,13 @@ export async function createBestiary(ctx) {
   const stone = new THREE.MeshStandardMaterial({ color: 0x8d8b84, roughness: 1 })
   const loader = new GLTFLoader()
   const v = new THREE.Vector3()
-  // lowest/highest skinned vertex in the current pose, world space
+  // lowest/highest vertex in the current pose, world space (skinned or rigid)
   const extent = root => {
     root.updateMatrixWorld(true)
     let lo = Infinity, hi = -Infinity
     root.traverse(o => {
-      if (!o.isSkinnedMesh) return
-      o.skeleton.update()
+      if (!o.isMesh) return
+      o.skeleton?.update()
       for (let i = 0, n = o.geometry.attributes.position.count; i < n; i++) {
         o.getVertexPosition(i, v).applyMatrix4(o.matrixWorld)
         if (v.y < lo) lo = v.y
@@ -45,68 +52,107 @@ export async function createBestiary(ctx) {
   label.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;font-family:Georgia,serif;color:#fff;text-shadow:0 1px 4px #000,0 0 2px #000'
   document.body.append(label)
 
-  const items = []
-  for (const [i, [id, name, land, size]] of ROSTER.entries()) {
+  const items = [], lamps = []
+  const arc = ROSTER.filter(r => !r[4]?.lie)
+  for (const [i, [id, name, land, size, o = {}]] of ROSTER.entries()) {
     try {
       const gltf = await loader.loadAsync(import.meta.env.BASE_URL + `models/bestiary/${id}.glb`)
-      const a = ROSTER.length > 1 ? -SPAN + (2 * SPAN * i) / (ROSTER.length - 1) : 0
-      const x = A.x + R * Math.sin(a), z = A.z - R * Math.cos(a)
-      const top = ctx.heightAt(x, z) + PLINTH
-      const rad = Math.max(1.1, size * 0.45)
-      const plinth = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.12, PLINTH + 0.6, 24), stone)
-      plinth.position.set(x, top - (PLINTH + 0.6) / 2, z)
-      plinth.castShadow = plinth.receiveShadow = true
-      scene.add(plinth)
+      const j = arc.indexOf(ROSTER[i]), a = -SPAN + (2 * SPAN * j) / (arc.length - 1)
+      const x = o.lie ? A.x : A.x + R * Math.sin(a), z = o.lie ? A.z - R - 12 : A.z - R * Math.cos(a)
+      const top = ctx.heightAt(x, z) + (o.lie ? 0 : PLINTH)
+      const rad = o.lie ? size / 2 : Math.max(1.1, size * 0.45)
+      if (!o.lie) {
+        const plinth = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.12, PLINTH + 0.6, 24), stone)
+        plinth.position.set(x, top - (PLINTH + 0.6) / 2, z)
+        plinth.castShadow = plinth.receiveShadow = true
+        scene.add(plinth)
+      }
       ctx.keepClear.push({ x, z, r: rad + 1 })
 
-      const model = gltf.scene, root = new THREE.Group(), s = size / RIG
-      model.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.frustumCulled = false } })
+      const model = gltf.scene, root = new THREE.Group(), s = o.real ? 1 : size / RIG
+      model.traverse(m => {
+        if (!m.isMesh) return
+        m.castShadow = m.receiveShadow = true; m.frustumCulled = false
+        if (m.material.name === 'glim-lamps') lamps.push(m.material) // Old Glim's flank lamps glow at night
+      })
       root.add(model); root.scale.setScalar(s); root.position.set(x, top, z); scene.add(root)
+      if (o.swarm) { // ribmites: rigid beetles whose legs walk in a tripod gait in the shader (attributes _leg, _legt)
+        model.traverse(m => {
+          if (!m.isMesh) return
+          const old = m.material, leg = attribute('_leg', 'float'), lt = attribute('_legt', 'float')
+          m.material = new THREE.MeshStandardNodeMaterial({ map: old.map, normalMap: old.normalMap, roughnessMap: old.roughnessMap, roughness: old.roughness, metalness: old.metalness, color: old.color })
+          const ph = time.mul(14).add(mod(leg.add(floor(leg.sub(1).div(2))), 2).mul(Math.PI)).add(modelPosition.x.mul(7)).add(modelPosition.z.mul(5))
+          m.material.positionNode = positionLocal.add(vec3(0, max(sin(ph), 0).mul(0.012), cos(ph).mul(0.015)).mul(lt).mul(step(0.5, leg)))
+        })
+        for (let k = 1; k < o.swarm; k++) {
+          const c = model.clone(), r = rad * 0.8 * Math.sqrt((k * 0.618) % 1), t = k * 2.4
+          c.position.set(Math.cos(t) * r, 0, Math.sin(t) * r); c.rotation.y = t * 1.7; root.add(c)
+        }
+      }
 
       const mixer = new THREE.AnimationMixer(model), actions = {}
-      for (const c of gltf.animations) actions[c.name] = mixer.clipAction(c)
-      // Idle, then each other clip in turn with Idle between, back to Idle.
-      const names = Object.keys(actions).filter(n => n !== 'Idle')
-      const seq = ['Idle', ...names.flatMap(n => [n, 'Idle'])]
-      const len = n => (n === 'Idle' ? 2.5 : Math.min(Math.max(actions[n].getClip().duration, 2), 4.5))
+      for (const c of gltf.animations) {
+        // a clip that travels (the Scarhorn's charge carries 7.6 m of root motion) runs in place on its plinth
+        const hp = c.tracks.find(t => /hips\.position$/i.test(t.name))?.values
+        if (hp && Math.hypot(hp.at(-3) - hp[0], hp.at(-1) - hp[2]) > 1) for (let k = 0; k < hp.length; k += 3) hp[k] = hp[0], hp[k + 2] = hp[2]
+        actions[c.name] = mixer.clipAction(c)
+      }
+      // The idle, then each other clip in turn with the idle between, back to the idle.
+      const idle = o.idle || 'Idle'
+      const names = Object.keys(actions).filter(n => n !== idle)
+      const seq = [idle, ...names.flatMap(n => [n, idle])]
+      const len = n => (n === idle ? 2.5 : Math.min(Math.max(actions[n].getClip().duration, 2), 4.5))
       const total = seq.reduce((t, n) => t + len(n), 0)
       let cur = null
       const play = n => {
         const act = actions[n]
-        if (act === cur) return
+        if (!act || act === cur) return // the ribmites have no clips
         act.reset().fadeIn(0.3).play(); cur?.fadeOut(0.3)
         cur = act; cur.name = n
       }
-      play('Idle'); mixer.update(0.4) // let the fade-in finish, else this measures the rest pose
+      play(idle); mixer.update(0.4) // let the fade-in finish, else this measures the rest pose
       const [lo, hi] = extent(root)
+      if (o.prop) { // held in the idle pose: its grip at the bone, then grounded on the plinth (see ROSTER)
+        const p = (await loader.loadAsync(import.meta.env.BASE_URL + `models/props/${o.prop[0]}.glb`)).scene, bone = model.getObjectByName(o.prop[1])
+        p.traverse(m => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false } })
+        const pivot = new THREE.Group(); model.add(pivot); pivot.add(p); model.updateMatrixWorld(true)
+        p.position.sub(model.worldToLocal(p.getObjectByName('grip').getWorldPosition(new THREE.Vector3()))) // grip at the pivot
+        pivot.position.copy(model.worldToLocal(bone.getWorldPosition(new THREE.Vector3()))); model.updateMatrixWorld(true)
+        const hy = bone.getWorldPosition(new THREE.Vector3()).y, below = top - extent(p)[0] // how far it reaches under the plinth top
+        if (below > 0 && o.prop[2] === 'slide') p.position.y += below / s
+        if (below > 0 && o.prop[2] === 'drag') pivot.rotation.x = Math.acos(Math.min(1, (hy - top) / (hy - top + below))) // its foot drags behind on the plinth
+        pivot.updateMatrixWorld(true); bone.attach(pivot)
+      }
       const el = document.createElement('div')
       el.style.cssText = 'position:absolute;transform:translate(-50%,-100%);text-align:center;white-space:nowrap'
       el.innerHTML = `<div style="font-size:20px;font-weight:bold">${name}</div><div style="font-size:13px;opacity:.85;font-style:italic">${land}</div>`
       label.append(el)
-      items.push({ id, size, root, mixer, seq, len, total, play, el, pos: new THREE.Vector3(x, top, z), yaw: 0, clipName: 'Idle', phase: i * 3.1, height: hi - lo, footY: lo - top })
+      items.push({ id, size, root, mixer, seq, len, total, play, el, pos: new THREE.Vector3(x, top, z), yaw: 0, lie: !!o.lie, clipName: idle, phase: i * 3.1, height: hi - lo, footY: lo - top })
     } catch (e) { window.__errors.push(`bestiary: ${id}: ${e.message || e}`) }
   }
 
   const cur = (it, t) => {
     let k = (t + it.phase) % it.total
     for (const n of it.seq) { const l = it.len(n); if (k < l) return n; k -= l }
-    return 'Idle'
+    return it.seq[0]
   }
   const target = items.find(it => it.id === focus)
   const tp = new THREE.Vector3(), cp = new THREE.Vector3(), sp = new THREE.Vector3()
   const apply = (dt, t) => {
+    for (const m of lamps) m.emissiveIntensity = 0.3 + 2.7 * ctx.night
     for (const it of items) {
       it.clipName = cur(it, t); it.play(it.clipName); it.mixer.update(dt)
-      it.yaw = target === it
+      it.yaw = it.lie ? Math.PI / 2 // lies across the view, head to the east
+        : target === it
         ? Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + Math.sin(t * 0.4) * 0.25 // faces the camera, a gentle sway
         : Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + (params.get('still') ? 0 : t * 0.3)
       it.root.rotation.y = it.yaw
     }
     if (target) {
-      const p = target.pos, d = target.size * 1.3 + 1
+      const p = target.pos, fs = Math.max(target.size, 1.2), d = fs * 1.3 + 1
       cp.set(A.x - p.x, 0, A.z - p.z).normalize().multiplyScalar(d).add(p)
-      cp.y = ctx.heightAt(cp.x, cp.z) + target.size * 0.6 + PLINTH
-      tp.set(p.x, p.y + target.size * 0.5, p.z)
+      cp.y = ctx.heightAt(cp.x, cp.z) + fs * 0.6 + PLINTH
+      tp.set(p.x, p.y + Math.min(fs, target.height) * 0.5, p.z)
     } else {
       const ph = params.get("pan") ? +params.get("pan") : Math.sin(t * 0.12), phi = SPAN * 0.7 * ph
       cp.set(A.x + 4 * ph, 0, A.z + 4)
@@ -115,7 +161,7 @@ export async function createBestiary(ctx) {
     }
     camera.position.copy(cp); camera.lookAt(tp); camera.updateMatrixWorld(true)
     for (const it of items) {
-      sp.copy(it.pos); sp.y += it.size + 0.5; sp.project(camera)
+      sp.copy(it.pos); sp.y += it.height + 0.5; sp.project(camera)
       const show = sp.z < 1 && Math.abs(sp.x) < 1.1 && (!target || target === it)
       it.el.style.display = show ? '' : 'none'
       if (show) it.el.style.cssText += `;left:${((sp.x + 1) / 2) * innerWidth}px;top:${((1 - sp.y) / 2) * innerHeight}px`
