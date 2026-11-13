@@ -2,6 +2,9 @@
 import * as THREE from 'three/webgpu'
 
 const params = new URLSearchParams(location.search)
+// ?film=secs (tools/audio/capture.mjs): the sound renders offline, stepped a frame at a time with the picture, so no
+// real-time deadline can drop a block of it on a busy machine.
+if (params.get('film')) THREE.AudioContext.setContext(new OfflineAudioContext(2, Math.ceil(48000 * +params.get('film')), 48000))
 window.__errors = []
 window.__probes = {} // each lane adds window.__probes.<lane> = () => ({...facts}); tools/shot.mjs prints them
 const fail = (where, e) => { console.error(`[${where}]`, e); window.__errors.push(`${where}: ${e?.message || e}`) }

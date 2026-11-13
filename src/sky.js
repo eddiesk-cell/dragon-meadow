@@ -39,7 +39,7 @@ export async function createSky(ctx) {
   const live = v => uniform(v).setGroup(renderGroup)
   const uSun = live(ctx.sunDir), uMoon = live(moonDir), uHorizon = live(ctx.fogColor)
   const uZenith = live(pal.zenith), uGlow = live(pal.glow), uCloudLit = live(pal.cloudLit), uCloudShade = live(pal.cloudShade)
-  const uDisc = live(C()), uNight = live(0), uCover = live(0.1), uTime = live(0)
+  const uDisc = live(C()), uNight = live(0), uAur = live(0), uCover = live(0.1), uTime = live(0)
   // ctx.aloft (field): 0 on foot … 1 on the dragon's back. Looking down from up there the air between eye and land is lit
   // from above with the land dark behind it: a bluer, deeper veil than the pale horizon band seen on foot. It ramps in over
   // the first 0.8° below the horizon, so the land (fogged) and the sky dome below the horizon (where the land runs past the far
@@ -128,7 +128,7 @@ export async function createSky(ctx) {
     If(uNight.greaterThan(0.01), () => {
       const moon = vec3(2.2, 2.15, 2.0).mul(smoothstep(0.99974, 0.99979, dot(d, uMoon))).mul(float(0.85).add(mx_fractal_noise_float(d.mul(900), 2, 2, 0.5).mul(0.25)))
       const aur = ribbon(d, 0.31, 0.09, 3.67).add(ribbon(d, 0.38, 0.05, 0.5).mul(0.3)).mul(1.3) // main hem sweeps down from top-left of view to the right
-      extra.assign(stars(d).mul(uNight.mul(uNight)).add(aur.mul(uNight.mul(uNight).mul(uNight))).mul(up).add(moon.mul(uNight))) // aurora only once the sky is dark
+      extra.assign(stars(d).mul(uNight.mul(uNight)).add(aur.mul(uAur)).mul(up).add(moon.mul(uNight)))
     })
     const cl = clouds(d)
     return mix(haze(d).mul(aerial(d)).add(sunDisc).add(extra), cl.rgb, cl.a)
@@ -202,6 +202,7 @@ export async function createSky(ctx) {
     setPalette(s)
     ctx.night = ss(0.22, -0.12, s)
     uNight.value = ctx.night
+    uAur.value = ss(-0.13, -0.25, s) // the aurora wakes only once the clouds have lost the sunset's pink (twilight key → night key)
     uTime.value = t
     uCover.value = pal.cover
     uFogK.value = 1 + 0.6 * ctx.night
