@@ -1,7 +1,7 @@
 # blender -b -P art/dragon2/build.py -- public/models/dragon-winter.glb art/dragon2/hunyuan.glb public/models/dragon.glb
 # dragon2: the Hunyuan3D body of concept-b on the winter dragon's 50-bone rig and clips. Blender coords: +Z up, head at -Y.
 # 1. The rig is refitted to the new body (neck, head, jaw, legs measured from art/dragon2 slices/overlays; wings moved
-#    from over the hind legs to just behind the saddle, parented to chest). Only root carries translation keys, so the
+#    from over the hind legs to the saddle's cantle over the fore shoulders, parented to chest). Only root carries translation keys, so the
 #    clips' rotations carry over onto the new rest.
 # 2. The body is cut to a web budget and skinned by bone heat (body bones only); the saddle and chest strap ride chest
 #    rigidly, their edges softened. (The old body's weights, posed onto the new rest and copied, stretched 1.6x more.)
@@ -12,7 +12,6 @@ from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 
 src, hy, out = sys.argv[sys.argv.index('--') + 1:][:3]
-HERE = os.path.dirname(os.path.abspath(__file__))
 S, T = 3.6, Vector((0, -0.99, 0))       # Hunyuan units -> the old body's size (4.09 m nose to tail), feet on z 0
 TRIS = 52000                             # body budget (wings add ~4k)
 rng = np.random.default_rng(7)
