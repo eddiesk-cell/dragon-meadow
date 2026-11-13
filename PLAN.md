@@ -739,8 +739,27 @@ Stable Audio Open / MusicGen on this Mac — no paid audio service). Original so
   `auto=walk` and `auto=ride` muxed onto their `clip.mjs` videos → `shots/sound-walk.mp4`, `shots/sound-ride.mp4`;
   integrated loudness −20 to −14 LUFS, peaks < −1 dBFS (print `ffmpeg ebur128`). controls-check 7/7; errors []; fps ≥ 50.
 
-### Lane dragon2 — `art/dragon2/`, `public/models/dragon.glb` (Opus, after its concept and mesh exist)
-A new detailed dragon from a Higgsfield concept and Hunyuan3D mesh (paths written here when they land), bound to the
-existing 50-bone rig so every clip (fly, hover, idle×6, land, takeoff, walk) keeps working, with the wings rooted at
-the SHOULDERS (today `wing-*-shoulder` sits over the hind legs at y −0.62, parented to `spine`; move it over the front
-legs, parented to `chest`). Brief written when the mesh lands.
+### Lane dragon2 — `art/dragon2/`, `public/models/dragon.glb` (Opus)
+A new detailed dragon replaces the winter dragon, on the SAME 50-bone rig so every clip keeps working (fly, hover,
+idle, idle_fire, idle_look, idle_roar, idle_shake, idle_wings, land, takeoff, walk) and `src/dragon.js` / `src/ride.js`
+need no change. Concept (original design, Eddie has seen it): `art/dragon2/concept-b.png`; the same dragon without wings:
+`art/dragon2/concept-b-wingless.png`; its Hunyuan3D v3 mesh: `art/dragon2/hunyuan.glb` (textured, ~300k faces). The old
+rig's rest pose, which the concept was drawn on: `art/dragon2/rest-{quarter,side,front}.png` (`rest_render.py`).
+1. **Wings at the shoulders.** Today `wing-{l,r}-shoulder` sit over the hind legs (head y −0.62, parented to `spine`,
+   while `fore-l-upper` is at y −1.22 under `chest`). Move each wing root just behind and above the front-leg shoulder,
+   on the wing-root mounds of the new body (behind the saddle), parented to `chest`; the clips' rotations carry over.
+2. **Body.** Align the Hunyuan mesh to the rest pose (head on `head`, feet on the foot bones, tail along `tail1..7`,
+   same overall size: the old body is 1.19 × 4.33 × 2.51 m), cut it to a web budget (≤ 60k triangles, one ≤ 2k base
+   colour texture, glb ≤ 8 MB), and skin it: start from the old body's weights (nearest surface), then fix what the new
+   shape needs; the saddle rides the chest/spine rigidly. Keep the glowing cyan spots as an emissive mask that lights at
+   night as the world's plants do (`ctx.night`; alpha² convention in PLAN flora notes) — if that needs a dragon.js hook, it
+   is needsWiring.
+3. **Wings.** Build new wing geometry on the moved bones: bone struts along each finger and a membrane between them,
+   textured from the concept (dusk violet near the body to ember orange at the trailing edge, fine veins, light shows
+   through it with the sun behind), skinned to their own bones only.
+4. Keep the empty `rider-seat` (ride.js reads it by name), now on the new saddle, parented as before.
+- **CHECK:** `art/dragon2/turn-{quarter,side,front}.png` (rest pose, beside the concept) and
+  `art/dragon2/clips-sheet.png` (every clip at its extremes, two angles): the wing roots sit over the front legs, nothing
+  tears (print the worst edge stretch per clip, ≤ 6×), the saddle stays on the back. In game: `?dragon=near` by day and
+  night, `auto=ride` (the probes and log as in Lane dragon-ride: over isle and lake, isleGap/treeGap ≥ 0, the hero on the
+  saddle). controls-check 7/7, errors [], fps ≥ 50. The old model is kept as `public/models/dragon-winter.glb` for A/B.
