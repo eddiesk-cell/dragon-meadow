@@ -343,9 +343,6 @@ export async function createField(ctx) {
   // square, 6 m by 2.5 km, more than the depth buffer's step out there — so that tile always wins without z-fighting;
   // everywhere else it IS the ground, at its true height, so a sea that ends on it ends at a shore, never over a sunken
   // shelf. A skirt closes any step at the square's edge. Not walkable ground: flora never plants on it.
-  // shortcut: Asterhaven's city tile (settlements' tile() at CITY −700…+500, −600…+600) is not in ctx.ground.rects yet; drop
-  // this copy once settlements pushes it there (until then a moved city would z-fight the far land: re-check this rect).
-  const KNOWN = [[-2200, -1000, 50, 1250]]
   const farMat = new THREE.MeshLambertNodeMaterial({ side: THREE.DoubleSide }) // double: the skirt is seen from outside
   farMat.colorNode = groundColor(vertexColor().rgb, float(1), float(0), airW(positionWorld.xz))
   farMat.normalNode = canopy(attribute('normal', 'vec3'), airW(positionWorld.xz)) // far land sits at the origin too
@@ -354,7 +351,6 @@ export async function createField(ctx) {
     // (so skipped) under Crestwatch's headland, whose cliffs a coarse grid would otherwise cut through
     const H = (x, z) => Math.min(ownHeight(x, z), ctx.heightAt(x, z))
     const others = ctx.ground.rects.slice(1)
-    for (const k of KNOWN) if (!others.some(r => r.every((v, i) => v === k[i]))) others.push(k)
     // Sunk strictly inside a tile; its edges are grid lines (below), so the step down lies under the tile, never as a groove
     // in the open land beside it. An edge on the square's own boundary sinks too (only the square's terrain lies beyond it).
     const onSq = (x, z) => Math.abs(Math.abs(z) - SIDE / 2) < 0.5 && Math.abs(x) <= SIDE / 2 || Math.abs(Math.abs(x) - SIDE / 2) < 0.5 && Math.abs(z) <= SIDE / 2

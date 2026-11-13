@@ -149,9 +149,10 @@ export async function createSettlements(ctx) {
   const swap = (m, name) => m.name === 'window' ? (name === 'lantern' ? lampMat : winMat) : swaps.get(m) || m
   const groundMat = new THREE.MeshLambertNodeMaterial()
   {
-    const near = mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz))))
-    const gb = attribute('aGB', 'vec2'), vc = vertexColor().rgb
-    groundMat.colorNode = mix(vc.mul(vc).mul(mix(float(1), near, gb.x)), vec3(0.46, 0.45, 0.4), gb.y)
+    // field's own ground colour and light (the same on foot, its far meadow from the air), so no seam shows at a tile's edge
+    const gb = attribute('aGB', 'vec2')
+    groundMat.colorNode = ctx.groundColor(vertexColor().rgb, gb.x, gb.y)
+    groundMat.normalNode = ctx.groundNormal(attribute('normal', 'vec3')) // tiles sit at the origin: object normal is world normal
   }
   const stoneOf = (src, name) => { let s; src.traverse(o => { if (o.isMesh && o.material.name === name) s = o.material }); return s }
   { // castle stone: paler, and lit a little by the haze itself, so a castle with the sun behind it still reads as pale
@@ -600,6 +601,7 @@ export async function createSettlements(ctx) {
   }
   // the city's ground, its bay, its wall, its palace
   scene.add(tile(THREE, ctx, CITY.x - 700, CITY.z - 600, 1200, 1200, 10, groundMat))
+  ctx.ground.rects.push([CITY.x - 700, CITY.x + 500, CITY.z - 600, CITY.z + 600]) // so field's far land sinks under it
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(2600, 2400).rotateX(-Math.PI / 2), new THREE.MeshStandardNodeMaterial({ color: 0x2f5a66, roughness: 0.3 }))
   sea.position.set(CITY.x - 1500, -1.5, CITY.z)
   scene.add(sea)
