@@ -36,6 +36,12 @@ export async function createSky(ctx) {
   const uSun = uniform(ctx.sunDir), uMoon = uniform(moonDir), uHorizon = uniform(ctx.fogColor)
   const uZenith = uniform(pal.zenith), uGlow = uniform(pal.glow), uCloudLit = uniform(pal.cloudLit), uCloudShade = uniform(pal.cloudShade)
   const uDisc = uniform(C()), uNight = uniform(0), uCover = uniform(0.1), uTime = uniform(0)
+  // ctx.aloft (field): 0 on foot … 1 on the dragon's back. Looking down from up there the air between eye and land is lit
+  // from above with the land dark behind it: a bluer, deeper veil than the pale horizon band seen on foot. It ramps in over
+  // the first 3° below the horizon, so the land (fogged) and the sky dome below the horizon (where the land runs past the far
+  // plane) take the same colour and the far land still melts into the horizon with no line.
+  const uAloft = uniform(0)
+  const aerial = d => mix(vec3(1), vec3(0.42, 0.56, 0.8), smoothstep(0, 0.05, d.y.negate()).mul(uAloft))
 
   // Haze: horizon→zenith gradient, a warm glow round the sun and along its horizon, a cool halo round the moon.
   // The pale band holds to ~2° (the crest at ~4° dissolves in it); above, the zenith takes over: by ~10° by day,
@@ -114,7 +120,7 @@ export async function createSky(ctx) {
       extra.assign(stars(d).mul(uNight.mul(uNight)).add(aur.mul(uNight)).mul(up).add(moon.mul(uNight)))
     })
     const cl = clouds(d)
-    return mix(haze(d).add(sunDisc).add(extra), cl.rgb, cl.a)
+    return mix(haze(d).mul(aerial(d)).add(sunDisc).add(extra), cl.rgb, cl.a)
   })
   scene.backgroundNode = skyColor(normalize(normalWorldGeometry))
 
@@ -130,12 +136,20 @@ export async function createSky(ctx) {
   // thins fast above (8 m), so the crest dissolves into the sky behind it while the meadow stays clear and Castle Crestwatch
   // (−122, −390, on its own headland) rises out of it (with the air: base ~95 %, walls at 50 m ~60 %, towers at 70 m ~47 % by day).
   // Clear within 50 m of the eye.
-  const lip = positionWorld.z.add(225).div(60)
-  const mist = exp(lip.mul(lip).negate()).mul(exp(max(positionWorld.y.sub(21), 0).mul(-1 / 8))).mul(smoothstep(50, 200, dist)).mul(7)
-  const fogF = max(float(1).sub(exp(air.add(ground).add(mist).mul(uFogK).negate())), smoothstep(2300, 2900, dist))
+  // From the air (ctx.aloft, written by field: 0 on foot … 1 on the dragon's back) the same mist is a thin veil lying in
+  // banks along the coast, not a white wall over the whole north.
+  const pw = positionWorld
+  const bank = sin(pw.x.mul(0.011).add(sin(pw.z.mul(0.02)).mul(1.5))).mul(sin(pw.x.mul(0.023).sub(1.7))).mul(0.5).add(0.5)
+  const lip = pw.z.add(225).div(60)
+  const mist = exp(lip.mul(lip).negate()).mul(exp(max(pw.y.sub(21), 0).mul(-1 / 8))).mul(smoothstep(50, 200, dist)).mul(7)
+    .mul(mix(float(1), bank.mul(0.1).add(0.02), uAloft))
+  const thick = air.add(ground).mul(mix(float(1), 0.6, uAloft)).add(mist) // and clearer air up there: distance softens, never milks
+  const fogF = max(float(1).sub(exp(thick.mul(uFogK).negate())), smoothstep(2300, 2900, dist))
   // A thin veil scatters a little more blue (strongly at night, faintly by day so the golden afternoon stays warm); as it thickens it whitens to the horizon itself, so the far land reads pale
   // and a fully hazed ridge is exactly the sky behind it.
-  scene.fogNode = fog(haze(normalize(toFrag)).mul(mix(mix(vec3(0.96, 1.0, 1.08), vec3(0.83, 1.0, 1.32), uNight), vec3(1), fogF.mul(fogF))), fogF)
+  const fogDir = normalize(toFrag), veil = haze(fogDir).mul(mix(mix(vec3(0.96, 1.0, 1.08), vec3(0.83, 1.0, 1.32), uNight), vec3(1), fogF.mul(fogF)))
+  // From the air the veil takes the aerial tint (see aerial); the mist keeps its own pale colour.
+  scene.fogNode = fog(veil.mul(mix(vec3(1), aerial(fogDir), mist.div(thick.add(1e-4)).oneMinus())), fogF)
   scene.fog = scene.background = null
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1)
@@ -178,6 +192,7 @@ export async function createSky(ctx) {
     uTime.value = t
     uCover.value = pal.cover
     uFogK.value = 1 + 0.6 * ctx.night
+    uAloft.value = ctx.aloft ?? 0
 
     const sunUp = ss(-0.02, 0.06, s), moonUp = ss(-0.02, -0.14, s)
     uDisc.value.copy(pal.glow).multiplyScalar(25 * sunUp) // gold, so the capped bloom round it stays gold instead of ivory

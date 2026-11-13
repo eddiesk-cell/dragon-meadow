@@ -3,8 +3,8 @@
 // identity hashed from the integer world cell, so the field stays nailed down as the tile slides.
 import {
   Fn, uniform, uniformArray, attribute, varying, vec2, vec3, vec4, float, int, uint,
-  floor, sin, cos, mix, smoothstep, step, saturate, length, normalize, dot, pow, min, exp,
-  cameraPosition, cameraViewMatrix, positionWorld, positionLocal, vertexColor, texture,
+  floor, sin, cos, mix, smoothstep, step, saturate, length, normalize, dot, pow, min, max, exp,
+  cameraPosition, cameraViewMatrix, positionWorld, positionLocal, positionViewDirection, normalView, vertexColor, texture,
 } from 'three/tsl'
 
 const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k) }
@@ -17,11 +17,12 @@ function heightAt(x, z) {
   const land = roll * (1 - 0.5 * rise) + (25 + 3 * Math.sin(x * 0.02)) * rise
   return land + (-48 - land) * ss(e - 4, e + 14, -z)
 }
+const rollTSL = (x, z) => sin(x.mul(0.031).add(1.3)).mul(sin(z.mul(0.027).add(0.4))).mul(1.4) // the meadow's ±3 m swell
+  .add(sin(x.mul(0.013).sub(z.mul(0.019)).add(2.1)).mul(0.9))
+  .add(sin(x.mul(0.071).add(z.mul(0.053))).mul(0.45))
 const groundTSL = Fn(([p]) => { // → vec2(height, cliff 0..1)
   const x = p.x, z = p.y
-  const roll = sin(x.mul(0.031).add(1.3)).mul(sin(z.mul(0.027).add(0.4))).mul(1.4)
-    .add(sin(x.mul(0.013).sub(z.mul(0.019)).add(2.1)).mul(0.9))
-    .add(sin(x.mul(0.071).add(z.mul(0.053))).mul(0.45))
+  const roll = rollTSL(x, z)
   const rise = smoothstep(55, 195, z.negate())
   const e = sin(x.mul(0.011).add(0.7)).mul(14).add(sin(x.mul(0.037)).mul(6)).add(222)
   const land = roll.mul(rise.mul(-0.5).add(1)).add(sin(x.mul(0.02)).mul(3).add(25).mul(rise))
@@ -43,6 +44,9 @@ export async function createField(ctx) {
   const uTime = uniform(0), uCam = uniform(new THREE.Vector2()), uHero = uniform(new THREE.Vector3()), uSun = uniform(ctx.sunDir)
   const WIND = vec2(0.94, 0.34) // blowing across the view, left → right
   const uNight = uniform(0) // ctx.night, 0 day … 1 night: how much the tips give back the light they drank
+  // ctx.aloft, 0 on foot … 1 from 70 m over the ground (the dragon's back): how much the ground wears its look from the air
+  const uAloft = uniform(0), aloftAt = c => ss(20, 70, c.y - ctx.heightAt(c.x, c.z))
+  ctx.aloft = 0
 
   // Footstep light rings (Phase 6 world rule: pressure wakes the grass). A pool of RINGS slots (x, z, start time, strength);
   // each spreads to ~3 m and fades over 2 s. Spawned on the CPU in update() from ctx.heroPos.
@@ -105,7 +109,8 @@ export async function createField(ctx) {
     }
     return h
   }
-  ctx.heightAt = (x, z) => heightAt(x, z) + patchHeight(x, z)
+  const ownHeight = (x, z) => heightAt(x, z) + patchHeight(x, z)
+  ctx.heightAt = ownHeight
   // ?carvetest=1: field carves a test dip through its own public hook — 20 m patch at (0, −30), −2 m, bare, no grass inside r 6.
   // ?carvetest=N adds N of them, 25 m apart going left, to fill the patch table (N = 6 overflows it: proves the error path).
   for (let n = 0; n < (+ctx.params.get('carvetest') || 0); n++) {
@@ -243,21 +248,61 @@ export async function createField(ctx) {
   ctx.grass = { blades: new THREE.Group().add(...layers), flowers: new THREE.Group().add(...flowerLayers) } // e.g. water hides both for its mirror pass
   scene.add(ctx.grass.blades, ctx.grass.flowers)
 
+  // --- the meadow from the air. Up there a blade is smaller than a pixel, so the ground under the blades must carry the
+  // field's own look: the grass's jade / yellow-green drifts and broad light-dark patches (same noise as the blades), flower
+  // drifts as colour, darker hollows, slopes that catch the sun or fall into shade, and wide warm and cool meadows.
+  const meadowFar = xz => {
+    const drift = lowNoise(xz.add(31), 0.06, 0.04), patch = lowNoise(xz, 0.11, 0.07), bloomN = lowNoise(xz.add(57), 0.045, 0.06)
+    const body = mix(vec3(0.012, 0.09, 0.06), vec3(0.045, 0.15, 0.025), smoothstep(0.3, 0.75, drift))
+    const blades = mix(body, mix(vec3(0.36, 0.33, 0.07), vec3(0.27, 0.34, 0.08), patch.mul(0.5)), 0.42)
+      .mul(lowNoise(xz.add(13), 0.035, 0.05).mul(0.35).add(0.8))
+      .mul(mix(vec3(0.86, 1, 1.12), vec3(1.12, 1, 0.8), lowNoise(xz.add(97), 0.008, 0.006))) // wide jade and gold meadows
+    const flowers = mix(blades, vec3(0.6, 0.48, 0.44), smoothstep(0.55, 0.95, bloomN).mul(0.22))
+    const swell = p => lowNoise(p, 0.045, 0.03).mul(4).add(lowNoise(p.add(71), 0.1, 0.075).mul(1.5)) // a fake swell, metres
+    const g = vec2(swell(xz.add(vec2(1.5, 0))).sub(swell(xz.sub(vec2(1.5, 0)))), swell(xz.add(vec2(0, 1.5))).sub(swell(xz.sub(vec2(0, 1.5))))).div(3)
+    // the sun's share of the light (~3/4 by day) follows the swell's slope: Lambert relative to flat ground, 1 − g·L.xz / L.y
+    const lit = mix(float(1), min(max(float(1).sub(dot(g, uSun.xz).div(max(uSun.y, 0.15)).mul(0.45)), 0), 1.6), smoothstep(-0.05, 0.1, uSun.y))
+    return flowers.mul(mix(float(0.72), float(1.06), smoothstep(-2.5, 2, rollTSL(xz.x, xz.y)))).mul(lit.mul(0.75).add(0.25))
+  }
+  // Meadow ground from the terrain's vertex colour (grass green, or rock on steep faces: b/g 0.33 vs 0.86), grass × and bare.
+  // w = 0 is the look on foot, unchanged; w = 1 the look from the air.
+  const groundColor = (vc, grass, bare, w) => {
+    const near = mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz)))) // shade under the near grass
+    const air = mix(meadowFar(positionWorld.xz).mul(grass.mul(0.15).add(0.85)), vc.mul(vc), saturate(vc.b.div(vc.g.add(1e-4)).sub(0.4).div(0.45)))
+    return mix(mix(vc.mul(vc).mul(mix(float(1), near, grass)), air, w), vec3(0.46, 0.45, 0.4), bare)
+  }
+  // Other ground tiles (settlements' far tile and city) colour themselves with ctx.groundColor so they match from the air.
+  // Until one does, field's own ground fades back to the look on foot within 160 m of their rects (no colour seam).
+  let shared = 0
+  ctx.groundColor = (vc, grass, bare) => (shared++, groundColor(vc, grass, bare, uAloft))
+  const uFade = uniform(0), uOther = uniformArray(Array.from({ length: 4 }, () => new THREE.Vector4(1e6, 1e6, 1e6, 1e6)), 'vec4')
+  const airW = xz => {
+    let k = float(1)
+    for (let i = 0; i < 4; i++) {
+      const R = uOther.element(i)
+      k = min(k, smoothstep(0, 160, max(max(R.x.sub(xz.x), xz.x.sub(R.y)), max(R.z.sub(xz.y), xz.y.sub(R.w)))))
+    }
+    return uAloft.mul(mix(float(1), k, uFade))
+  }
+
   // --- terrain: one mesh from heightAt; meadow green, rock on the cliff, darker under the near grass
   const tg = new THREE.PlaneGeometry(SIDE, SIDE, SIDE / 2, SIDE / 2).rotateX(-Math.PI / 2)
   const p = tg.attributes.position
   for (let i = 0; i < p.count; i++) p.setY(i, heightAt(p.getX(i), p.getZ(i)))
   tg.computeVertexNormals()
-  const nrm = tg.attributes.normal, col = new Float32Array(p.count * 3), c = new THREE.Color(), rock = new THREE.Color(0.3, 0.28, 0.24)
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), z = p.getZ(i), v = 0.85 + 0.3 * (0.5 + 0.5 * Math.sin(x * 0.05 + Math.sin(z * 0.04) * 2) * Math.sin(z * 0.06))
-    c.setRGB(0.2 * v, 0.27 * v, 0.09 * v).lerp(rock, ss(0.85, 0.6, nrm.getY(i)))
-    if (p.getY(i) < -39) c.setRGB(0.16, 0.18, 0.17)
-    c.toArray(col, i * 3)
+  const c = new THREE.Color(), rock = new THREE.Color(0.3, 0.28, 0.24)
+  const colourGround = g => { // vertex colour: meadow green, rock where steep, dark sea floor
+    const p = g.attributes.position, n = g.attributes.normal, col = new Float32Array(p.count * 3)
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i), v = 0.85 + 0.3 * (0.5 + 0.5 * Math.sin(x * 0.05 + Math.sin(z * 0.04) * 2) * Math.sin(z * 0.06))
+      c.setRGB(0.2 * v, 0.27 * v, 0.09 * v).lerp(rock, ss(0.85, 0.6, n.getY(i)))
+      if (p.getY(i) < -39) c.setRGB(0.16, 0.18, 0.17)
+      c.toArray(col, i * 3)
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3))
   }
-  tg.setAttribute('color', new THREE.BufferAttribute(col, 3))
+  colourGround(tg)
   const tm = new THREE.MeshLambertNodeMaterial() // colour comes in colorNode as vc² (vertexColors: true squared it before; look kept)
-  const near = mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz)))) // shade under the near grass
   const tp = patchAt(positionWorld.xz)
   const dh = patches.reduce((a, _, k) => { // slope of the patch metres, each patch at its own texel step
     const e = uRects[k].z.div(PN), ph = o => patchOne(k, positionWorld.xz.add(o)).x
@@ -266,13 +311,70 @@ export async function createField(ctx) {
   const n0 = attribute('normal', 'vec3') // terrain sits at the origin: local = world
   tm.positionNode = positionLocal.add(vec3(0, patchAt(positionLocal.xz).x, 0))
   tm.normalNode = normalize(cameraViewMatrix.mul(vec4(normalize(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y))), 0)).xyz)
-  tm.colorNode = mix(vertexColor().mul(vertexColor()).mul(mix(float(1), near, tp.y)), vec3(0.46, 0.45, 0.4), tp.z).mul(tp.w)
+  tm.colorNode = groundColor(vertexColor().rgb, tp.y, tp.z, airW(positionWorld.xz)).mul(tp.w)
   const terrain = new THREE.Mesh(tg, tm)
   terrain.receiveShadow = true
   scene.add(terrain)
 
-  // --- sea, far below the cliff
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(6000, 3000).rotateX(-Math.PI / 2), new THREE.MeshStandardNodeMaterial({ color: 0x3f6378, roughness: 0.35 }))
+  // --- far land: the meadow runs on past the 800 m square into the haze in every direction (the sea fills the north), so
+  // no end of the world shows from the air. Built on the first frame, once every module has shaped ctx.heightAt (settlements'
+  // headland, Asterhaven's hill and coast). It lies sunk under heightAt — 2 m by the square, 6 m by 2.5 km, more than the
+  // depth buffer's step out there — so a ground tile another module lays over it (settlements' far tiles) always wins
+  // without z-fighting; a skirt closes the step at the square's edge. Not walkable ground: flora never plants on it.
+  const farMat = new THREE.MeshLambertNodeMaterial({ side: THREE.DoubleSide }) // double: the skirt is seen from outside
+  farMat.colorNode = groundColor(vertexColor().rgb, float(1), float(0), airW(positionWorld.xz))
+  function buildFar() {
+    // the lower of field's own ground and the final ctx.heightAt: under the city's coast and the town's stream bed, and sea
+    // (so skipped) under Crestwatch's headland, whose cliffs a coarse grid would otherwise cut through
+    const H = (x, z) => Math.min(ownHeight(x, z), ctx.heightAt(x, z))
+    const R = 3000, out = [], sink = (x, z) => 2 + 4 * ss(500, 2500, Math.hypot(x, z))
+    for (let v = SIDE / 2; v < R; v += 20 + (v - SIDE / 2) * 0.04) out.push(v) // 20 m cells by the square, ~120 m at the haze
+    out.push(R)
+    const ax = [...out.map(v => -v).reverse(), ...Array.from({ length: SIDE / 20 - 1 }, (_, i) => 20 - SIDE / 2 + 20 * i), ...out], n = ax.length
+    const pos = new Float32Array(n * n * 3), hs = new Float32Array(n * n), idx = []
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const x = ax[i], z = ax[j], k = j * n + i
+      hs[k] = H(x, z); pos.set([x, hs[k] - sink(x, z), z], k * 3)
+    }
+    const inside = (a, b) => a >= -SIDE / 2 && b <= SIDE / 2
+    for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
+      const a = j * n + i, b = a + 1, c = a + n, d = c + 1
+      if (inside(ax[i], ax[i + 1]) && inside(ax[j], ax[j + 1])) continue // the field's own terrain
+      if (Math.max(hs[a], hs[b], hs[c], hs[d]) < -38) continue // all under the sea
+      idx.push(a, c, b, b, c, d)
+    }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    g.setIndex(idx)
+    g.computeVertexNormals()
+    // skirt round the square: from the terrain's own edge (2 m steps, 5 cm proud) straight down below the far land
+    const sp = [], si = [], sn = [], E = SIDE / 2
+    const edge = [[-E, -E, 1, 0], [E, -E, 0, 1], [E, E, -1, 0], [-E, E, 0, -1]]
+    for (const [x0, z0, dx, dz] of edge) for (let s = 0; s < SIDE; s += 2) {
+      const x = x0 + dx * s, z = z0 + dz * s, x1 = x + dx * 2, z1 = z + dz * 2, h0 = H(x, z), h1 = H(x1, z1)
+      if (Math.max(h0, h1) < -38) continue
+      const o = sp.length / 3
+      sp.push(x, h0 + 0.05, z, x1, h1 + 0.05, z1, x, h0 - sink(x, z) - 1, z, x1, h1 - sink(x1, z1) - 1, z1)
+      sn.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0)
+      si.push(o, o + 2, o + 1, o + 1, o + 2, o + 3)
+    }
+    const sg = new THREE.BufferGeometry()
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3))
+    sg.setAttribute('normal', new THREE.Float32BufferAttribute(sn, 3))
+    sg.setIndex(si)
+    for (const geo of [g, sg]) colourGround(geo), scene.add(new THREE.Mesh(geo, farMat))
+    farTris = (idx.length + si.length) / 3
+    // fade toward other modules' ground tiles until they colour themselves with ctx.groundColor (field's own rect is [0])
+    ctx.ground.rects.slice(1, 5).forEach((r, i) => uOther.array[i].set(...r))
+    uFade.value = shared ? 0 : 1
+  }
+  let farTris = 0
+
+  // --- sea, far below the cliff: deep teal looking down, the sky in it toward the horizon (so it meets the haze softly)
+  const seaMat = new THREE.MeshStandardNodeMaterial({ roughness: 0.25, metalness: 0 })
+  seaMat.colorNode = vec3(0.025, 0.1, 0.14)
+  seaMat.emissiveNode = uniform(ctx.fogColor).mul(vec3(0.62, 0.8, 1)).mul(pow(float(1).sub(saturate(dot(normalView, positionViewDirection))), 5).mul(0.5).add(0.04)) // the bluer sky above the haze band
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(6000, 3000).rotateX(-Math.PI / 2), seaMat)
   sea.position.set(0, -40, -1650)
   scene.add(sea)
 
@@ -281,7 +383,8 @@ export async function createField(ctx) {
   const flowerCells = flowerLayers.reduce((a, l) => a + l.geometry.instanceCount, 0)
   window.__probes.field = () => ({ blades, flowerCells, h0: r2(heightAt(0, 0)), crest: r2(heightAt(0, -200)), sea: r2(heightAt(0, -320)),
     patches: used, ground: ctx.ground.rects, carve: r2(ctx.heightAt(0, -30)),
-    night: r2(uNight.value), rings: ringSlots.filter(s => uTime.value - s.z < 2).length, stepRings })
+    night: r2(uNight.value), rings: ringSlots.filter(s => uTime.value - s.z < 2).length, stepRings,
+    aloft: r2(uAloft.value), farTris, groundColorUsers: shared, fadeNearTiles: uFade.value })
 
   // A ring for every ~0.8 m walked (a footfall), a brighter one on landing, and at night a slow pulse while standing.
   const last = new THREE.Vector3(NaN, 0, 0)
@@ -304,10 +407,14 @@ export async function createField(ctx) {
     if (c !== camera) return
     c.position.set(pin[0], pin[1], pin[2]); c.lookAt(pin[3], pin[4], pin[5]); c.updateMatrixWorld()
     uCam.value.set(pin[0], pin[2])
+    ctx.aloft = uAloft.value = aloftAt(c.position) // sky reads it next frame
   }
 
+  let built = false
   return {
     update(dt, t) {
+      if (!built) built = true, buildFar()
+      if (!pin) ctx.aloft = uAloft.value = aloftAt(camera.position) // last frame's camera: hero and ride move it after this
       uTime.value = t
       uNight.value = ctx.night
       uCam.value.set(camera.position.x, camera.position.z)
