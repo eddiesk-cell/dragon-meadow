@@ -252,6 +252,10 @@ export async function createHero(ctx) {
       if (moving) {
         pos.x += (dx / len) * speed * dt
         pos.z += (dz / len) * speed * dt
+        for (const o of ctx.flora?.solids ?? []) { // out of solid plants (flora.js), his body 0.3 m round
+          const ex = pos.x - o.x, ez = pos.z - o.z, d = Math.hypot(ex, ez), r = o.r + 0.3
+          if (d < r && d > 1e-6) pos.x = o.x + ex / d * r, pos.z = o.z + ez / d * r
+        }
         let d = Math.atan2(dx, dz) - face
         d = Math.atan2(Math.sin(d), Math.cos(d))
         face += d * Math.min(1, dt * 10)

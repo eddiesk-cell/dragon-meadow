@@ -90,7 +90,7 @@ export async function createAudio(ctx) {
     : (ring && Math.hypot(x - ring.center.x, z - ring.center.z) < ring.radius + 3) || towns.some(t => Math.hypot(x - t.x, z - t.z) < t.r) ? 'step-stone' : 'step-grass'
   const last = new THREE.Vector3().copy(heroPos), dragonAt = new THREE.Vector3()
   let speed = 0, air = false, airT = 0, swing = null, swingU = 0, hits = 0, atk = null, mState = '', impact = null
-  let dState = ctx.dragon?.state, wy = 0, wvy = 0, wLow = Infinity, dSpeed = 0, windAmt = 0, mixT = 0, bellT = 20
+  let dState = ctx.dragon?.state, wy = 0, wvy = 0, wLow = Infinity, dSpeed = 0, windAmt = 0, mixT = 0, bellT = 20, tolls = []
   const wing = ctx.dragon?.model.getObjectByName('wing-l-hand')
   if (ctx.dragon && !wing) console.warn('audio: the dragon has no wing-l-hand bone, so no wingbeats')
   const mix = {}
@@ -179,7 +179,9 @@ export async function createAudio(ctx) {
       windAmt += ((ride === 'ride' ? smoothstep(dSpeed, 4, 28) : 0) - windAmt) * Math.min(1, dt * 2)
 
       // A far bell from Springwell's church: three tolls about once a minute.
-      if ((bellT -= dt) < 0) { bellT = 50 + Math.random() * 25; for (let k = 0; k < 3; k++) setTimeout(() => play('bell', towns[0].p, { gain: 1, ref: 60 }), k * 2600); note('bell') }
+      // On game time, not timers, so a film recorded frame by frame (tools/audio/capture.mjs) keeps them 2.6 s apart.
+      if ((bellT -= dt) < 0) { bellT = 50 + Math.random() * 25; tolls.push(...[0, 2.6, 5.2].map(k => ctx.time + k)); note('bell') }
+      while (tolls[0] <= ctx.time) tolls.shift(), play('bell', towns[0].p, { gain: 1, ref: 60 })
 
       // Water: the source moves to the pond point nearest the camera.
       if (loops.water) {

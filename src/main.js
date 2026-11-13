@@ -74,8 +74,12 @@ addEventListener('resize', () => {
 let last = performance.now(), frames = 0
 renderer.setAnimationLoop(() => {
   const now = performance.now()
-  const dt = Math.min((now - last) / 1000, 0.1) * ctx.timeScale
+  tick(Math.min((now - last) / 1000, 0.1) * ctx.timeScale)
   last = now
+})
+// Film mode for tools/audio/capture.mjs: stop the clock-driven loop; the recorder then steps the world a fixed dt at a time.
+window.__film = () => { renderer.setAnimationLoop(null); window.__step = dt => tick(dt * ctx.timeScale) }
+function tick(dt) {
   ctx.time += dt
   for (const s of systems) {
     try { s.update?.(dt, ctx.time) } catch (e) { fail('update', e); s.update = null }
@@ -87,4 +91,4 @@ renderer.setAnimationLoop(() => {
     document.getElementById('load').style.opacity = 0
     setTimeout(() => (document.getElementById('hint')?.style.setProperty('opacity', 0)), 9000)
   }
-})
+}

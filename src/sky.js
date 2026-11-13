@@ -104,7 +104,7 @@ export async function createSky(ctx) {
     return vec3(0.85, 0.9, 1).mul(s).add(neb)
   }
 
-  // Aurora: a ribbon hanging across the sky ahead (night.png): its sharp lower hem bright green, fading upward through
+  // Aurora: a ribbon hanging across the sky ahead (night.png): its lower hem bright green and soft, fading upward through
   // violet, streaked by vertical rays, the hem sweeping down from the top of the view to the right and folding slowly.
   // Angular, so its width is fixed on screen: u = bearing from straight ahead (−Z), d.y = sin(elevation).
   const ribbon = (d, y0, amp, ph) => { // hem = y0 ± amp, highest at u = (π/2 − ph) / 3.5
@@ -113,7 +113,7 @@ export async function createSky(ctx) {
     const dy = d.y.sub(hem)
     const rays = pow(sin(u.mul(140).add(sin(u.mul(17).add(uTime.mul(0.2))).mul(3)).add(uTime.mul(0.1))).mul(0.5).add(0.5), 3)
       .mul(sin(u.mul(330).sub(uTime.mul(0.3))).mul(0.3).add(0.7)).mul(0.75).add(0.25)
-    const green = vec3(0.15, 1.0, 0.5).mul(smoothstep(-0.006, 0.004, dy)).mul(exp(dy.mul(-30)))
+    const green = vec3(0.15, 1.0, 0.5).mul(smoothstep(-0.03, 0.006, dy)).mul(exp(dy.mul(-30))) // a soft hem, ~2° (night.png)
     const violet = vec3(0.55, 0.18, 1.0).mul(smoothstep(0.01, 0.05, dy)).mul(exp(dy.mul(-9))).mul(0.6)
     return green.add(violet).mul(rays).mul(smoothstep(1.4, 0.8, abs(u)))
   }
@@ -128,7 +128,7 @@ export async function createSky(ctx) {
     If(uNight.greaterThan(0.01), () => {
       const moon = vec3(2.2, 2.15, 2.0).mul(smoothstep(0.99974, 0.99979, dot(d, uMoon))).mul(float(0.85).add(mx_fractal_noise_float(d.mul(900), 2, 2, 0.5).mul(0.25)))
       const aur = ribbon(d, 0.31, 0.09, 3.67).add(ribbon(d, 0.38, 0.05, 0.5).mul(0.3)).mul(1.3) // main hem sweeps down from top-left of view to the right
-      extra.assign(stars(d).mul(uNight.mul(uNight)).add(aur.mul(uNight)).mul(up).add(moon.mul(uNight)))
+      extra.assign(stars(d).mul(uNight.mul(uNight)).add(aur.mul(uNight.mul(uNight).mul(uNight))).mul(up).add(moon.mul(uNight))) // aurora only once the sky is dark
     })
     const cl = clouds(d)
     return mix(haze(d).mul(aerial(d)).add(sunDisc).add(extra), cl.rgb, cl.a)
@@ -175,8 +175,10 @@ export async function createSky(ctx) {
   scene.add(hemi, key, key.target)
 
   const mode = params.get('tod'), pin = PINS[mode] ?? (mode && isFinite(+mode) ? +mode : null)
-  const daySecs = mode === 'cycle' ? 40 : 360 // ?tod=cycle: a whole day in 40 s, for the day→night walk clip
-  let tod = pin ?? PINS.day
+  // ?tod=cycle, for the day→night walk clip: afternoon to deep night in 40 s (from tod 0.6, a day in 144 s): ~12 s of day,
+  // ~15 s of dusk (night ramps over tod 0.683…0.786), ~13 s of night. A whole day in 40 s gave 2 s of dusk and 20 s of night.
+  const daySecs = mode === 'cycle' ? 144 : 360
+  let tod = pin ?? (mode === 'cycle' ? 0.6 : PINS.day)
   const tmp = C(), texel = 40 / 2048
   let lightIs = 'sun'
 

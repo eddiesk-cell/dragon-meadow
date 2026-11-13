@@ -1,5 +1,5 @@
-// Record the game WITH its sound: headless Chrome (WebGPU), the screen (as tools/clip.mjs records it) and the master bus
-// (after src/audio.js's limiter, as PCM) from the same run, muxed into one mp4. Then check the sound against what moved:
+// Record the game WITH its sound: headless Chrome (WebGPU), frame by frame at a fixed clock (60 fps, whatever the desk's
+// load), the master bus (after src/audio.js's limiter, as PCM) held to the same clock, muxed into one mp4. Then check the sound against what moved:
 // steps vs the feet's contacts, wingbeats vs the wing's downstrokes, roars vs the ride's call and landing, wind vs speed,
 // and the loudness (ffmpeg ebur128). Lane sound, PLAN.md.
 //   node tools/audio/capture.mjs shots/sound-walk.mp4 "auto=walk" 20      (auto=run 10, auto=ride 40, "auto=walk&tod=night" 20)
@@ -7,7 +7,8 @@
 import { createServer } from 'vite'
 import puppeteer from 'puppeteer-core'
 import { lock } from '../lock.mjs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,8 +23,8 @@ if (out.endsWith('.json')) { // re-check a take already recorded: node tools/aud
 }
 const CHROME = process.env.CHROME || `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
 const sleep = ms => new Promise(r => setTimeout(r, ms))
-const abs = resolve(ROOT, out), webm = abs + '.webm', wav = abs + '.wav'
-let server, browser, rec, report = { out, errors: [] }
+const abs = resolve(ROOT, out), webm = abs + '.v.mp4', wav = abs + '.wav'
+let server, browser, page, rec, report = { out, errors: [] }
 const unlock = await lock()
 try {
   server = await createServer({ root: ROOT, logLevel: 'error', server: { host: '127.0.0.1', hmr: false } }) // other lanes edit src/ meanwhile: no reloads mid-take
@@ -31,7 +32,7 @@ try {
   // --mute-audio keeps the desk's speakers quiet; Web Audio still renders, and the tap below hears it.
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true, defaultViewport: { width: 1280, height: 720 },
     args: ['--mute-audio', '--use-angle=metal', '--enable-unsafe-webgpu', '--autoplay-policy=no-user-gesture-required'] })
-  const page = await browser.newPage()
+  page = await browser.newPage()
   page.on('pageerror', e => report.errors.push(String(e).slice(0, 300)))
   await page.goto(`${server.resolvedUrls.local[0]}?${query}${query ? '&' : ''}audio=log`, { waitUntil: 'domcontentloaded' })
   // The world is held almost still (timeScale 1e-4, never 0: modules divide by dt) from its first frame until the GPU has
@@ -45,66 +46,76 @@ try {
     const n0 = await page.evaluate(() => window.__n); await sleep(1000); ok = (await page.evaluate(() => window.__n)) - n0 >= 40 ? ok + 1 : 0
   }
   await page.evaluate(() => document.getElementById('hint')?.remove())
-  // The tap: the master bus as 16-bit stereo PCM. An AudioWorklet on the audio thread posts 4096-frame blocks; they queue
-  // on the main thread, so a busy frame delays them instead of dropping them (a ScriptProcessor lost 40 % of a 20 s take).
+  // The tap: the master bus as 16-bit stereo PCM. An AudioWorklet on the audio thread posts 4096-frame blocks, each with
+  // the audio frame it starts at, so the take is cut out by audio time, exactly.
   const rate = await page.evaluate(async () => {
     const l = window.__ctx.audio.listener, ac = l.context
     const src = `registerProcessor('tap', class extends AudioWorkletProcessor {
       constructor() { super(); this.L = new Float32Array(4096); this.R = new Float32Array(4096); this.n = 0 }
       process([i]) { const L = i[0], R = i[1] || L; if (!L) return true
         this.L.set(L, this.n); this.R.set(R, this.n); this.n += L.length
-        if (this.n === 4096) { this.port.postMessage([this.L, this.R]); this.L = new Float32Array(4096); this.R = new Float32Array(4096); this.n = 0 }
+        if (this.n === 4096) { this.port.postMessage([this.L, this.R, currentFrame + L.length - 4096]); this.L = new Float32Array(4096); this.R = new Float32Array(4096); this.n = 0 }
         return true } })`
     await ac.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })))
     const tap = new AudioWorkletNode(ac, 'tap', { channelCount: 2, channelCountMode: 'explicit' }), sink = ac.createGain()
     sink.gain.value = 0; tap.connect(sink).connect(ac.destination); (l.getFilter() || l.gain).connect(tap)
-    let parts = []
-    tap.port.onmessage = ({ data: [L, R] }) => {
-      const p = new Int16Array(L.length * 2)
-      for (let i = 0; i < L.length; i++) { p[2 * i] = Math.max(-1, Math.min(1, L[i])) * 32767; p[2 * i + 1] = Math.max(-1, Math.min(1, R[i])) * 32767 }
-      parts.push(p)
-    }
-    window.__rec = { take() {
-      const all = new Int16Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0
-      for (const p of parts) { all.set(p, o); o += p.length }
-      parts = []; const b = new Uint8Array(all.buffer); let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode(...b.subarray(i, i + 32768)); return btoa(s) } }
+    const parts = []
+    tap.port.onmessage = ({ data }) => parts.push(data)
+    window.__rec = { take(from, n) { // frames [from, from + n) as interleaved int16, base64
+      const out = new Int16Array(n * 2)
+      for (const [L, R, s] of parts) for (let i = Math.max(0, from - s); i < L.length && s + i - from < n; i++) {
+        const f = s + i - from; out[2 * f] = Math.max(-1, Math.min(1, L[i])) * 32767; out[2 * f + 1] = Math.max(-1, Math.min(1, R[i])) * 32767
+      }
+      const b = new Uint8Array(out.buffer); let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode(...b.subarray(i, i + 32768)); return btoa(s) } }
     return ac.sampleRate
   })
-  const aStart = Date.now()
-  rec = await page.screencast({ path: webm })
-  const vStart = Date.now()
-  const clocks = () => page.evaluate(() => [performance.now() / 1000, window.__ctx.audio.listener.context.currentTime, window.__ctx.time, window.__n])
-  const c0 = await clocks()
-  await page.evaluate(() => (window.__ctx.timeScale = 1))
-  report.t0 = +c0[2].toFixed(3) // game time at the video's start: log time − t0 ≈ video time
-  const pcm = []
-  report.clockTrace = []
-  for (let t = 0; t < +secs; t += 4) { await sleep(Math.min(4, +secs - t) * 1000); pcm.push(Buffer.from(await page.evaluate(() => window.__rec.take()), 'base64')); report.clockTrace.push((await clocks()).map(x => +x.toFixed(2)).concat(pcm.reduce((n, b) => n + b.length, 0) / 4 / rate)) }
-  const c1 = await clocks()
-  report.clocks = { wall: +(c1[0] - c0[0]).toFixed(2), audio: +(c1[1] - c0[1]).toFixed(2), game: +(c1[2] - c0[2]).toFixed(2) } // seconds each clock ran
-  // frames per second over each 4 s take (headless on a shared desk: compare runs, don't quote alone), and the worst
-  report.fps = report.clockTrace.map((c, i) => { const p = i ? report.clockTrace[i - 1] : c0; return +((c[3] - p[3]) / (c[0] - p[0])).toFixed(1) })
-  report.fpsMin = Math.min(...report.fps)
-  if (report.clocks.game < 0.8 * report.clocks.wall) report.errors.push(`capture: the world stalled (game ${report.clocks.game} s of ${report.clocks.wall} s)`)
+  // The take, frame by frame at a fixed clock: each frame the world steps 1/FPS, the audio clock runs to that frame's end
+  // and is held, then the frame is grabbed. Picture and sound share one timeline and every frame is drawn, however busy
+  // the desk. (A real-time screencast gave ~14 frames a second and drifted 3 s behind its sound; an in-page MediaRecorder
+  // cost the game 20 fps.)
+  const FPS = 60, N = Math.round(+secs * FPS), cdp = await page.createCDPSession()
+  const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-',
+    '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', webm], { stdio: ['pipe', 'inherit', 'inherit'] })
+  const base = await page.evaluate(async () => {
+    const ac = window.__ctx.audio.listener.context
+    await ac.suspend(); window.__film(); window.__ctx.timeScale = 1
+    return ac.currentTime
+  })
+  rec = ff
+  report.t0 = +(await page.evaluate(() => window.__ctx.time)).toFixed(3) // game time at the video's start: log time − t0 = video time
+  const w0 = performance.now()
+  for (let k = 0; k < N; k++) {
+    await page.evaluate(async (dt, end) => {
+      window.__step(dt)
+      const ac = window.__ctx.audio.listener.context
+      if (ac.currentTime < end) { await ac.resume(); while (ac.currentTime < end) await new Promise(r => setTimeout(r, 0)); await ac.suspend() }
+    }, 1 / FPS, base + (k + 1) / FPS + 0.1 * (k === N - 1)) // the last frame runs 0.1 s on, so the tap posts the take's last block
+    const { data } = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 95, optimizeForSpeed: true })
+    if (!ff.stdin.write(Buffer.from(data, 'base64'))) await once(ff.stdin, 'drain')
+  }
+  ff.stdin.end(); await once(ff, 'close'); rec = null
+  report.capture = { frames: N, framesPerWallSec: +(N / ((performance.now() - w0) / 1000)).toFixed(1), game: +((await page.evaluate(() => window.__ctx.time)) - report.t0).toFixed(3) }
+  if (Math.abs(report.capture.game - N / FPS) > 0.01) report.errors.push(`capture: the world ran ${report.capture.game} s of ${N / FPS}`)
+  await sleep(300) // the tap's last messages
+  const body = Buffer.from(await page.evaluate((f, n) => window.__rec.take(f, n), Math.round(base * rate), Math.round(N / FPS * rate)), 'base64')
   const data = await page.evaluate(() => ({ audio: window.__probes.audio(true), ride: window.__probes.ride?.(), errors: window.__errors }))
-  await rec.stop(); rec = null // slow on a busy desk (it flushes the webm): the readings above are taken before it
   report.errors.push(...data.errors)
 
-  // WAV, trimmed by the gap between the tap's start and the video's, then muxed.
-  const body = Buffer.concat(pcm).subarray(Math.round((vStart - aStart) / 1000 * rate) * 4)
   const head = Buffer.alloc(44)
   head.write('RIFF', 0); head.writeUInt32LE(36 + body.length, 4); head.write('WAVEfmt ', 8); head.writeUInt32LE(16, 16); head.writeUInt16LE(1, 20)
   head.writeUInt16LE(2, 22); head.writeUInt32LE(rate, 24); head.writeUInt32LE(rate * 4, 28); head.writeUInt16LE(4, 32); head.writeUInt16LE(16, 34)
   head.write('data', 36); head.writeUInt32LE(body.length, 40)
   writeFileSync(wav, Buffer.concat([head, body]))
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', webm, '-i', wav, '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', abs])
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', webm, '-i', wav, '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
+    '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', abs])
+  report.file = fileCheck(abs, N / FPS)
+  if (!report.file.ok) report.errors.push('capture: the file ' + JSON.stringify(report.file))
   report = { ...report, ...analyse(data.audio, data.ride, ffmpegLoudness(wav)), audioSecs: +(body.length / 4 / rate).toFixed(1) }
   writeFileSync(abs.replace(/\.mp4$/, '') + '.json', JSON.stringify({ ...report, log: data.audio.log, ride: data.ride?.log, feet: data.audio.feet, wingTrace: data.audio.wings }))
 } catch (e) {
   report.errors.push('capture: ' + String(e).slice(0, 300))
 } finally {
-  await rec?.stop().catch(() => {})
+  rec?.kill()
   await browser?.close().catch(() => {})
   await server?.close().catch(() => {})
   rmSync(webm, { force: true }); rmSync(wav, { force: true })
@@ -112,6 +123,24 @@ try {
 }
 console.log(JSON.stringify(report))
 process.exit(report.errors.length ? 1 : 0)
+
+// What the FILE shows, not what the game rendered: distinct frames a second (a frame within 0.3/255 of the one before, at
+// 160x90 grey, is a repeat), the longest freeze, and each stream's length against the take's (a picture that runs long
+// or short has drifted from the sound).
+function fileCheck(file, want) {
+  const len = s => +execFileSync('ffprobe', ['-v', 'error', '-select_streams', s, '-show_entries', 'stream=duration:format=duration', '-of', 'csv=p=0', file], { encoding: 'utf8' }).split(/[\s,]+/).map(parseFloat).find(x => x > 0) // stream length, else the file's (N/A for a copied stream)
+  const g = execFileSync('ffmpeg', ['-loglevel', 'error', '-i', file, '-vf', 'scale=160:90,format=gray', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 30 })
+  const ts = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'frame=pts_time', '-of', 'csv=p=0', file], { encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter(Boolean).map(parseFloat)
+  const W = 160 * 90, n = Math.floor(g.length / W)
+  let distinct = 1, freeze = 0, last = ts[0] ?? 0
+  for (let i = 1; i < n; i++) {
+    let d = 0; for (let k = 0; k < W; k += 4) d += Math.abs(g[i * W + k] - g[(i - 1) * W + k])
+    if (d / (W / 4) >= 0.3) { distinct++; freeze = Math.max(freeze, (ts[i] ?? last) - last); last = ts[i] ?? last }
+  }
+  const v = len('v'), a = len('a'), r = { frames: n, distinctFps: +(distinct / v).toFixed(1), freezeS: +freeze.toFixed(2), videoS: v, audioS: a, wantS: want }
+  r.ok = r.distinctFps >= 45 && r.freezeS <= 0.15 && Math.abs(v - want) <= 0.1 && Math.abs(a - v) <= 0.15
+  return r
+}
 
 function ffmpegLoudness(file) { // ebur128 summary: integrated loudness (LUFS) and true peak (dBFS)
   const r = execFileSync('sh', ['-c', `ffmpeg -hide_banner -nostats -i "${file}" -af ebur128=peak=true -f null - 2>&1`], { encoding: 'utf8' })

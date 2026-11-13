@@ -178,7 +178,10 @@ export async function createFlora(ctx) {
   // For whoever flies or walks among them (the dragon's figure-eight is ~15 m up; a tree stands 29–40 m): trunk, canopy, top.
   // treeMesh: the vinetree InstancedMesh (its instances re-order every frame); m: each tree's own matrix (column-major array).
   const VT = kinds.find(K => K.name === 'vinetree')
-  ctx.flora = { treeMesh: VT.mesh, trees: trees.map(t => ({ x: t.x, z: t.z, r: 27 * t.s, top: t.y + VT.top * t.s, m: t.m })) }
+  // solids: where the hero cannot walk (hero.js pushes him out). A bellflower's stem and the leaves round it at body height
+  // (1.6 m at scale 1, from its mesh), a vinetree's trunk core (3.6 m; its fins reach 11 m, he walks between them).
+  ctx.flora = { treeMesh: VT.mesh, trees: trees.map(t => ({ x: t.x, z: t.z, r: 27 * t.s, top: t.y + VT.top * t.s, m: t.m })),
+    solids: [...lists.bellflower.map(b => ({ x: b.x, z: b.z, r: 1.6 * b.s })), ...trees.map(t => ({ x: t.x, z: t.z, r: 3.6 * t.s }))] }
 
   // Every base against the live ground (heightAt may be re-wrapped after create): max |base − heightAt| in metres.
   window.__probes.flora = () => {

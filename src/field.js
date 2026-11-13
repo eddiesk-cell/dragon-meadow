@@ -53,14 +53,16 @@ export async function createField(ctx) {
   ctx.aloft = 0
 
   // Footstep light rings (Phase 6 world rule: pressure wakes the grass). A pool of RINGS slots (x, z, start time, strength);
-  // each spreads to ~3 m and fades over 2 s. Spawned on the CPU in update() from ctx.heroPos.
+  // each spreads to ~3 m over 2.2 s like a ripple: it eases in, its band widens (0.25 → 0.9 m) and dims as it goes, so it
+  // never pops on or reads as a drawn line (Eddie: the first rings were "too harsh and not natural"). Spawned on the CPU in
+  // update() from ctx.heroPos; the caller breaks it up blade by blade.
   const RINGS = 8, ringSlots = Array.from({ length: RINGS }, () => new THREE.Vector4(0, 0, -99, 0)), uRings = uniformArray(ringSlots, 'vec4')
   const ringGlow = w => {
     let g = float(0)
     for (let i = 0; i < RINGS; i++) {
-      const R = uRings.element(i), v = float(1).sub(saturate(uTime.sub(R.z).div(2))) // 1 at the step → 0 two seconds later
-      const k = length(w.sub(R.xy)).sub(float(1).sub(v.mul(v)).mul(2.9).add(0.15)).mul(5) // distance to the spreading edge, in ring widths
-      g = g.add(exp(k.mul(k).negate()).mul(v.mul(1.6)).mul(R.w))
+      const R = uRings.element(i), age = uTime.sub(R.z), v = float(1).sub(saturate(age.div(2.2))) // 1 at the step → 0 at 2.2 s
+      const rad = float(1).sub(v.mul(v)).mul(2.8).add(0.2), k = length(w.sub(R.xy)).sub(rad).div(rad.mul(0.24).add(0.2))
+      g = g.add(exp(k.mul(k).negate()).mul(smoothstep(0, 0.2, age)).mul(v.mul(v)).mul(R.w))
     }
     return g
   }
@@ -222,7 +224,7 @@ export async function createField(ctx) {
     const tipW = smoothstep(0.45, 1, tt), sparkle = r(14)
     const nightTip = mix(vec3(0.03, 0.5, 0.4), vec3(0.25, 1.0, 0.9), sparkle).mul(tipW.mul(tipW).mul(pow(sparkle, 4).mul(1.3).add(0.1)))
     // rings and the pool only reach the near layers (a ring lives ≤ 2 s, so it never leaves the first 18 m)
-    const wake = fadeIn ? float(0) : ringGlow(world).add(float(1).sub(smoothstep(0.3, 2.2, pd)).mul(0.3).mul(uNight)).mul(tt.mul(tt)) // light runs along the tips
+    const wake = fadeIn ? float(0) : ringGlow(world).mul(sparkle.mul(1.1).add(0.25)).add(float(1).sub(smoothstep(0.3, 2.2, pd)).mul(0.3).mul(uNight)).mul(tt.mul(tt)) // light runs along the tips
     const wakeCol = mix(vec3(0.75, 0.68, 0.35), vec3(0.25, 1.0, 0.8), uNight)
     const glow = mix(
       vec3(1, 0.8, 0.38).mul(back).mul(sparkle.mul(0.3).add(0.12)).mul(float(1).sub(uNight)).add(nightTip.mul(uNight).mul(0.55)).add(wakeCol.mul(wake)),
