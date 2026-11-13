@@ -694,3 +694,53 @@ meadow's own hollow flooded to -0.5 m (~2390 m², x -13..53, z -76..-28, deepest
 read its shape only through `ctx.pond.inside(x, z)`. `ctx.ground.rects` (writers: field = the 800 m terrain, settlements
 = its far tile [-760, 640, 400, 1500]) is what flora places on; ground patch slots are 6, 3 used by default (ring,
 settlements, water). Shore camera for water shots: `fieldcam=6,1.8,-25,-10,0,-62`.
+
+## Wave D (2026-11-13) — flight view, sound, a new dragon
+Eddie, on the dragon: "The dragon we have now, the wings are attached to hind legs, they supposed to attached to
+shoulders" and "Maybe you should make a new detailed dragon from Higgsfield". On sound: "Have you done sound design
+yet?" — not yet; it joins here. The flight view comes from the dragon-ride review: from the saddle the land is a flat
+grey plane with hard white shapes.
+
+### Lane flight-view — `src/field.js`, `src/sky.js` (Opus)
+From the dragon's back (80–130 m up) the world must read as a living land running to the horizon, as beautiful from
+the air as it is on foot (refs/world/mix-day.png, refs/video/dragon-ride-sheet.jpg). Today, from 120 m
+(`shots/flight-before-{n,s,w}.png`, from `fieldcam=0,120,100,0,0,-300`, `0,120,-150,0,0,200`, `150,120,0,-300,0,0`):
+1. The meadow is a flat murky olive plane: grass blades only draw near the camera and the terrain under them is one dull
+   colour. Give the ground the grass field's own colour and variation at distance (lit and shaded slopes, colour drift,
+   flower drifts as colour, darker hollows) so the far meadow reads as grass, not felt.
+2. The world shows its end: the 800 m terrain square's straight edge (south view), white void beyond it (west view), and
+   the north sea mist becomes one white plane over the whole north from above. No end may show: land, coast or sea that
+   dissolves into the haze in every direction, and the north mist stays a soft veil seen from above.
+3. The haze milks the whole frame at altitude; distance should soften, not wash out.
+Keep every ground-level view as it is (default view, the water and settlements shots), and fps ≥ 50 in flight.
+- **CHECK:** `shots/flight-view-{n,s,w,e}-{day,dusk}.png` from the three cameras above plus `-150,120,0,300,0,0`
+  (`&tod=day` / `&tod=dusk`): below the horizon no near-white region (min channel > 215) larger than 2 % of the frame,
+  and no straight-edged end of the land; the land's mean HSV saturation below the horizon at least 1.5× the same
+  camera's `flight-before` shot (print both). `auto=ride` frames from 30–45 s show the land clearly. The default view's
+  day numbers (`tod=day`, sky6 metrics) stay within ±5 of HEAD's. errors []; fps ≥ 50 in all.
+
+### Lane sound — `src/audio.js` (now a STUB, already loaded last by main.js), `public/audio/`, `tools/audio/` (Opus)
+Sound design for the whole world, made locally and free (the `audio-sfx` and `audio-music-bgm` skills: AudioGen /
+Stable Audio Open / MusicGen on this Mac — no paid audio service). Original sounds and music only.
+- Beds: a day bed (wind through grass, distant birds) and a night bed (crickets, soft chimes as the flowers glow),
+  crossfading with `ctx.night`; water lapping near `ctx.pond`; a town murmur and a far bell near the settlements.
+- Hero: footsteps on the walk/run cadence (grass; stone on roads and in the ring), wading splashes in the pond, jump and
+  land, sword swing and hit; the troll's grunt and impact.
+- Dragon: wingbeats on the flap's downstroke, a roar when called and on landing, wind rush in flight rising with speed.
+- Music: a gentle day theme and a night theme (instrumental, dreamy, mesmerizing), crossfading with `ctx.night`, under
+  everything.
+- Three.js `AudioListener` on the camera, `PositionalAudio` for world sources. Audio starts on the first key or click
+  (browsers require it); `M` mutes. Read state from `ctx` and the modules' probes only; anything you need another module
+  to publish goes in needsWiring. Files small (all of `public/audio/` < 10 MB, AAC `.m4a` or `.mp3` so Safari plays them);
+  `public/audio/CREDITS.md` names the model and prompt behind every file.
+- **CHECK:** `?audio=log` keeps a timeline of triggered sounds in the probe `audio.log`. `auto=walk` (20 s): footsteps
+  within ±80 ms of the walk clip's foot contacts, day bed playing. `auto=ride`: wingbeats on downstrokes, roar on call
+  and landing, wind rising in flight. `tod=night`: night bed and theme. A `tools/audio/capture.mjs` recording of
+  `auto=walk` and `auto=ride` muxed onto their `clip.mjs` videos → `shots/sound-walk.mp4`, `shots/sound-ride.mp4`;
+  integrated loudness −20 to −14 LUFS, peaks < −1 dBFS (print `ffmpeg ebur128`). controls-check 7/7; errors []; fps ≥ 50.
+
+### Lane dragon2 — `art/dragon2/`, `public/models/dragon.glb` (Opus, after its concept and mesh exist)
+A new detailed dragon from a Higgsfield concept and Hunyuan3D mesh (paths written here when they land), bound to the
+existing 50-bone rig so every clip (fly, hover, idle×6, land, takeoff, walk) keeps working, with the wings rooted at
+the SHOULDERS (today `wing-*-shoulder` sits over the hind legs at y −0.62, parented to `spine`; move it over the front
+legs, parented to `chest`). Brief written when the mesh lands.
