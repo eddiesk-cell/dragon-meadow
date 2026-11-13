@@ -89,3 +89,12 @@ class Rig:
                 j = self.parent[i]; Q[i] = qmul(Q[j], L['rotation'][i]); P[i] = P[j] + qrot(Q[j], L['translation'][i])
             else: Q[i] = L['rotation'][i]; P[i] = L['translation'][i]
         return Q, P
+
+def strike(sole, u):
+    """When a foot lands, from its sole height per frame over one cycle (u in [0,1)): the first frame back near the ground
+    (within 1.5 cm of its stance level) after being clearly up in the swing (4 cm). Robust to a stance that is not flat."""
+    base = np.percentile(sole, 10); up = sole > base + 0.04; low = sole < base + 0.015
+    k = np.argmax(up); n = len(sole)
+    for j in range(1, n + 1):
+        if low[(k + j) % n]: return u[(k + j) % n]
+    raise ValueError('foot never lands')

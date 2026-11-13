@@ -3,7 +3,7 @@
 #   python3 tools/hero/motion.py <retargeted hero.glb (build.sh)> <out.glb>
 # Angles are degrees, relative to the T-pose rest (glTF: +Y up, he faces +Z, his left is +X).
 import sys, numpy as np
-from glbanim import load, save, add_acc, Rig, qmul, qinv, qrot, qbetween
+from glbanim import load, save, add_acc, Rig, qmul, qinv, qrot, qbetween, slerp, strike as landing
 
 g, B = load(sys.argv[1]); R = Rig(g); I = R.idx; N = len(R.names)
 assert 'motion' not in g['asset'].get('extras', {}), 'this file already has the new motion: feed motion.py the retarget output'
@@ -33,15 +33,32 @@ def solve(L, W):
 
 def torso_delta(Q, bone='upperChest'): return qmul(Q[I[bone]], qinv(RQ[I[bone]]))
 
-def arm(D, s, th, al, ph, inw=0.0, curl=(22, 28, 18)):
-    """One arm, relative to the torso's turn D [T,4]: th shoulder flexion (+ forward), al abduction, ph elbow flexion,
-    inw forward swing turned in toward the midline; the palm faces the thigh; fingers in a loose curl. s = +1 left, -1 right."""
+def mat2q(M):  # [T,3,3] rotation matrices -> quaternions (near identity here: the trunk turns < 30°)
+    w = np.sqrt(1 + M[:, 0, 0] + M[:, 1, 1] + M[:, 2, 2]) / 2
+    return np.stack([(M[:, 2, 1] - M[:, 1, 2]) / (4 * w), (M[:, 0, 2] - M[:, 2, 0]) / (4 * w), (M[:, 1, 0] - M[:, 0, 1]) / (4 * w), w], -1)
+
+def strike(P, u, side):  # when a foot lands: its lowest point (heel or ball) comes back to the ground
+    return landing(np.minimum(P[I[side + 'Foot']][:, 1] - RP[I[side + 'Foot']][1], P[I[side + 'Toes']][:, 1] - RP[I[side + 'Toes']][1]), u)
+
+def trunk(Q, P, upright=False):
+    """The frame the arm angles are measured in (and motion_check.py reads back): up = hips -> neck (or plumb, for arms that
+    just hang), across = the chest's own."""
+    up = P[I['neck']] - P[I['hips']] if not upright else np.broadcast_to(Y, P[I['neck']].shape).copy()
+    up /= np.linalg.norm(up, axis=-1, keepdims=True)
+    lat = qrot(torso_delta(Q), X); lat -= np.sum(lat * up, -1, keepdims=True) * up; lat /= np.linalg.norm(lat, axis=-1, keepdims=True)
+    return mat2q(np.stack([lat, up, np.cross(lat, up)], -1))
+
+def arm(Q, P, s, th, al, ph, inw=0.0, curl=(22, 28, 18), upright=False, carry=0.0):
+    """One arm, in the trunk's frame: th shoulder flexion (+ forward), al abduction, ph elbow flexion, inw forward swing
+    turned in toward the midline, carry the elbow's carrying angle (the forearm angles out from the hip); the palm faces the
+    thigh; fingers in a loose curl. s = +1 left, -1 right."""
     n = lambda b: ('left' if s > 0 else 'right') + b
-    T = len(D); al = np.broadcast_to(rad(al), (T,))
+    D, Rt = torso_delta(Q), trunk(Q, P, upright); T = len(D); al = np.broadcast_to(rad(al), (T,))
     up = RP[I[n('LowerArm')]] - RP[I[n('UpperArm')]]
     down = np.stack([qbetween(up, np.array([s * np.sin(a), -np.cos(a), 0])) for a in al])  # T-pose arm brought down to the side
-    A = qmul(D, qmul(qa(Y, -s * rad(inw) * np.ones(T)), qmul(qa(X, -rad(th) * np.ones(T)), down)))
-    E = qmul(A, qa(Y, -s * rad(ph) * np.ones(T)))  # elbow hinge (vertical in the T-pose: the hand comes forward)
+    A = qmul(Rt, qmul(qa(Y, -s * rad(inw) * np.ones(T)), qmul(qa(X, -rad(th) * np.ones(T)), down)))
+    straight = qbetween(RP[I[n('Hand')]] - RP[I[n('LowerArm')]], up)        # the T-pose elbow is bent ~6°: start from straight
+    E = qmul(A, qmul(qa(Y, -s * rad(ph) * np.ones(T)), qmul(qa(Z, s * rad(carry) * np.ones(T)), straight)))          # elbow hinge (vertical in the T-pose: the hand comes forward)
     W = {n('Shoulder'): qmul(D, RQ[I[n('Shoulder')]]), n('UpperArm'): qmul(A, RQ[I[n('UpperArm')]]),
          n('LowerArm'): qmul(E, RQ[I[n('LowerArm')]]), n('Hand'): qmul(E, RQ[I[n('Hand')]])}
     for f in ('Index', 'Middle', 'Ring', 'Little'):
@@ -50,6 +67,22 @@ def arm(D, s, th, al, ph, inw=0.0, curl=(22, 28, 18)):
             c += curl[k]; W[n(f + j)] = qmul(qmul(E, qa(Z, -s * rad(c) * np.ones(T))), RQ[I[n(f + j)]])
     for j in ('Proximal', 'Intermediate', 'Distal'): W[n('Thumb' + j)] = qmul(E, RQ[I[n('Thumb' + j)]])
     return W
+
+def qto(a, b):  # per-frame shortest arc a[T,3] -> b[T,3]
+    a = a / np.linalg.norm(a, axis=-1, keepdims=True); b = b / np.linalg.norm(b, axis=-1, keepdims=True)
+    q = np.concatenate([np.cross(a, b), 1 + np.sum(a * b, -1, keepdims=True)], -1)
+    return q / np.linalg.norm(q, axis=-1, keepdims=True)
+
+l1 = np.linalg.norm(R.rest[I['leftLowerLeg']]['translation']); l2 = np.linalg.norm(R.rest[I['leftFoot']]['translation'])  # thigh, shin
+
+def leg(side, H, A, pole):
+    """Thigh and shin world rotations putting the ankle on A from the hip H, the knee bent toward pole (two-bone IK)."""
+    d = A - H; dist = np.linalg.norm(d, axis=-1, keepdims=True); dn = d / dist
+    assert dist.max() < l1 + l2, f'{side} leg overstretched {dist.max():.3f}'
+    w = pole - np.sum(pole * dn, -1, keepdims=True) * dn; w /= np.linalg.norm(w, axis=-1, keepdims=True)
+    ca = (l1**2 + dist**2 - l2**2) / (2 * l1 * dist); K = H + l1 * (ca * dn + np.sqrt(1 - ca**2) * w)
+    up, lo, ft = (I[side + b] for b in ('UpperLeg', 'LowerLeg', 'Foot'))
+    return K, {side + 'UpperLeg': qmul(qto(RP[lo] - RP[up], K - H), RQ[up]), side + 'LowerLeg': qmul(qto(RP[ft] - RP[lo], A - K), RQ[lo])}
 
 def write(name, t, L):
     a = anim(name); ti = add_acc(g, B, t, 'SCALAR'); a['samplers'] = []
@@ -62,24 +95,122 @@ def write(name, t, L):
         a['samplers'].append({'input': ti, 'output': add_acc(g, B, v, 'VEC4' if p == 'rotation' else 'VEC3'), 'interpolation': 'LINEAR'})
 
 def idle():
-    a = anim('Idle'); T = dur(a); t = grid(T); L = R.sample(B, a, t); Q, _ = solve(L, {})
-    D = torso_delta(Q); w = 2 * np.pi * t / T; W = {}
+    a = anim('Idle'); T = dur(a); t = grid(T); L = R.sample(B, a, t)
+    Q, P = solve(L, {}); w = 2 * np.pi * t / T; W = {}
     for s in (1, -1):  # arms hang at the sides, hands by the outer thigh; breathing sways them a little
-        W |= arm(D, s, th=2 + 1.5 * np.sin(w + (s < 0) * 0.7), al=9 + np.cos(w), ph=14 + 2 * np.sin(w))
+        W |= arm(Q, P, s, th=1.5 + np.sin(w + (s < 0) * 0.7), al=7.5 + 0.5 * np.cos(w), ph=10 + 2 * np.sin(w), upright=True, carry=10)
     solve(L, W); return t, L
 
-def walk():
-    a = anim('Walk'); T = dur(a); t = grid(T); L = R.sample(B, a, t); Q, P = solve(L, {})
-    u = t / T; rf = P[I['rightFoot'], :, 2] - P[I['hips'], :, 2]
-    peak = np.angle(np.sum(rf * np.exp(-2j * np.pi * u))) / (2 * np.pi)  # the right foot is furthest forward here
-    D = torso_delta(Q); W = {}
-    for s in (1, -1):  # each arm swings with the opposite leg, a touch after its heel strike
-        c = np.cos(2 * np.pi * (u - peak - 0.03 - (s < 0) * 0.5))
-        W |= arm(D, s, th=1.5 + 16.5 * c, al=8, ph=24 + 8 * c)
-    solve(L, W); return t, L
+def walk(v=1.6, k=1.3):
+    """The Drifter's walk, sped up k times and its stride stretched by IK so the planted foot moves at the game's v (no
+    skating) and the soles touch the ground (the donor floats ~5 cm); arms swing from the shoulder against the legs."""
+    a = anim('Walk'); T = dur(a) / k; t = grid(T); u = t / T; hips = I['hips']
+    L = R.sample(B, a, t * k); Q, P = solve(L, {})
+    sole = {sd: np.minimum(P[I[sd + 'Foot']][:, 1] - RP[I[sd + 'Foot']][1], P[I[sd + 'Toes']][:, 1] - RP[I[sd + 'Toes']][1]) for sd in ('left', 'right')}
+    vz = np.median(np.concatenate([np.gradient(P[I[sd + 'Foot']][:, 2], t)[sole[sd] < sole[sd].min() + 0.01] for sd in sole]))
+    stretch, drop = v / -vz, min(x.min() for x in sole.values())
+    hz = P[hips][:, 2:3]; A = {}; need = np.zeros(len(t))
+    for sd in sole:
+        A[sd] = P[I[sd + 'Foot']] - [0, drop, 0]; A[sd][:, 2:3] = hz + stretch * (A[sd][:, 2:3] - hz)
+        H = P[I[sd + 'UpperLeg']] - [0, drop, 0]; dxz = np.linalg.norm((A[sd] - H)[:, ::2], axis=-1)
+        need = np.maximum(need, H[:, 1] - A[sd][:, 1] - np.sqrt(np.maximum((0.985 * (l1 + l2))**2 - dxz**2, 0)))
+    # the hips dip only where the long step needs it (double support), smoothly; never less than needed
+    loop = lambda x, w: np.convolve(np.concatenate([x[-w:-1], x, x[1:w]]), np.ones(2 * w - 1) / (2 * w - 1), 'valid')
+    w = max(2, len(t) // 12); e = np.maximum(need, 0)
+    e = loop(np.max([np.roll(e, j) for j in range(-w, w + 1)], 0), w); e = np.maximum(e, need) + 0.002
+    L['translation'][hips][:, 1] -= drop + e; Q2, P2 = solve(L, {}); W = {}
+    for sd in sole:
+        _, Wl = leg(sd, P2[I[sd + 'UpperLeg']], A[sd], P[I[sd + 'LowerLeg']] - P[I[sd + 'UpperLeg']]); W |= Wl  # knee as the donor's
+        W[sd + 'Foot'], W[sd + 'Toes'] = Q[I[sd + 'Foot']], Q[I[sd + 'Toes']]                                  # heel-toe roll as the donor's
+    Q, P = solve(L, W)
+    for s in (1, -1):  # each arm swings with the opposite leg, peaking a touch after that foot's heel strike
+        c = np.cos(2 * np.pi * (u - strike(P, u, 'right' if s > 0 else 'left') - 0.02))
+        W |= arm(Q, P, s, th=1.5 + 16.5 * c, al=8, ph=23 + 7 * c, carry=8)
+    solve(L, W)
+    print(f'WALK v {v} m/s, cycle {T:.3f} s ({2 / T:.2f} steps/s, step {v * T / 2:.2f} m): donor x{k} faster, stride x{stretch:.2f}, '
+          f'hips down {100 * drop:.1f} cm to the ground + {100 * e.min():.1f}..{100 * e.max():.1f} cm to reach')
+    return t, L
+
+def spline(keys, u):  # periodic cubic Hermite through (u, value) keys, u in [0, 1)
+    k = sorted(keys); ku = np.array([x for x, _ in k]); kv = np.array([v for _, v in k]); n = len(k)
+    U = np.concatenate([ku[-1:] - 1, ku, ku[:1] + 1]); V = np.concatenate([kv[-1:], kv, kv[:1]])
+    m = (V[2:] - V[:-2]) / (U[2:] - U[:-2])
+    u = np.mod(u, 1); i = np.clip(np.searchsorted(ku, u, 'right') - 1, -1, n - 1)
+    u0 = np.where(i < 0, ku[-1] - 1, ku[i]); j = (i + 1) % n; u1 = np.where(i + 1 >= n, ku[0] + 1, ku[np.minimum(i + 1, n - 1)])
+    h = u1 - u0; s = (u - u0) / h; v0, v1, m0, m1 = kv[i], kv[j], m[i], m[j]
+    return (2*s**3 - 3*s**2 + 1) * v0 + (s**3 - 2*s**2 + s) * h * m0 + (-2*s**3 + 3*s**2) * v1 + (s**3 - s**2) * h * m1
+
+def smooth(x): x = np.clip(x, 0, 1); return x * x * (3 - 2 * x)
+
+def run(v=6.0, T=0.56):
+    """A sprinter's stride (RESEARCH.md): tall trunk leaning ~9°, high knee drive, heel recovered under the hips, the foot
+    landing just ahead of the hips on the ball and rolling back at exactly the ground speed v (no skating), arms pumping."""
+    t = grid(T, 60); n = len(t); u = t / T; hips = I['hips']
+    L = {p: np.repeat(np.stack([r[p] for r in R.rest])[:, None], n, 1) for p in ('translation', 'rotation', 'scale')}
+    reach = 0.97 * (l1 + l2)
+
+    def body(c):  # pelvis and trunk for a contact fraction c of the cycle (right foot lands at u=0, left at u=0.5)
+        mid = np.cos(4 * np.pi * (u - c / 2))                           # +1 at each mid-stance, -1 at mid-flight
+        yaw = rad(6) * np.cos(2 * np.pi * u)                           # the swinging leg's hip goes forward
+        L['translation'][hips] = np.stack([-0.01 * np.cos(2 * np.pi * (u - c / 2)), 0.93 - 0.025 * mid, np.full(n, RP[hips][2])], -1)
+        W = {'hips': qmul(qmul(qa(Y, yaw), qa(Z, -rad(3) * np.cos(2 * np.pi * (u - c / 2)))), qmul(qa(X, rad(6) * np.ones(n)), RQ[hips])),
+             'head': RQ[I['head']]}                                     # head level, eyes forward
+        for b, lean, turn in (('spine', 11, 0.3), ('chest', 12, -0.4), ('upperChest', 13, -1.3), ('neck', 8, -0.6)):
+            W[b] = qmul(qmul(qa(Y, turn * yaw), qa(X, rad(lean) * np.ones(n))), RQ[I[b]])
+        return W, solve(L, W)[1]
+
+    def plan(s, P, c):
+        side = 'left' if s > 0 else 'right'; nm = lambda b: side + b
+        uu = np.mod(u - (0.5 if s > 0 else 0), 1); H = P[I[nm('UpperLeg')]]
+        toe_in = qa(Y, -s * rad(7) * np.ones(n)); rv = RP[I[nm('Toes')]] - RP[I[nm('Foot')]]
+        off = lambda p: qrot(qmul(qa(X, rad(p)), toe_in[:np.size(p)]), rv)  # ankle -> ball for a foot pitched p (heel up)
+        k_td, k_to = np.argmin(np.minimum(uu, 1 - uu)), np.argmin(np.abs(uu - c))
+        def ball_z(k, p, sign):  # as far forward / back as the leg reaches at that instant
+            o = off(np.array([p]))[0]; return H[k, 2] + sign * np.sqrt(reach**2 - (H[k, 1] - 0.009 + o[1])**2) + o[2]
+        return dict(side=nm, uu=uu, H=H, toe_in=toe_in, off=off, zTD=ball_z(k_td, 12, 1), zTO=ball_z(k_to, 48, -1),
+                    bx=H[k_td, 0] - s * 0.025 + off(np.array([12]))[0, 0])
+
+    c = 0.21
+    for _ in range(4):  # the bob depends on the contact time, the contact time on how far the foot reaches
+        W, P = body(c); legs = {s: plan(s, P, c) for s in (1, -1)}
+        c_new = np.mean([(g_['zTD'] - g_['zTO']) / (v * T) for g_ in legs.values()])
+        if abs(c_new - c) < 1e-4: break
+        c = c_new
+    for s, G in legs.items():
+        nm, uu, H, off = G['side'], G['uu'], G['H'], G['off']; st = uu <= c
+        p_st = np.where(uu / c < 0.45, 12 - 8 * smooth(uu / c / 0.45), 4 + 44 * smooth((uu / c - 0.45) / 0.55) ** 1.5)
+        ball = np.stack([np.full(n, G['bx']), np.full(n, 0.009), G['zTD'] - v * np.minimum(uu, c) * T], -1)  # planted, rolls back at v
+        A_st = ball - off(p_st)
+        def angles(d):  # thigh angle from vertical (+ forward) and knee flexion for a hip->ankle vector
+            dist = np.linalg.norm(d); al = np.arccos(np.clip((l1**2 + dist**2 - l2**2) / (2 * l1 * dist), -1, 1))
+            kn = np.pi - np.arccos(np.clip((l1**2 + l2**2 - dist**2) / (2 * l1 * l2), -1, 1))
+            return np.degrees(np.arctan2(d[2], -d[1]) + al), np.degrees(kn)
+        keys = []
+        for x in (0, c / 2, c):
+            k = np.argmin(np.abs(uu - x)); th, kn = angles(A_st[k] - H[k]); keys.append((x, th, kn, p_st[k] + th - kn))
+        # swing (u from toe-off): heel kicks up, tucks under the hips, the knee drives to near horizontal, the shin unfolds, paws down
+        keys += [(c + 0.10, -20, 90, 35), (0.42, 5, 128, 20), (0.62, 55, 115, 0), (0.72, 72, 100, -10), (0.86, 48, 35, -5)]
+        th, kn, an = (rad(spline([(k[0], k[i]) for k in keys], uu)) for i in (1, 2, 3))
+        A_sw = H + np.stack([-s * 0.025 + 0 * uu, -l1 * np.cos(th) - l2 * np.cos(th - kn), l1 * np.sin(th) + l2 * np.sin(th - kn)], -1)
+        A = np.where(st[:, None], A_st, A_sw)
+        K, Wl = leg(nm(''), H, A, np.array([0, 0, 1.0])); W |= Wl                  # knee points forward
+        shin = A - K; pitch = np.where(st, rad(p_st), -np.arctan2(shin[:, 2], -shin[:, 1]) + an)
+        foot = qmul(qa(X, pitch), G['toe_in'])
+        flat = np.where(st, 1, np.maximum(smooth(1 - (uu - c) / 0.06), smooth((uu - 0.96) / 0.04)))[:, None]  # toes flat while on the ground
+        W[nm('Foot')] = qmul(foot, RQ[I[nm('Foot')]])
+        W[nm('Toes')] = slerp(qmul(foot, RQ[I[nm('Toes')]]), qmul(G['toe_in'], RQ[I[nm('Toes')]]), flat)
+    Q, P = solve(L, W)
+    for s in (1, -1):  # each arm drives forward as the opposite foot comes down to land; the elbow closes in front, opens behind
+        cs = np.cos(2 * np.pi * (u + 0.08 - (0 if s > 0 else 0.5)))
+        W |= arm(Q, P, s, th=-6 + 56 * cs, al=12, ph=87 + 21 * cs, curl=(30, 40, 25))
+    solve(L, W)
+    print(f'RUN v {v} m/s, cycle {T} s ({2 / T:.2f} steps/s, step {v * T / 2:.2f} m), contact {c * T:.3f} s, '
+          f'ball lands {legs[1]["zTD"]:.2f} m, leaves {legs[1]["zTO"]:.2f} m')
+    return t, L
 
 write('Idle', *idle())
 write('Walk', *walk())
+t, L = run(); write('Run', t, L); write('Sprint', t, L)
 g['asset']['extras'] = {**g['asset'].get('extras', {}), 'motion': 'tools/hero/motion.py'}
 save(sys.argv[2], g, B)
 print('MOTION wrote', sys.argv[2], 'animations', len(g['animations']))

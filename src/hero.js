@@ -141,6 +141,11 @@ export async function createHero(ctx) {
     drag.x = e.clientX; drag.y = e.clientY
   })
 
+  // Planted-foot slide (art/hero/motion: < 0.3 m/s): a ball of the foot on the ground should not move over it. Measured
+  // per clip, from 0.5 s after it starts (the crossfade slides by design); ?side=1 films him from the side for the proof.
+  const balls = ['leftToes', 'rightToes'].map(n => ({ bone: model.getObjectByName(n), at: new THREE.Vector3(), down: false }))
+  let slide = 0, slideN = 0, clipT = 0, slideClip = ''
+  const side = params.get('side') ? Math.PI / 2 : 0
   const pos = heroPos.set(0, ctx.heightAt(0, 0), 0)
   let vy = 0, grounded = true, face = Math.PI, jumpT = 0
   const camTarget = new THREE.Vector3(), camGoal = new THREE.Vector3()
@@ -231,7 +236,7 @@ export async function createHero(ctx) {
     return [-Math.sin(yaw) * f + Math.cos(yaw) * r, -Math.cos(yaw) * f - Math.sin(yaw) * r]
   }
 
-  window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), strapSkin: strap?.skin.length ?? 0, strapLift: strap?.lift.map(x => +x.toFixed(3)),
+  window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), strapSkin: strap?.skin.length ?? 0, slide: slideN ? +(slide / slideN).toFixed(3) : null, slideN, strapLift: strap?.lift.map(x => +x.toFixed(3)),
     cam: { blocks: blocks.length, trunks: trunkN, barkCells: barkCells.length, rayMs: +(rayMs / Math.max(frames, 1)).toFixed(3), rayMax: +rayMax.toFixed(2), pulled, frames, // frames: pulled in front of a block, goal behind one, camera inside one
       ...(camtest && { secs: +ctx.time.toFixed(1) }), ...(camtest && (tt ? { tree: [tt.x, tt.z].map(Math.round), trunkTris: keep.length / 3, spots: spots?.length, radii: spots && [Math.min(...spots.map(s => s[2])), Math.max(...spots.map(s => s[2]))], parked: spotI + 1, behind, inTrunk: inside } : { rocks: rocks.length, behind, inStone: inside })) },
     hold: held && { secs: +(ctx.time - held.t).toFixed(2), drift: +Math.max(...snap().map((q, i) => Math.abs(q - held.pose[i]))).toFixed(5) } })
@@ -241,7 +246,7 @@ export async function createHero(ctx) {
       const [dx, dz] = act?.lockMove ? [0, 0] : dirOf()
       if (spots?.length && (spotT -= dt) <= 0) { spotT = THREE.MathUtils.clamp(20 / spots.length, 0.1, 0.5); spotI++; park(...spots[(one ?? spotI) % spots.length]) } // 0.1 s a spot: all 353 in ~35 s
       const len = Math.hypot(dx, dz), moving = len > 0.01
-      const speed = keys.has('shift') ? 5 : 1.6
+      const speed = keys.has('shift') ? 6 : 1.6 // m/s: the clips' strides are cut for exactly these (tools/hero/motion.py)
       if (moving) {
         pos.x += (dx / len) * speed * dt
         pos.z += (dz / len) * speed * dt
@@ -262,6 +267,13 @@ export async function createHero(ctx) {
       root.position.copy(pos)
       root.rotation.y = face
       if (strap) { root.updateMatrixWorld(true); aim(strap, dt) }
+      if (clip !== slideClip) { slideClip = clip; clipT = 0; slide = slideN = 0 }
+      clipT += dt
+      for (const b of balls) {
+        const was = b.down, px = b.at.x, pz = b.at.z
+        b.bone.getWorldPosition(b.at); b.down = b.at.y - ctx.heightAt(b.at.x, b.at.z) < 0.03
+        if (was && b.down && clipT > 0.5 && dt > 0) { slide += Math.hypot(b.at.x - px, b.at.z - pz) / dt; slideN++ }
+      }
 
       // Camera: orbit target at head height, never under the ground, never inside a block.
       camTarget.set(pos.x, pos.y + 1.5, pos.z)
@@ -288,7 +300,7 @@ export async function createHero(ctx) {
       }
       if (near < Infinity) { yaw = Math.atan2(aimAt.x - pos.x, aimAt.z - pos.z) + (tt ? (one ? 0 : Math.sin(ctx.time * 2.3)) : 0.5 * Math.sin(ctx.time * 0.9)); pitch = 0.05 + 0.1 * Math.abs(Math.sin(ctx.time * 0.6)) }
       const cp = Math.cos(pitch)
-      camGoal.set(camTarget.x + Math.sin(yaw) * cp * R, camTarget.y + Math.sin(pitch) * R, camTarget.z + Math.cos(yaw) * cp * R)
+      camGoal.set(camTarget.x + Math.sin(yaw + side) * cp * R, camTarget.y + Math.sin(pitch) * R, camTarget.z + Math.cos(yaw + side) * cp * R)
       camGoal.y = Math.max(camGoal.y, ctx.heightAt(camGoal.x, camGoal.z) + 0.4)
       const checks = tt ? [real] : rocks
       if (counting) behind += hitAt(checks, camTarget, camGoal, 0) !== undefined

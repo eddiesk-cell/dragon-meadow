@@ -32,4 +32,8 @@ sp = lambda g: sum(g['nodes'][j]['name'].startswith('spring_') for j in g['skins
 print(f"BUILD bones {len(a['skins'][0]['joints'])} -> {len(b['skins'][0]['joints'])} (spring {sp(a)} -> {sp(b)}), animations {len(b.get('animations', []))}")
 assert len(b['skins'][0]['joints']) == len(a['skins'][0]['joints']) and sp(b) == sp(a) > 0 and len(b.get('animations', [])) == 51
 PY
+# Idle / Walk / Run / Sprint rebuilt from art/hero/motion/RESEARCH.md (arms that hang, a sprinter's run, strides cut for
+# hero.js's 1.6 and 6 m/s); measured against the research: motion_check.py. Sheets: tools/hero/sheets.sh.
+python3 tools/hero/motion.py public/models/hero.glb public/models/hero.glb
+python3 tools/hero/motion_check.py public/models/hero.glb | tail -1
 ls -la public/models/hero.glb
