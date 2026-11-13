@@ -147,7 +147,7 @@ export async function createHero(ctx) {
   // ?side=1 films him from the side for the proof.
   const balls = ['leftToes', 'rightToes'].map(n => ({ bone: model.getObjectByName(n), at: new THREE.Vector3(), down: false }))
   let slide = 0, slideN = 0, clipT = 0, slideClip = ''
-  const sideView = params.get('side') ? Math.PI / 2 : 0
+  const sideView = params.get('side') ? -Math.PI / 2 : 0 // from his left: the pet floats at his right shoulder
   const pos = heroPos.set(0, ctx.heightAt(0, 0), 0)
   let vy = 0, grounded = true, face = Math.PI, jumpT = 0
   const camTarget = new THREE.Vector3(), camGoal = new THREE.Vector3()
