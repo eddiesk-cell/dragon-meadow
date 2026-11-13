@@ -6,7 +6,8 @@ import { attribute, positionLocal, modelPosition, time, vec3, sin, cos, max, mod
 // id, name, land, size in metres (BESTIARY.md; models are rigged at 1.80 m), options. Order = build order along the arc.
 // Options: real (the glb is already at true scale), idle (its resting loop), swarm (copies on the plinth), lie (lies
 // behind the arc, no plinth: Old Glim is 16 m long), prop [glb in models/props, bone that holds it, and if it would
-// reach below the plinth: 'slide' it up through the hand (a spear grounds its butt) or 'drag' it behind (the anchor)].
+// reach below the plinth: 'slide' it up through the hand (a spear grounds its butt); 'rope': its chain hangs from the
+// bone under gravity every frame and the anchor rests and drags on the plinth (the anchor)].
 const ROSTER = [
   ['chalk-hob', 'Chalk Hob', 'Dragon Meadow', 1.3],
   ['wreckback', 'Wreckback', 'The Undercliff', 2.2],
@@ -15,7 +16,7 @@ const ROSTER = [
   ['driftwight', 'The Driftwight', 'The Undercliff', 3.2],
   ['stiltstalker', 'Stiltstalker', 'Mirrormere', 2.8, { prop: ['reed-spear', 'rightHand', 'slide'] }],
   ['old-glim', 'Old Glim', 'Mirrormere', 16, { real: true, idle: 'Swim', lie: true }],
-  ['tolling-warden', 'The Tolling Warden', 'Bellholm', 3.4, { prop: ['anchor', 'rightHand', 'drag'] }],
+  ['tolling-warden', 'The Tolling Warden', 'Bellholm', 3.4, { prop: ['anchor', 'rightHand', 'rope'] }],
   ['scarhorn', 'Scarhorn', 'The Greyspine', 2.6],
   ['gapshrike', 'The Gapshrike', 'The Greyspine', 2.4],
   ['ribmite', 'Ribmites', 'The Redwaste', 0.3, { real: true, swarm: 14 }],
@@ -82,10 +83,10 @@ export async function createBestiary(ctx) {
           const old = m.material, leg = attribute('_leg', 'float'), lt = attribute('_legt', 'float')
           m.material = new THREE.MeshStandardNodeMaterial({ map: old.map, normalMap: old.normalMap, roughnessMap: old.roughnessMap, roughness: old.roughness, metalness: old.metalness, color: old.color })
           const ph = time.mul(14).add(mod(leg.add(floor(leg.sub(1).div(2))), 2).mul(Math.PI)).add(modelPosition.x.mul(7)).add(modelPosition.z.mul(5))
-          m.material.positionNode = positionLocal.add(vec3(0, max(sin(ph), 0).mul(0.012), cos(ph).mul(0.015)).mul(lt).mul(step(0.5, leg)))
+          m.material.positionNode = positionLocal.add(vec3(0, max(sin(ph), 0).mul(0.028), cos(ph).mul(0.035)).mul(lt).mul(step(0.5, leg))) // a scuttle, legs ~3 cm
         })
         for (let k = 1; k < o.swarm; k++) {
-          const c = model.clone(), r = rad * 0.8 * Math.sqrt((k * 0.618) % 1), t = k * 2.4
+          const c = model.clone(), r = rad * 0.85 * Math.sqrt(k / o.swarm), t = k * 2.4 // sunflower spacing: none overlap
           c.position.set(Math.cos(t) * r, 0, Math.sin(t) * r); c.rotation.y = t * 1.7; root.add(c)
         }
       }
@@ -112,22 +113,31 @@ export async function createBestiary(ctx) {
       }
       play(idle); mixer.update(0.4) // let the fade-in finish, else this measures the rest pose
       const [lo, hi] = extent(root)
+      let rope = null
       if (o.prop) { // held in the idle pose: its grip at the bone, then grounded on the plinth (see ROSTER)
         const p = (await loader.loadAsync(import.meta.env.BASE_URL + `models/props/${o.prop[0]}.glb`)).scene, bone = model.getObjectByName(o.prop[1])
         p.traverse(m => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false } })
-        const pivot = new THREE.Group(); model.add(pivot); pivot.add(p); model.updateMatrixWorld(true)
-        p.position.sub(model.worldToLocal(p.getObjectByName('grip').getWorldPosition(new THREE.Vector3()))) // grip at the pivot
-        pivot.position.copy(model.worldToLocal(bone.getWorldPosition(new THREE.Vector3()))); model.updateMatrixWorld(true)
-        const hy = bone.getWorldPosition(new THREE.Vector3()).y, below = top - extent(p)[0] // how far it reaches under the plinth top
-        if (below > 0 && o.prop[2] === 'slide') p.position.y += below / s
-        if (below > 0 && o.prop[2] === 'drag') pivot.rotation.x = Math.acos(Math.min(1, (hy - top) / (hy - top + below))) // its foot drags behind on the plinth
-        pivot.updateMatrixWorld(true); bone.attach(pivot)
+        if (o.prop[2] === 'rope') { // the anchor stays in the model (the turntable carries it); its chain bones follow the rope
+          model.add(p)
+          const bones = [8, 7, 6, 5, 4, 3, 2, 1].map(k => p.getObjectByName('chain_' + k)), h = bone.getWorldPosition(new THREE.Vector3())
+          // points: the 8 links from the fist down, then the anchor's crown (its shank is 1.08 m below the ring in the model)
+          const lens = [...bones.map(() => 0.14 * s), 1.08 * s]
+          rope = { bone, bones, lens, pts: lens.map((_, k) => h.clone().setY(h.y - lens.slice(0, k + 1).reduce((a, b) => a + b, 0))), old: null, top, x, z, rad, root, s }
+          rope.old = rope.pts.map(q => q.clone())
+        } else {
+          const pivot = new THREE.Group(); model.add(pivot); pivot.add(p); model.updateMatrixWorld(true)
+          p.position.sub(model.worldToLocal(p.getObjectByName('grip').getWorldPosition(new THREE.Vector3()))) // grip at the pivot
+          pivot.position.copy(model.worldToLocal(bone.getWorldPosition(new THREE.Vector3()))); model.updateMatrixWorld(true)
+          const below = top - extent(p)[0] // how far it reaches under the plinth top
+          if (below > 0) p.position.y += below / s
+          pivot.updateMatrixWorld(true); bone.attach(pivot)
+        }
       }
       const el = document.createElement('div')
       el.style.cssText = 'position:absolute;transform:translate(-50%,-100%);text-align:center;white-space:nowrap'
       el.innerHTML = `<div style="font-size:20px;font-weight:bold">${name}</div><div style="font-size:13px;opacity:.85;font-style:italic">${land}</div>`
       label.append(el)
-      items.push({ id, size, root, mixer, seq, len, total, play, el, pos: new THREE.Vector3(x, top, z), yaw: 0, lie: !!o.lie, clipName: idle, phase: i * 3.1, height: hi - lo, footY: lo - top })
+      items.push({ id, size, root, mixer, seq, len, total, play, el, pos: new THREE.Vector3(x, top, z), yaw: 0, lie: !!o.lie, rope, clipName: idle, phase: i * 3.1, height: hi - lo, footY: lo - top })
     } catch (e) { window.__errors.push(`bestiary: ${id}: ${e.message || e}`) }
   }
 
@@ -135,6 +145,35 @@ export async function createBestiary(ctx) {
     let k = (t + it.phase) % it.total
     for (const n of it.seq) { const l = it.len(n); if (k < l) return n; k -= l }
     return it.seq[0]
+  }
+  // A hanging chain: Verlet points from the fist down to the anchor's ring, held to their link length, kept on and above
+  // the plinth (the anchor lies and drags on it); then each chain bone is set from its point toward the next one up.
+  const fist = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), q = new THREE.Quaternion(), pq = new THREE.Quaternion()
+  const chain = (r, dt) => {
+    r.root.updateMatrixWorld(true); r.bone.getWorldPosition(fist)
+    const g = 9.8 * Math.min(dt, 1 / 30) ** 2
+    r.pts.forEach((p, k) => { const v = p.clone().sub(r.old[k]).multiplyScalar(0.96); r.old[k].copy(p); p.add(v).y -= g })
+    for (let n = 0; n < 12; n++) {
+      r.pts.forEach((p, k) => {
+        const a = k ? r.pts[k - 1] : fist, d = p.distanceTo(a) || 1e-6, e = (d - r.lens[k]) / d
+        if (k) { dir.subVectors(p, a).multiplyScalar(e / 2); a.add(dir); p.sub(dir) } else p.lerp(a, e)
+      })
+      for (const p of r.pts) { // on the plinth: above its top, inside its rim, outside the body (a 0.45 m-rig column)
+        const ox = p.x - r.x, oz = p.z - r.z, rr = Math.hypot(ox, oz) || 1e-6, lim = r.rad - 0.25, body = 0.45 * r.s
+        if (rr > lim) p.x = r.x + ox * lim / rr, p.z = r.z + oz * lim / rr
+        else if (rr < body && p.y < r.top + 1.6 * r.s) p.x = r.x + ox * body / rr, p.z = r.z + oz * body / rr
+        p.y = Math.max(p.y, r.top + (p === r.pts.at(-1) ? 0.14 * r.s : p === r.pts.at(-2) ? 0.1 * r.s : 0.04)) // crown, ring, links
+      }
+    }
+    for (let k = r.bones.length - 1; k >= 0; k--) { // anchor (chain_1, the root) first, up to the fist; +Y to the next link up
+      const b = r.bones[k], toward = k ? r.pts[k - 1] : fist
+      b.parent.updateMatrixWorld(true)
+      b.position.copy(b.parent.worldToLocal(r.pts[k].clone()))
+      if (k === r.bones.length - 1) dir.subVectors(r.pts[k], r.pts[k + 1]).normalize() // the ring: its shank runs to the crown (−Y)
+      else dir.subVectors(toward, r.pts[k]).normalize()
+      q.setFromUnitVectors(up, dir); b.parent.getWorldQuaternion(pq)
+      b.quaternion.copy(pq.invert().multiply(q)); b.updateMatrixWorld(true)
+    }
   }
   const target = items.find(it => it.id === focus)
   const tp = new THREE.Vector3(), cp = new THREE.Vector3(), sp = new THREE.Vector3()
@@ -147,6 +186,7 @@ export async function createBestiary(ctx) {
         ? Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + Math.sin(t * 0.4) * 0.25 // faces the camera, a gentle sway
         : Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + (params.get('still') ? 0 : t * 0.3)
       it.root.rotation.y = it.yaw
+      if (it.rope) chain(it.rope, dt)
     }
     if (target) {
       const p = target.pos, fs = Math.max(target.size, 1.2), d = fs * 1.3 + 1
