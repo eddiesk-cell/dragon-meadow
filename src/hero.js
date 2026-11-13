@@ -145,7 +145,7 @@ export async function createHero(ctx) {
   // per clip, from 0.5 s after it starts (the crossfade slides by design); ?side=1 films him from the side for the proof.
   const balls = ['leftToes', 'rightToes'].map(n => ({ bone: model.getObjectByName(n), at: new THREE.Vector3(), down: false }))
   let slide = 0, slideN = 0, clipT = 0, slideClip = ''
-  const side = params.get('side') ? Math.PI / 2 : 0
+  const sideView = params.get('side') ? Math.PI / 2 : 0
   const pos = heroPos.set(0, ctx.heightAt(0, 0), 0)
   let vy = 0, grounded = true, face = Math.PI, jumpT = 0
   const camTarget = new THREE.Vector3(), camGoal = new THREE.Vector3()
@@ -300,7 +300,7 @@ export async function createHero(ctx) {
       }
       if (near < Infinity) { yaw = Math.atan2(aimAt.x - pos.x, aimAt.z - pos.z) + (tt ? (one ? 0 : Math.sin(ctx.time * 2.3)) : 0.5 * Math.sin(ctx.time * 0.9)); pitch = 0.05 + 0.1 * Math.abs(Math.sin(ctx.time * 0.6)) }
       const cp = Math.cos(pitch)
-      camGoal.set(camTarget.x + Math.sin(yaw + side) * cp * R, camTarget.y + Math.sin(pitch) * R, camTarget.z + Math.cos(yaw + side) * cp * R)
+      camGoal.set(camTarget.x + Math.sin(yaw + sideView) * cp * R, camTarget.y + Math.sin(pitch) * R, camTarget.z + Math.cos(yaw + sideView) * cp * R)
       camGoal.y = Math.max(camGoal.y, ctx.heightAt(camGoal.x, camGoal.z) + 0.4)
       const checks = tt ? [real] : rocks
       if (counting) behind += hitAt(checks, camTarget, camGoal, 0) !== undefined
