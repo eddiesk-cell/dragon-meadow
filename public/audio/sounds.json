@@ -88,6 +88,18 @@
   ],
   "loop": false
  },
+ "theme-day": {
+  "files": [
+   "theme-day.m4a"
+  ],
+  "loop": true
+ },
+ "theme-night": {
+  "files": [
+   "theme-night.m4a"
+  ],
+  "loop": true
+ },
  "town": {
   "files": [
    "town.m4a"

@@ -15,10 +15,12 @@ export async function createAudio(ctx) {
   const lim = ac.createDynamicsCompressor() // limiter on the master: stacked sounds never clip
   for (const [k, v] of Object.entries({ threshold: -10, knee: 0, ratio: 20, attack: 0.002, release: 0.25 })) lim[k].value = v
   listener.setFilter(lim)
+  const MASTER = 0.6 // the whole mix sits at about -17 LUFS (tools/audio/capture.mjs measures it)
   let muted = false
+  listener.setMasterVolume(MASTER)
   const wake = () => ac.state === 'running' || ac.resume()
   addEventListener('pointerdown', wake)
-  addEventListener('keydown', e => { wake(); if (e.key.toLowerCase() === 'm' && !e.repeat) listener.setMasterVolume((muted = !muted) ? 0 : 1) })
+  addEventListener('keydown', e => { wake(); if (e.key.toLowerCase() === 'm' && !e.repeat) listener.setMasterVolume((muted = !muted) ? 0 : MASTER) })
 
   const LOG = params.get('audio') === 'log', log = [], feet = [], wings = []
   const note = (...e) => { if (LOG && log.length < 5000) log.push([+ctx.time.toFixed(3), ...e]) }
@@ -75,9 +77,10 @@ export async function createAudio(ctx) {
     note('loops', Object.keys(loops).filter(k => loops[k]).join(' '))
   }
 
-  // Hero: a step when a foot that swung clear (8 cm over its stance) stops coming down: the heel strike, on any clip.
+  // Hero: a step when a foot that swung clear (8 cm over its stance) ends its fall (its downward speed under a fifth of
+  // that fall's fastest): the heel strike, on any clip. The slow roll onto the sole that follows is not the step.
   const bones = ['leftFoot', 'rightFoot'].map(n => ctx.heroRig?.model.getObjectByName(n)).filter(Boolean)
-  const foot = bones.map(() => ({ floor: Infinity, armed: false, h: 0, down: false }))
+  const foot = bones.map(() => ({ floor: Infinity, armed: false, h: 0, fast: 0 }))
   const ring = ctx.ring
   const surface = (x, z) => pond?.inside(x, z) > 0 ? 'step-water'
     : (ring && Math.hypot(x - ring.center.x, z - ring.center.z) < ring.radius + 3) || towns.some(t => Math.hypot(x - t.x, z - t.z) < t.r) ? 'step-stone' : 'step-grass'
@@ -102,18 +105,20 @@ export async function createAudio(ctx) {
       const hs = []
       bones.forEach((b, k) => {
         b.getWorldPosition(v)
-        const h = v.y - ctx.heightAt(v.x, v.z), s = foot[k]
+        const h = v.y - heroPos.y, s = foot[k] // over his own feet's level: the clip's foot height, not the ground under it (a shore)
         hs.push(+h.toFixed(3), +v.x.toFixed(3), +v.z.toFixed(3))
-        s.floor = Math.min(h, s.floor + dt * 0.02)
+        s.floor = Math.min(h, s.floor + dt * 0.08) // follows a new stance height (another clip) within a stride
+        const fall = (s.h - h) / dt // m/s downward
         if (h > s.floor + 0.08) s.armed = true
-        if (s.armed && s.down && h >= s.h && s.h < s.floor + 0.07) { // it was falling and now is not
-          s.armed = false
+        if (s.armed) s.fast = Math.max(s.fast, fall)
+        if (s.armed && s.fast > 0.3 && fall < 0.2 * s.fast && h < s.floor + 0.1) { // the swing's fall has ended: the heel is down
+          s.armed = false; s.fast = 0
           if (onFoot && speed > 0.5 && !air) {
             const n = surface(v.x, v.z)
             play(n, v, { gain: speed > 3 ? 0.9 : 0.55, rate: speed > 3 ? 1.08 : 1 }); note('step', k ? 'R' : 'L', n)
           }
         }
-        s.down = h < s.h; s.h = h
+        s.h = h
       })
       if (hs.length) trace(feet, [+ctx.time.toFixed(3), ...hs])
 

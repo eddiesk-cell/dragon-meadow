@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Make every sound in public/audio/ on this Mac, free: AudioGen (facebook/audiogen-medium) for effects and beds,
-MusicGen (facebook/musicgen-medium, on the CPU) for the two themes. Run unsandboxed (MPS is not visible in the sandbox):
+MusicGen (facebook/musicgen-medium) for the two themes. Run unsandboxed (the GPU, MPS, is not visible in the sandbox):
   python3 tools/audio/gen.py sfx [name ...]     # re-execs itself in ~/audio-skills-data/sfx/.venv
   python3 tools/audio/gen.py music [name ...]   # ... in ~/audio-skills-data/music-bgm/.venv
 Writes public/audio/<name>[-i].m4a (AAC, Safari plays it), merges public/audio/sounds.json ({name: {files, loop}}, what
@@ -16,7 +16,10 @@ MODE, ONLY = sys.argv[1], set(sys.argv[2:])
 DATA = Path.home() / 'audio-skills-data' / {'sfx': 'sfx', 'music': 'music-bgm'}[MODE]
 if Path(sys.prefix).resolve() != (DATA / '.venv').resolve():
     os.execv(str(DATA / '.venv/bin/python'), [str(DATA / '.venv/bin/python'), __file__, *sys.argv[1:]])
-os.environ.update(HF_HOME=str(DATA / 'models'), HF_HUB_OFFLINE='1', NUMBA_CACHE_DIR=os.environ.get('TMPDIR', '/tmp') + '/numba')
+os.environ.update(HF_HOME=str(DATA / 'models'), HF_HUB_OFFLINE='1', NUMBA_CACHE_DIR=os.environ.get('TMPDIR', '/tmp') + '/numba',
+                  # MusicGen's growing cache made the MPS allocator keep every size it ever used: a 151 GB footprint on one 30 s
+                  # theme, killed. Collect cached blocks past ~15 % of the GPU's working set, refuse past ~35 % (an error, not a kill).
+                  PYTORCH_MPS_LOW_WATERMARK_RATIO='0.15', PYTORCH_MPS_HIGH_WATERMARK_RATIO='0.35')
 
 AG, MG = 'facebook/audiogen-medium', 'facebook/musicgen-medium'
 # name: (model, prompt, seconds, kind, max seconds per hit / loop crossfade, gain dB on top of the normalisation)
@@ -106,8 +109,7 @@ def main():
         if not hasattr(xops, 'unbind'): xops.unbind = torch.unbind
     except Exception: pass
     from audiocraft.models import AudioGen, MusicGen
-    # MusicGen on MPS grew to a 151 GB footprint on one 30 s theme and was killed; on the CPU it stays small (slower, sure).
-    dev = 'mps' if MODE == 'sfx' and torch.backends.mps.is_available() else 'cpu'
+    dev = 'mps' if torch.backends.mps.is_available() else 'cpu'
     names = [n for n, s in SOUNDS.items() if (s[0] == AG) == (MODE == 'sfx') and (not ONLY or n in ONLY)]
     model = (AudioGen if MODE == 'sfx' else MusicGen).get_pretrained(AG if MODE == 'sfx' else MG, device=dev)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -117,7 +119,8 @@ def main():
         _, prompt, secs, kind, _ = SOUNDS[n]
         torch.manual_seed(1000 + list(SOUNDS).index(n))
         model.set_generation_params(duration=secs)
-        x = model.generate([prompt])[0, 0].detach().cpu().numpy().astype(np.float64)
+        model.set_custom_progress_callback(lambda done, total: done % 250 == 0 and print(f'  {n}: {done}/{total} steps', flush=True))
+        x = model.generate([prompt], progress=True)[0, 0].detach().cpu().numpy().astype(np.float64)
         clips = shape(n, x, model.sample_rate)
         for old in OUT.glob(f'{n}*.m4a'): old.unlink()  # our own previous take of this sound
         files = [f'{n}.m4a'] if len(clips) == 1 and kind != 'hits' else [f'{n}-{k}.m4a' for k in range(len(clips))]

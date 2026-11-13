@@ -23,3 +23,5 @@ AudioGen and MusicGen are Meta AudioCraft models (code MIT; weights CC-BY-NC 4.0
 | troll-impact | troll-impact.m4a | facebook/audiogen-medium (3 s, one) | a huge stone slamming into the ground, deep heavy thud, earth rumble |
 | wingbeat | wingbeat-0.m4a, wingbeat-1.m4a, wingbeat-2.m4a, wingbeat-3.m4a, wingbeat-4.m4a, wingbeat-5.m4a | facebook/audiogen-medium (8 s, hits) | giant leathery wings flapping slowly, deep heavy whooshing wingbeats, separate flaps |
 | roar | roar.m4a | facebook/audiogen-medium (4 s, one) | a huge dragon roaring, deep powerful growl, echoing over open land |
+| theme-day | theme-day.m4a | facebook/musicgen-medium (30 s, loop) | gentle dreamy fantasy pastoral theme, soft harp arpeggios, warm wooden flute melody, light strings, slow tempo, peaceful sense of wonder, mesmerizing, instrumental |
+| theme-night | theme-night.m4a | facebook/musicgen-medium (30 s, loop) | slow ethereal dreamy ambient lullaby, celesta and music box, soft warm synth pads, gentle harp, mysterious and mesmerizing starry night, instrumental |

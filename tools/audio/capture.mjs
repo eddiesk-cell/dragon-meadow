@@ -21,7 +21,7 @@ const abs = resolve(ROOT, out), webm = abs + '.webm', wav = abs + '.wav'
 let server, browser, rec, report = { out, errors: [] }
 const unlock = await lock()
 try {
-  server = await createServer({ root: ROOT, logLevel: 'error', server: { host: '127.0.0.1' } })
+  server = await createServer({ root: ROOT, logLevel: 'error', server: { host: '127.0.0.1', hmr: false } }) // other lanes edit src/ meanwhile: no reloads mid-take
   await server.listen()
   // --mute-audio keeps the desk's speakers quiet; Web Audio still renders, and the tap below hears it.
   browser = await puppeteer.launch({ executablePath: CHROME, headless: true, defaultViewport: { width: 1280, height: 720 },
@@ -29,9 +29,17 @@ try {
   const page = await browser.newPage()
   page.on('pageerror', e => report.errors.push(String(e).slice(0, 300)))
   await page.goto(`${server.resolvedUrls.local[0]}?${query}${query ? '&' : ''}audio=log`, { waitUntil: 'domcontentloaded' })
-  await page.waitForFunction(() => window.__ready && window.__probes.audio?.().loaded, { timeout: 90000 })
+  // The world is held almost still (timeScale 1e-4, never 0: modules divide by dt) from its first frame until the GPU has
+  // warmed up: on a busy desk its first dozen frames can take 25 s, and auto=ride calls the dragon at 1 s of game time.
+  // Then the take starts at game time ~0 with the world running at speed, as a player starts once it has loaded.
+  await page.waitForFunction(() => window.__ctx, { polling: 10, timeout: 60000 })
+  await page.evaluate(() => { window.__ctx.timeScale = 1e-4; window.__n = 0; const f = () => { window.__n++; requestAnimationFrame(f) }; requestAnimationFrame(f) })
+  await page.waitForFunction(() => window.__ready && window.__probes.audio?.().loaded, { polling: 200, timeout: 180000 })
+  for (let ok = 0, i = 0; ok < 2; i++) { // two seconds in a row at ≥ 40 frames
+    if (i > 120) throw new Error('the page never reached 40 fps')
+    const n0 = await page.evaluate(() => window.__n); await sleep(1000); ok = (await page.evaluate(() => window.__n)) - n0 >= 40 ? ok + 1 : 0
+  }
   await page.evaluate(() => document.getElementById('hint')?.remove())
-  await sleep(1500)
   // The tap: the master bus as 16-bit stereo PCM. An AudioWorklet on the audio thread posts 4096-frame blocks; they queue
   // on the main thread, so a busy frame delays them instead of dropping them (a ScriptProcessor lost 40 % of a 20 s take).
   const rate = await page.evaluate(async () => {
@@ -60,10 +68,18 @@ try {
   const aStart = Date.now()
   rec = await page.screencast({ path: webm })
   const vStart = Date.now()
+  const clocks = () => page.evaluate(() => [performance.now() / 1000, window.__ctx.audio.listener.context.currentTime, window.__ctx.time])
+  const c0 = await clocks()
+  await page.evaluate(() => (window.__ctx.timeScale = 1))
+  report.t0 = +c0[2].toFixed(3) // game time at the video's start: log time − t0 ≈ video time
   const pcm = []
-  for (let t = 0; t < +secs; t += 4) { await sleep(Math.min(4, +secs - t) * 1000); pcm.push(Buffer.from(await page.evaluate(() => window.__rec.take()), 'base64')) }
-  await rec.stop(); rec = null
+  report.clockTrace = []
+  for (let t = 0; t < +secs; t += 4) { await sleep(Math.min(4, +secs - t) * 1000); pcm.push(Buffer.from(await page.evaluate(() => window.__rec.take()), 'base64')); report.clockTrace.push((await clocks()).map(x => +x.toFixed(2)).concat(pcm.reduce((n, b) => n + b.length, 0) / 4 / rate)) }
+  const c1 = await clocks()
+  report.clocks = { wall: +(c1[0] - c0[0]).toFixed(2), audio: +(c1[1] - c0[1]).toFixed(2), game: +(c1[2] - c0[2]).toFixed(2) } // seconds each clock ran
+  if (report.clocks.game < 0.8 * report.clocks.wall) report.errors.push(`capture: the world stalled (game ${report.clocks.game} s of ${report.clocks.wall} s)`)
   const data = await page.evaluate(() => ({ audio: window.__probes.audio(true), ride: window.__probes.ride?.(), errors: window.__errors }))
+  await rec.stop(); rec = null // slow on a busy desk (it flushes the webm): the readings above are taken before it
   report.errors.push(...data.errors)
 
   // WAV, trimmed by the gap between the tap's start and the video's, then muxed.
