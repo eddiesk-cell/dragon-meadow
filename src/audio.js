@@ -79,10 +79,12 @@ export async function createAudio(ctx) {
     note('loops', Object.keys(loops).filter(k => loops[k]).join(' '))
   }
 
-  // Hero: a step when a foot that swung clear (8 cm over its stance) ends its fall (its downward speed under a fifth of
-  // that fall's fastest): the heel strike, on any clip. The slow roll onto the sole that follows is not the step.
+  // Hero: a step when a foot that swung clear (6 cm over its stance) plants: back within 3.5 cm of its stance AND its world
+  // speed under 30 % of that swing's fastest. Not the end of a fall: a sprinting foot pauses mid-swing at ~0.4 m while still
+  // moving at 9 m/s, and a walking one dips at toe-off. The stance is the foot's lowest over the last stride (0.8-1.6 s),
+  // so it follows the clip.
   const bones = ['leftFoot', 'rightFoot'].map(n => ctx.heroRig?.model.getObjectByName(n)).filter(Boolean)
-  const foot = bones.map(() => ({ floor: Infinity, armed: false, h: 0, fast: 0, top: -Infinity }))
+  const foot = bones.map(() => ({ lo: Infinity, prev: Infinity, age: 0, armed: false, peak: 0, x: 0, z: 0 }))
   const ring = ctx.ring
   const surface = (x, z) => pond?.inside(x, z) > 0 ? 'step-water'
     : (ring && Math.hypot(x - ring.center.x, z - ring.center.z) < ring.radius + 3) || towns.some(t => Math.hypot(x - t.x, z - t.z) < t.r) ? 'step-stone' : 'step-grass'
@@ -110,21 +112,22 @@ export async function createAudio(ctx) {
         b.getWorldPosition(v)
         const h = v.y - heroPos.y, s = foot[k] // over his own feet's level: the clip's foot height, not the ground under it (a shore)
         hs.push(+h.toFixed(3), +v.x.toFixed(3), +v.z.toFixed(3))
-        s.floor = Math.min(h, s.floor + dt * 0.08) // follows a new stance height (another clip) within a stride
-        const fall = (s.h - h) / dt // m/s downward
-        if (h > s.floor + 0.08) s.armed = true
-        if (s.armed) s.fast = Math.max(s.fast, fall), s.top = Math.max(s.top, h)
-        // the swing's fall has ended (a run lands 5 cm over the stance it rolls down to, so: half way down, not at the floor)
-        if (s.armed && s.fast > 0.3 && fall < 0.2 * s.fast && s.top - h > 0.5 * (s.top - s.floor)) {
-          s.armed = false; s.fast = 0; s.top = -Infinity
+        if ((s.age += dt) > 0.8) s.prev = s.lo, s.lo = Infinity, s.age = 0
+        const floor = Math.min(s.lo = Math.min(s.lo, h), s.prev)
+        const fv = Math.hypot(v.x - s.x, v.z - s.z) / dt // the foot's world speed (m/s), along the ground
+        s.x = v.x; s.z = v.z
+        if (!onFoot) s.armed = false, s.peak = 0 // riding: the feet move with the dragon
+        else if (h > floor + 0.06) s.armed = true
+        if (s.armed) s.peak = Math.max(s.peak, fv)
+        if (s.armed && s.peak > 1 && fv < 0.3 * s.peak && h < floor + 0.035) {
+          s.armed = false; s.peak = 0
           if (onFoot && speed > 0.5 && !air) {
             const n = surface(v.x, v.z)
-            play(n, v, { gain: speed > 3 ? 0.9 : 0.55, rate: speed > 3 ? 1.08 : 1 }); note('step', k ? 'R' : 'L', n)
+            play(n, v, { gain: speed > 3 ? 0.75 : 0.55, rate: speed > 3 ? 1.08 : 1 }); note('step', k ? 'R' : 'L', n)
           }
         }
-        s.h = h
       })
-      if (hs.length) trace(feet, [+ctx.time.toFixed(3), ...hs])
+      if (hs.length) trace(feet, [+ctx.time.toFixed(3), ...hs, onFoot && speed > 0.5 && !air ? 1 : 0]) // the last: may step
 
       // Jump and land.
       const gap = heroPos.y - ctx.heightAt(heroPos.x, heroPos.z)
