@@ -32,17 +32,26 @@ try {
   await page.waitForFunction(() => window.__ready && window.__probes.audio?.().loaded, { timeout: 90000 })
   await page.evaluate(() => document.getElementById('hint')?.remove())
   await sleep(1500)
-  // The tap: the master bus as 16-bit stereo PCM, collected in the page and pulled every few seconds.
-  const rate = await page.evaluate(() => {
-    const l = window.__ctx.audio.listener, ac = l.context, sp = ac.createScriptProcessor(4096, 2, 2), sink = ac.createGain()
-    sink.gain.value = 0; sp.connect(sink).connect(ac.destination); (l.getFilter() || l.gain).connect(sp)
+  // The tap: the master bus as 16-bit stereo PCM. An AudioWorklet on the audio thread posts 4096-frame blocks; they queue
+  // on the main thread, so a busy frame delays them instead of dropping them (a ScriptProcessor lost 40 % of a 20 s take).
+  const rate = await page.evaluate(async () => {
+    const l = window.__ctx.audio.listener, ac = l.context
+    const src = `registerProcessor('tap', class extends AudioWorkletProcessor {
+      constructor() { super(); this.L = new Float32Array(4096); this.R = new Float32Array(4096); this.n = 0 }
+      process([i]) { const L = i[0], R = i[1] || L; if (!L) return true
+        this.L.set(L, this.n); this.R.set(R, this.n); this.n += L.length
+        if (this.n === 4096) { this.port.postMessage([this.L, this.R]); this.L = new Float32Array(4096); this.R = new Float32Array(4096); this.n = 0 }
+        return true } })`
+    await ac.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })))
+    const tap = new AudioWorkletNode(ac, 'tap', { channelCount: 2, channelCountMode: 'explicit' }), sink = ac.createGain()
+    sink.gain.value = 0; tap.connect(sink).connect(ac.destination); (l.getFilter() || l.gain).connect(tap)
     let parts = []
-    sp.onaudioprocess = e => {
-      const L = e.inputBuffer.getChannelData(0), R = e.inputBuffer.getChannelData(1), p = new Int16Array(L.length * 2)
+    tap.port.onmessage = ({ data: [L, R] }) => {
+      const p = new Int16Array(L.length * 2)
       for (let i = 0; i < L.length; i++) { p[2 * i] = Math.max(-1, Math.min(1, L[i])) * 32767; p[2 * i + 1] = Math.max(-1, Math.min(1, R[i])) * 32767 }
       parts.push(p)
     }
-    window.__rec = { node: sp, take() {
+    window.__rec = { take() {
       const all = new Int16Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0
       for (const p of parts) { all.set(p, o); o += p.length }
       parts = []; const b = new Uint8Array(all.buffer); let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode(...b.subarray(i, i + 32768)); return btoa(s) } }
@@ -91,27 +100,33 @@ function analyse(a, ride, loud) {
   const ev = name => a.log.filter(e => e[1] === name)
   const steps = ev('step'), r = { loudness: loud, state: a.state, leadMs: a.leadMs, counts: {} }
   for (const e of a.log) if (!['mix', 'loops'].includes(e[1])) r.counts[e[1]] = (r.counts[e[1]] || 0) + 1
-  if (steps.length) { // foot contact: the first frame of each stance at its lowest (within 5 mm), stance = under the foot's level + 4 cm
-    const t0 = steps[0][0] - 0.5, t1 = steps.at(-1)[0] + 0.5, dts = [], missed = []
+  if (steps.length) { // foot contact, read independently of audio.js's trigger: each fall of a swinging foot (from an apex 8 cm
+    // over its stance) ends where its downward speed drops under 15 % of that fall's fastest (the heel strike). Not from the
+    // ground speed: this walk clip slides its planted foot at ~0.6 m/s, so a foot never stops. Trace: [t, h, x, z] per foot.
+    const t0 = steps[0][0] - 0.5, t1 = steps.at(-1)[0] + 0.5, dts = [], missed = [], extra = []
+    const tr = a.feet.filter(f => f[0] >= t0 && f[0] <= t1)
     for (const k of [0, 1]) {
-      const tr = a.feet.filter(f => f[0] >= t0 && f[0] <= t1).map(f => [f[0], f[1 + k]])
-      const level = [...tr.map(f => f[1])].sort((x, y) => x - y)[Math.floor(tr.length * 0.05)]
-      const contacts = []
-      for (let i = 0; i < tr.length;) {
-        if (tr[i][1] >= level + 0.04) { i++; continue }
-        let j = i; while (j < tr.length && tr[j][1] < level + 0.04) j++
-        const run = tr.slice(i, j), lo = Math.min(...run.map(f => f[1]))
-        if (i > 0 && j < tr.length) contacts.push(run.find(f => f[1] <= lo + 0.005)[0]) // whole dips only
+      const h = tr.map(f => f[1 + 3 * k]), stance = [...h].sort((x, y) => x - y)[Math.floor(h.length * 0.05)], contacts = []
+      for (let i = 1; i < h.length - 1; i++) {
+        if (!(h[i] > stance + 0.08 && h[i] >= h[i - 1] && h[i] > h[i + 1])) continue // an apex
+        let j = i + 1, fast = 0
+        while (j < h.length - 1) {
+          const vy = (h[j - 1] - h[j]) / (tr[j][0] - tr[j - 1][0]); fast = Math.max(fast, vy)
+          if (fast > 0.3 && vy < 0.15 * fast) break
+          j++
+        }
+        if (j < h.length - 1) contacts.push(tr[j][0])
         i = j
       }
       const mine = steps.filter(s => s[2] === (k ? 'R' : 'L')).map(s => s[0])
+      extra.push(...mine.filter(s => !contacts.some(c => Math.abs(s - c) <= 0.08)).map(s => [k ? 'R' : 'L', s]))
       for (const c of contacts) {
         const near = mine.reduce((b, s) => Math.abs(s - c) < Math.abs(b - c) ? s : b, Infinity)
-        if (Math.abs(near - c) <= 0.08) dts.push(Math.round((near - c) * 1000)); else missed.push(+c.toFixed(2))
+        if (Math.abs(near - c) <= 0.08) dts.push(Math.round((near - c) * 1000)); else missed.push([k ? 'R' : 'L', +c.toFixed(2), Math.round((near - c) * 1000)])
       }
     }
     const abs = dts.map(Math.abs).sort((x, y) => x - y)
-    r.steps = { steps: steps.length, contactsMatched: dts.length, missed, maxAbsMs: abs.at(-1), medianMs: [...dts].sort((x, y) => x - y)[dts.length >> 1], surfaces: [...new Set(steps.map(s => s[3]))] }
+    r.steps = { steps: steps.length, contactsMatched: dts.length, missed, extra, maxAbsMs: abs.at(-1), medianMs: [...dts].sort((x, y) => x - y)[dts.length >> 1], surfaces: [...new Set(steps.map(s => s[3]))] }
   }
   const wingsEv = ev('wing')
   if (wingsEv.length) { // a downstroke follows: the wing tip is lower 0.15 s later

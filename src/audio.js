@@ -4,8 +4,8 @@
 // when it comes down and lands, and the wind rising with its speed under the rider. Every file is in public/audio/, made
 // locally by tools/audio/gen.py (sounds.json lists them). Reads ctx and the other modules' probes only.
 // Silent until the first key or click (browsers require one); M mutes. Publishes ctx.audio = { listener, play }.
-// ?audio=log keeps a timeline in __probes.audio().log; __probes.audio(true) adds the foot and wing traces it was cut from
-// (tools/audio/capture.mjs checks the steps and wingbeats against them).
+// ?audio=log keeps a timeline in __probes.audio().log; __probes.audio(true) adds the traces of the feet (height, x, z) and
+// the wing tip (tools/audio/capture.mjs reads the feet's contacts from where they plant, not from this file's height rule).
 export async function createAudio(ctx) {
   const { THREE, scene, camera, params, heroPos } = ctx
   const { smoothstep } = THREE.MathUtils
@@ -75,22 +75,9 @@ export async function createAudio(ctx) {
     note('loops', Object.keys(loops).filter(k => loops[k]).join(' '))
   }
 
-  // Hero: a step when a foot comes down to its own stance height (its lowest lately) after lifting clear of it.
+  // Hero: a step when a foot that swung clear (8 cm over its stance) stops coming down: the heel strike, on any clip.
   const bones = ['leftFoot', 'rightFoot'].map(n => ctx.heroRig?.model.getObjectByName(n)).filter(Boolean)
-  const foot = bones.map(() => ({ floor: Infinity, armed: false }))
-  // The soles: skinned vertices weighted to each foot, within 3 cm of its lowest in the bind pose (where it meets the ground).
-  let body = null
-  ctx.heroRig?.model.traverse(o => { if (o.isSkinnedMesh) body ||= o })
-  const soles = !body ? [] : ['left', 'right'].map(side => {
-    const g = body.geometry.attributes, ids = ['Foot', 'Toes'].map(p => body.skeleton.bones.findIndex(b => b.name === side + p)), vs = []
-    for (let i = 0; i < g.position.count; i++) {
-      let w = 0; for (let c = 0; c < 4; c++) if (ids.includes(g.skinIndex.getComponent(i, c))) w += g.skinWeight.getComponent(i, c)
-      if (w > 0.5) vs.push(i)
-    }
-    const lo = Math.min(...vs.map(i => g.position.getY(i)))
-    return vs.filter(i => g.position.getY(i) < lo + 0.03)
-  })
-  const soleAt = (k, ground) => { let m = Infinity; for (const i of soles[k]) m = Math.min(m, body.getVertexPosition(i, v).applyMatrix4(body.matrixWorld).y); return m - ground }
+  const foot = bones.map(() => ({ floor: Infinity, armed: false, h: 0, down: false }))
   const ring = ctx.ring
   const surface = (x, z) => pond?.inside(x, z) > 0 ? 'step-water'
     : (ring && Math.hypot(x - ring.center.x, z - ring.center.z) < ring.radius + 3) || towns.some(t => Math.hypot(x - t.x, z - t.z) < t.r) ? 'step-stone' : 'step-grass'
@@ -101,7 +88,7 @@ export async function createAudio(ctx) {
   if (ctx.dragon && !wing) console.warn('audio: the dragon has no wing-l-hand bone, so no wingbeats')
   const mix = {}
 
-  window.__probes.audio = full => ({ loaded: !!buf, state: ac.state, muted, sounds: buf && Object.keys(buf).length, leadMs: +leadMs.toFixed(1), soles: soles.map(s => s.length),
+  window.__probes.audio = full => ({ loaded: !!buf, state: ac.state, muted, sounds: buf && Object.keys(buf).length, leadMs: +leadMs.toFixed(1),
     mix: Object.fromEntries(Object.entries(mix).map(([k, g]) => [k, +g.toFixed(3)])), ...(LOG && { log }), ...(full && { feet, wings }) })
 
   return {
@@ -115,18 +102,18 @@ export async function createAudio(ctx) {
       const hs = []
       bones.forEach((b, k) => {
         b.getWorldPosition(v)
-        const ground = ctx.heightAt(v.x, v.z), h = v.y - ground, s = foot[k]
-        hs.push(+h.toFixed(3))
-        if (LOG && soles[k]) hs.push(+soleAt(k, ground).toFixed(3))
+        const h = v.y - ctx.heightAt(v.x, v.z), s = foot[k]
+        hs.push(+h.toFixed(3), +v.x.toFixed(3), +v.z.toFixed(3))
         s.floor = Math.min(h, s.floor + dt * 0.02)
-        if (h > s.floor + 0.05) s.armed = true
-        if (s.armed && h < s.floor + 0.015) {
+        if (h > s.floor + 0.08) s.armed = true
+        if (s.armed && s.down && h >= s.h && s.h < s.floor + 0.07) { // it was falling and now is not
           s.armed = false
           if (onFoot && speed > 0.5 && !air) {
-            b.getWorldPosition(v); const n = surface(v.x, v.z)
+            const n = surface(v.x, v.z)
             play(n, v, { gain: speed > 3 ? 0.9 : 0.55, rate: speed > 3 ? 1.08 : 1 }); note('step', k ? 'R' : 'L', n)
           }
         }
+        s.down = h < s.h; s.h = h
       })
       if (hs.length) trace(feet, [+ctx.time.toFixed(3), ...hs])
 

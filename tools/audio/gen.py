@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Make every sound in public/audio/ on this Mac, free: AudioGen (facebook/audiogen-medium) for effects and beds,
-MusicGen (facebook/musicgen-medium) for the two themes. Run unsandboxed (the GPU, MPS, is not visible in the sandbox):
+MusicGen (facebook/musicgen-medium, on the CPU) for the two themes. Run unsandboxed (MPS is not visible in the sandbox):
   python3 tools/audio/gen.py sfx [name ...]     # re-execs itself in ~/audio-skills-data/sfx/.venv
   python3 tools/audio/gen.py music [name ...]   # ... in ~/audio-skills-data/music-bgm/.venv
 Writes public/audio/<name>[-i].m4a (AAC, Safari plays it), merges public/audio/sounds.json ({name: {files, loop}}, what
@@ -106,7 +106,8 @@ def main():
         if not hasattr(xops, 'unbind'): xops.unbind = torch.unbind
     except Exception: pass
     from audiocraft.models import AudioGen, MusicGen
-    dev = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    # MusicGen on MPS grew to a 151 GB footprint on one 30 s theme and was killed; on the CPU it stays small (slower, sure).
+    dev = 'mps' if MODE == 'sfx' and torch.backends.mps.is_available() else 'cpu'
     names = [n for n, s in SOUNDS.items() if (s[0] == AG) == (MODE == 'sfx') and (not ONLY or n in ONLY)]
     model = (AudioGen if MODE == 'sfx' else MusicGen).get_pretrained(AG if MODE == 'sfx' else MG, device=dev)
     OUT.mkdir(parents=True, exist_ok=True)
