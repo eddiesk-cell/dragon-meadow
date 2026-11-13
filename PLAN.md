@@ -763,3 +763,23 @@ rig's rest pose, which the concept was drawn on: `art/dragon2/rest-{quarter,side
   tears (print the worst edge stretch per clip, ≤ 6×), the saddle stays on the back. In game: `?dragon=near` by day and
   night, `auto=ride` (the probes and log as in Lane dragon-ride: over isle and lake, isleGap/treeGap ≥ 0, the hero on the
   saddle). controls-check 7/7, errors [], fps ≥ 50. The old model is kept as `public/models/dragon-winter.glb` for A/B.
+
+### Lane hero-motion — `public/models/hero.glb`, `tools/hero/`, `art/hero/motion/`, `src/hero.js` (Opus)
+Eddie: "I want the hero arms to hang down more naturally, and when he runs I want a strong run like a person sprinting
+arms position look off now. The arms swing when run is off, you should get the animation of a professional runner and
+copy that." Research, target numbers and what is wrong today: `art/hero/motion/RESEARCH.md`; reference picture:
+`art/hero/motion/ref-sprint-stand-walk.png`; today's clips: `art/hero/motion/before-{idle,walk,run,sprint}.png`.
+- New **Idle** (arms hanging at the sides, hands by the outer thighs), **Walk** (natural opposite arm swing) and **Run**
+  (the Shift run becomes a strong sprint: arms pumping from the shoulder, elbows near 90°, front hand to chin height, back
+  hand past the hip) — and **Sprint** the same as Run. Copy the real kinematics in RESEARCH.md: keep or replace the legs
+  and hips as needed, but the arms must land in those ranges. Any source is fine (re-key the arms on the donor clips,
+  Kimodo `~/ai-stack/kimodo/` with a better prompt or fixed retarget, or author curves from the numbers) as long as it is
+  local and free. Bake into `hero.glb` with every other clip (51 animations), the spring bones and the skin untouched;
+  make the build reproducible from `tools/hero/` (a script beside `build.sh`).
+- Match stride to ground speed (hero.js: walk 1.6 m/s, run 5 m/s; the run may rise to 7 m/s if a sprint needs it — say
+  so) so the planted foot does not skate. Loops seamless.
+- **CHECK:** `art/hero/motion/after-{idle,walk,run}.png` with `tools/hero/clipsheet.py` (same cameras as before), and
+  printed per clip: shoulder sagittal range, elbow min/max, hand height at the front of the swing vs chin, hand behind
+  the hip at the back, arm–leg phase (opposite), idle hand-to-thigh gap and elbow angle — each inside RESEARCH.md's
+  ranges. In game: `clip.mjs` of `auto=run` and `auto=walk` seen from the side (`shots/hero-motion-{run,walk}.mp4`),
+  planted-foot slide < 0.3 m/s; controls-check 7/7; errors []; fps ≥ 50; the probe `hero.strapSkin` > 0 (springs kept).
