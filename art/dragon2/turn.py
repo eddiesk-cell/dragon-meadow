@@ -20,7 +20,7 @@ sc.view_settings.view_transform = 'Standard'
 sun = bpy.data.objects.new('sun', bpy.data.lights.new('sun', 'SUN')); sun.data.energy = 3; sun.rotation_euler = (0.7, 0.2, 0.6); sc.collection.objects.link(sun)
 cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.objects.link(cam); sc.camera = cam
 cam.data.lens = 50
-c, R = Vector((0, 0, 1.0)), 5.2 if len(a) <= 3 else 8.0
+c, R = Vector((0, 0, 1.0)), 8.0
 for name, d in (('quarter', Vector((1.0, -1.1, 0.45))), ('side', Vector((1, 0, 0.08))), ('front', Vector((0, -1, 0.15))), ('top', Vector((0.001, 0.2, 1)))):
     cam.location = c + d.normalized() * R * 1.25
     cam.rotation_euler = (c - cam.location).to_track_quat('-Z', 'Y').to_euler()

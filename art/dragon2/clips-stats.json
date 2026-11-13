@@ -1,0 +1,189 @@
+{
+ "fly": {
+  "frames": [
+   0,
+   30
+  ],
+  "A": 0,
+  "B": 19,
+  "stretch": {
+   "dragon2-body": 4.19,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 3.17,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 3.17
+  },
+  "worst": 4.191941375561507,
+  "worstAt": "dragon2-body"
+ },
+ "hover": {
+  "frames": [
+   0,
+   24
+  ],
+  "A": 16,
+  "B": 0,
+  "stretch": {
+   "dragon2-body": 2.2,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.03,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.03
+  },
+  "worst": 4.031350745402905,
+  "worstAt": "wing-r-membrane"
+ },
+ "idle": {
+  "frames": [
+   0,
+   96
+  ],
+  "A": 83,
+  "B": 37,
+  "stretch": {
+   "dragon2-body": 1.32,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.2,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.2
+  },
+  "worst": 4.1999796480195215,
+  "worstAt": "wing-r-membrane"
+ },
+ "idle_fire": {
+  "frames": [
+   0,
+   84
+  ],
+  "A": 57,
+  "B": 76,
+  "stretch": {
+   "dragon2-body": 2.66,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.19,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.19
+  },
+  "worst": 4.191908067797316,
+  "worstAt": "wing-l-membrane"
+ },
+ "idle_look": {
+  "frames": [
+   0,
+   120
+  ],
+  "A": 70,
+  "B": 111,
+  "stretch": {
+   "dragon2-body": 3.73,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.21,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.23
+  },
+  "worst": 4.23479766830988,
+  "worstAt": "wing-r-membrane"
+ },
+ "idle_roar": {
+  "frames": [
+   0,
+   72
+  ],
+  "A": 65,
+  "B": 27,
+  "stretch": {
+   "dragon2-body": 2.04,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.19,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.19
+  },
+  "worst": 4.190419944171948,
+  "worstAt": "wing-r-membrane"
+ },
+ "idle_shake": {
+  "frames": [
+   0,
+   72
+  ],
+  "A": 25,
+  "B": 64,
+  "stretch": {
+   "dragon2-body": 2.74,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.19,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.19
+  },
+  "worst": 4.189081454038573,
+  "worstAt": "wing-r-membrane"
+ },
+ "idle_wings": {
+  "frames": [
+   0,
+   96
+  ],
+  "A": 0,
+  "B": 56,
+  "stretch": {
+   "dragon2-body": 1.41,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.19,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.19
+  },
+  "worst": 4.188134589892319,
+  "worstAt": "wing-r-membrane"
+ },
+ "land": {
+  "frames": [
+   0,
+   42
+  ],
+  "A": 0,
+  "B": 42,
+  "stretch": {
+   "dragon2-body": 2.2,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.19,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.19
+  },
+  "worst": 4.188134589892319,
+  "worstAt": "wing-r-membrane"
+ },
+ "takeoff": {
+  "frames": [
+   0,
+   42
+  ],
+  "A": 35,
+  "B": 21,
+  "stretch": {
+   "dragon2-body": 3.08,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.46,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.46
+  },
+  "worst": 4.458674791685044,
+  "worstAt": "wing-r-membrane"
+ },
+ "walk": {
+  "frames": [
+   0,
+   24
+  ],
+  "A": 10,
+  "B": 22,
+  "stretch": {
+   "dragon2-body": 5.22,
+   "wing-l-bones": 1.0,
+   "wing-l-membrane": 4.22,
+   "wing-r-bones": 1.0,
+   "wing-r-membrane": 4.21
+  },
+  "worst": 5.2200837234085995,
+  "worstAt": "dragon2-body"
+ }
+}
