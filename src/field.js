@@ -208,8 +208,10 @@ export async function createField(ctx) {
 
     // --- colour, per vertex: dark teal root → jade or fresh yellow-green blade (in broad drifts) → pale gold tip
     const drift = lowNoise(world.add(31), 0.06, 0.04)
-    const tipCol = mix(vec3(0.36, 0.33, 0.07), vec3(0.27, 0.34, 0.08), r(10).mul(patch))
-    const bodyCol = mix(vec3(0.012, 0.09, 0.06), vec3(0.045, 0.15, 0.025), smoothstep(0.3, 0.75, drift))
+    // by day fresh spring green to the tips, as mix-day.png (hue ~70°, bright; gold tips read as straw), with a little blue
+    // so the tone curve keeps some shading in it; by night the darker teal-jade the glow is tuned on (night.png)
+    const tipCol = mix(mix(vec3(0.50, 0.55, 0.12), vec3(0.37, 0.53, 0.11), r(10).mul(patch)), mix(vec3(0.36, 0.33, 0.07), vec3(0.27, 0.34, 0.08), r(10).mul(patch)), uNight)
+    const bodyCol = mix(mix(vec3(0.05, 0.19, 0.07), vec3(0.12, 0.29, 0.06), smoothstep(0.3, 0.75, drift)), mix(vec3(0.012, 0.09, 0.06), vec3(0.045, 0.15, 0.025), smoothstep(0.3, 0.75, drift)), uNight)
     const grassCol = mix(vec3(0.012, 0.045, 0.04), mix(bodyCol, tipCol, smoothstep(0.62, 1, tt)), smoothstep(0, 0.5, tt).max(smoothstep(15, 60, dist)))
       .mul(r(11).mul(0.3).add(0.85)).mul(lowNoise(world.add(13), 0.035, 0.05).mul(0.35).add(0.8)).mul(pt.w) // broad darker / lighter patches
     // small star flowers: mostly pale (white, blush pink, lilac), some warm gold and poppy red as in mix-day.png; gold heart
@@ -264,7 +266,9 @@ export async function createField(ctx) {
     const dist = length(xz.sub(cameraPosition.xz)), fine = smoothstep(700, 200, dist), speckW = smoothstep(320, 140, dist)
     const wide = lowNoise(xz.add(97), 0.008, 0.006), drift = lowNoise(xz.add(31), 0.06, 0.04), patch = lowNoise(xz, 0.11, 0.07)
     const bloom = smoothstep(0.5, 0.9, lowNoise(xz.add(57), 0.045, 0.06)) // the blades' own flower drifts
-    const jade = vec3(0.045, 0.14, 0.05), fresh = vec3(0.08, 0.19, 0.02), gold = vec3(0.15, 0.22, 0.03)
+    // the blades' colour as it reads from afar (mostly their tips), day and night, so no line shows where the blades end
+    const jade = mix(vec3(0.1, 0.25, 0.07), vec3(0.045, 0.14, 0.05), uNight), fresh = mix(vec3(0.18, 0.31, 0.06), vec3(0.08, 0.19, 0.02), uNight)
+    const gold = mix(vec3(0.29, 0.35, 0.08), vec3(0.15, 0.22, 0.03), uNight)
     const tuft = mx_fractal_noise_float(vec3(xz.mul(0.13), 0), 2, 2, 0.5).mul(fine) // 4–10 m tufts and clumps, gone before they alias
     const col = mix(mix(jade, fresh, smoothstep(0.2, 0.8, drift.mul(0.6).add(wide.mul(0.4)))), gold, smoothstep(0.55, 0.95, patch).mul(wide.mul(0.3).add(0.1)))
       .mul(tuft.mul(0.3).add(1))
@@ -283,11 +287,13 @@ export async function createField(ctx) {
     return flowers.mul(lit.mul(0.75).add(0.25))
   }
   // Meadow ground from the terrain's vertex colour (grass green, or rock on steep faces: b/g 0.33 vs 0.86), grass × and bare.
-  // w = 0 is the look on foot, unchanged; w = 1 the look from the air.
+  // w = 0 is the look on foot, unchanged; w = 1 the look from the air. Past the blades (they end at 80 m) the ground takes
+  // the look from the air on foot too: bare terrain there read as a dark grey band across the distance.
   const groundColor = (vc, grass, bare, w) => {
-    const near = mix(float(0.45), float(1), smoothstep(6, 45, length(positionWorld.xz.sub(cameraPosition.xz)))) // shade under the near grass
+    const d = length(positionWorld.xz.sub(cameraPosition.xz))
+    const near = mix(float(0.45), float(1), smoothstep(6, 45, d)) // shade under the near grass
     const air = mix(meadowFar(positionWorld.xz).mul(grass.mul(0.15).add(0.85)), vc.mul(vc), saturate(vc.b.div(vc.g.add(1e-4)).sub(0.4).div(0.45)))
-    return mix(mix(vc.mul(vc).mul(mix(float(1), near, grass)), air, w), vec3(0.46, 0.45, 0.4), bare)
+    return mix(mix(vc.mul(vc).mul(mix(float(1), near, grass)), air, max(w, smoothstep(50, 90, d))), vec3(0.46, 0.45, 0.4), bare)
   }
   // Other ground tiles (settlements' far tile and city) colour themselves with ctx.groundColor (and light with ctx.groundNormal)
   // so they match from the air.

@@ -22,8 +22,8 @@ const KEYS = [
   [-0.08, [.020, .030, .130], [.24, .17, .33], [.30, .09, .08], [.55, .66, 1], [.42, .38, .70], [.05, .05, .06], [.32, .13, .20], [.04, .035, .09], 0, .8, .3],
   [0.03, [.060, .080, .280], [.66, .38, .38], [1.4, .45, .12], [1, .45, .2], [.80, .58, .62], [.12, .10, .08], [1.3, .55, .38], [.22, .14, .26], 1.3, .9, -.2],
   [0.15, [.090, .170, .520], [.86, .60, .52], [1.5, .72, .28], [1, .62, .36], [.85, .78, .85], [.22, .22, .12], [1.7, 1.0, .70], [.36, .30, .44], 2.1, 1.0, .15],
-  [0.32, [.220, .360, .780], [1.12, 1.03, .92], [1.5, .90, .20], [1, .77, .47], [.82, .82, .86], [.30, .36, .16], [1.7, 1.3, .98], [.56, .50, .70], 3.2, 1.0, .17],
-  [0.60, [.200, .340, .760], [.84, .86, 1.02], [1.2, .85, .40], [1, .88, .68], [.80, .82, .88], [.30, .36, .16], [2.1, 1.9, 1.7], [.56, .56, .76], 3.4, 1.05, .12],
+  [0.32, [.220, .360, .780], [.86, .92, 1.0], [1.5, .90, .20], [1, .77, .47], [.82, .82, .86], [.30, .36, .16], [1.7, 1.3, .98], [.56, .50, .70], 3.2, 1.0, .17],
+  [0.60, [.200, .340, .760], [.70, .80, 1.02], [1.2, .85, .40], [1, .88, .68], [.80, .82, .88], [.30, .36, .16], [2.1, 1.9, 1.7], [.56, .56, .76], 3.4, 1.05, .12],
 ]
 
 export async function createSky(ctx) {
@@ -141,8 +141,10 @@ export async function createSky(ctx) {
   const uFogK = live(1)
   const toFrag = positionWorld.sub(cameraPosition), dist = length(toFrag), x = max(dist.sub(15), 0)
   const avgY = clamp(positionWorld.y.add(cameraPosition.y).mul(0.5), -40, 600)
-  const air = x.mul(0.0008).add(x.mul(0.0005).pow(2)).mul(exp(avgY.mul(-1 / 200)))
-  const ground = x.mul(0.002).mul(exp(max(avgY, 0).mul(-1 / 20)))
+  // Clearer only in full daylight on foot: the golden hours keep their gold haze, the air its veil, the night its mist.
+  const haze0 = max(max(uNight, golden), uAloft)
+  const air = x.mul(mix(0.0005, 0.0008, haze0)).add(x.mul(0.0005).pow(2)).mul(exp(avgY.mul(-1 / 200))) // clearer on foot by day: the distance keeps its colour
+  const ground = x.mul(mix(0.0008, 0.002, haze0)).mul(exp(max(avgY, 0).mul(-1 / 20))) // by day thinner: the far land shows (mix-day.png), not a milky wall
   // Sea mist along the north cliffs (PLAN: crest ~25 m by z ≈ −200, lip ≈ −222…−242). It pools at the lip up to 21 m and
   // thins fast above (8 m), so the crest dissolves into the sky behind it while the meadow stays clear and Castle Crestwatch
   // (−122, −390, on its own headland) rises out of it (with the air: base ~95 %, walls at 50 m ~60 %, towers at 70 m ~47 % by day).
@@ -152,7 +154,7 @@ export async function createSky(ctx) {
   const pw = positionWorld
   const bank = sin(pw.x.mul(0.011).add(sin(pw.z.mul(0.02)).mul(1.5))).mul(sin(pw.x.mul(0.023).sub(1.7))).mul(0.5).add(0.5)
   const lip = pw.z.add(225).div(60)
-  const mist = exp(lip.mul(lip).negate()).mul(exp(max(pw.y.sub(21), 0).mul(-1 / 8))).mul(smoothstep(50, 200, dist)).mul(7)
+  const mist = exp(lip.mul(lip).negate()).mul(exp(max(pw.y.sub(21), 0).mul(-1 / 8))).mul(smoothstep(50, 200, dist)).mul(mix(0.5, 7, haze0)) // by day on foot a faint veil on the lip
     .mul(mix(float(1), bank.mul(0.1).add(0.02), uAloft))
   const thick = air.add(ground).mul(mix(float(1), 0.45, uAloft)).add(mist) // and clearer air up there: distance softens, never milks
   const fogF = max(float(1).sub(exp(thick.mul(uFogK).negate())), smoothstep(mix(2300, 1600, uAloft), mix(2900, 2500, uAloft), dist)) // whole by the far plane
