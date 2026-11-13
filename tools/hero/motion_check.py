@@ -90,5 +90,6 @@ for name, rng in (('Walk', dict(fw=(15, 20), bk=(10, 20), tot=(25, 40), elf=(15,
                   ok('elbowFront', el[f], 60, 75), ok('elbowBack', el[b], 100, 120),
                   ok('handFrontMinusChin', W[f, 1] - chin, -0.15, 0.05), ok('handFrontMinusShoulder', W[f, 1] - S[f, 1], 0, 0.2),
                   ok('handBehindHip', P[I[side + 'UpperLeg']][b, 2] - W[b, 2], 0.05, 0.4), opp,
+                  ok('handFromMidline', np.abs(P[I[side + 'MiddleProximal']][:, 0] - P[I['hips']][:, 0]).min(), 0.05, 0.3),
                   ok('trunkLean', np.degrees(np.arcsin(up[:, 2].mean())), 5, 10))
 print('MOTIONCHECK', 'ok' if not bad else f'{bad} OUT'); sys.exit(1 if bad else 0)
