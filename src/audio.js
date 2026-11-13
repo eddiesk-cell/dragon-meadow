@@ -101,6 +101,7 @@ export async function createAudio(ctx) {
       if (!buf || dt <= 0) return
       const ride = window.__probes.ride?.().mode ?? 'foot', onFoot = ride === 'foot'
       speed += (Math.hypot(heroPos.x - last.x, heroPos.z - last.z) / dt - speed) * Math.min(1, dt * 8)
+      const rise = heroPos.y - last.y
       last.copy(heroPos)
 
       // Steps, from the bones (any clip, any speed: walk, run, combat footwork).
@@ -127,7 +128,8 @@ export async function createAudio(ctx) {
 
       // Jump and land.
       const gap = heroPos.y - ctx.heightAt(heroPos.x, heroPos.z)
-      if (onFoot && !air && gap > 0.12) { air = true; airT = 0; play('jump', heroPos, { gain: 0.5 }); note('jump') }
+      // a jump leaves the ground upward (the spawn settling down onto it is not one)
+      if (onFoot && !air && gap > 0.12 && rise > 0) { air = true; airT = 0; play('jump', heroPos, { gain: 0.5 }); note('jump') }
       if (air && (airT += dt) && (gap < 0.03 || !onFoot)) { air = false; if (onFoot && airT > 0.2) { play('land', heroPos, { gain: 0.8 }); note('land') } }
 
       // Sword: a new swing (a new clip, or the same clip started again), a new hit on the troll.
