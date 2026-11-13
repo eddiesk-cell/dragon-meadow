@@ -81,8 +81,8 @@ export async function createHero(ctx) {
   const play = name => {
     const a = actions[name.toLowerCase()]
     if (!a || name === clip) return
-    a.reset().fadeIn(0.25).play()
-    cur?.fadeOut(0.25)
+    a.reset().play()
+    if (cur) a.fadeIn(0.25), cur.fadeOut(0.25) // the first clip starts at full weight: a fade from nothing blends in the bind pose (a T-pose)
     cur = a; clip = name
     if (name === 'Jump') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true }
   }
