@@ -352,13 +352,16 @@ export async function createField(ctx) {
     const H = (x, z) => Math.min(ownHeight(x, z), ctx.heightAt(x, z))
     const others = ctx.ground.rects.slice(1)
     for (const k of KNOWN) if (!others.some(r => r.every((v, i) => v === k[i]))) others.push(k)
-    // a cell in from the edge, so the step from true ground to sunk lies under the tile (not a groove along it outside)
-    const under = (x, z) => others.some(([x0, x1, z0, z1]) => x > x0 + 20 && x < x1 - 20 && z > z0 + 20 && z < z1 - 20)
+    // Sunk strictly inside a tile; its edges are grid lines (below), so the step down lies under the tile, never as a groove
+    // in the open land beside it. An edge on the square's own boundary sinks too (only the square's terrain lies beyond it).
+    const onSq = (x, z) => Math.abs(Math.abs(z) - SIDE / 2) < 0.5 && Math.abs(x) <= SIDE / 2 || Math.abs(Math.abs(x) - SIDE / 2) < 0.5 && Math.abs(z) <= SIDE / 2
+    const under = (x, z) => { const m = onSq(x, z) ? -0.5 : 1; return others.some(([x0, x1, z0, z1]) => x > x0 + m && x < x1 - m && z > z0 + m && z < z1 - m) }
     const R = 3000, out = [], sink = (x, z) => under(x, z) ? 2 + 4 * ss(500, 2500, Math.hypot(x, z)) : 0
     // 20 m cells out to 1.6 km, so a coast (Asterhaven's drops 18 m in 60 m) reads as a shore, not a straight facet; ~150 m at the haze
     for (let v = SIDE / 2; v < R; v += 20 + Math.max(0, v - 1600) * 0.1) out.push(v)
     out.push(R)
-    const ax = [...out.map(v => -v).reverse(), ...Array.from({ length: SIDE / 20 - 1 }, (_, i) => 20 - SIDE / 2 + 20 * i), ...out], n = ax.length
+    const ax = [...new Set([...out.map(v => -v), ...Array.from({ length: SIDE / 20 - 1 }, (_, i) => 20 - SIDE / 2 + 20 * i), ...out, ...others.flat()])]
+      .filter(v => Math.abs(v) <= R).sort((a, b) => a - b), n = ax.length
     const pos = new Float32Array(n * n * 3), hs = new Float32Array(n * n), idx = []
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const x = ax[i], z = ax[j], k = j * n + i
