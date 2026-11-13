@@ -11,6 +11,10 @@ copy that."
 - Kimodo's own sprint prompts on this rig (`kimodo-sprint_c-on-hero.png`, `kimodo-idle-on-hero.png`, via
   `~/ai-stack/kimodo/retarget/retarget.py`) come out hunched with the arms limp or held in front — no better as they are.
 
+## Eddie's second look (2026-11-13)
+Idle elbows out and awkward; leans back too much standing; feet not flat — the toes tilt up (likely why he leans back);
+sprint head and shoulders wrong.
+
 ## Target numbers (elite and healthy adult kinematics; ranges from the sprint and gait literature —
 Mann & Herman 1985, Hinrichs 1987 on the arms in running, Bezodis et al. on top-speed sprinting, Collins et al. 2009 and
 Meyns et al. 2013 on arm swing in walking)
@@ -21,12 +25,17 @@ Meyns et al. 2013 on arm swing in walking)
   mid-thigh height. Shoulders down and relaxed, not shrugged or rolled forward.
 - Breathing / weight-shift sway is welcome; the hands never come up to the belt.
 
+- Feet flat: sole on the ground, toe and heel at the same height (±2 cm). Body stacked: ear, shoulder, hip and ankle
+  in one vertical line from the side (±4°), weight over the middle of the foot — no backward lean.
+
 ### Walking (Walk)
 - Arm swing mostly from the shoulder, in the sagittal plane: about 15–20° forward and 10–20° back of vertical
   (total 25–40°), opposite to the same-side leg (left arm forward as the right foot strikes).
 - Elbow 15–35°, flexing a little more on the forward swing. Hands pass close to the hip, never across the belly.
 
 ### Sprinting (Run — Shift in game; Sprint)
+- Head in line with the spine, eyes forward, chin level — not tipped back or jutting. Shoulders low and relaxed,
+  not shrugged or rounded; they turn with the arm pump 15° at most.
 - Torso tall with a slight forward lean of 5–10° from vertical at top speed; head level, eyes forward.
 - Shoulder flexion/extension in the sagittal plane: hand forward to about chin/shoulder height (shoulder flexion
   about 60–80°), back until the hand passes the hip pocket (extension about 40–60°): **a range of roughly 100–130°**.

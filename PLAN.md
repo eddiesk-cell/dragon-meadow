@@ -778,8 +778,16 @@ copy that." Research, target numbers and what is wrong today: `art/hero/motion/R
   make the build reproducible from `tools/hero/` (a script beside `build.sh`).
 - Match stride to ground speed (hero.js: walk 1.6 m/s, run 5 m/s; the run may rise to 7 m/s if a sprint needs it — say
   so) so the planted foot does not skate. Loops seamless.
+- Eddie, looking again: "When idling the arms should come down naturally, right now his elbows are out and they're
+  awkward. When walk, arm swing naturally, when run(sprint) strong motion like real runner. When standing still it looks
+  like he tilt back too much. His feet are not flat to the ground, they tilt up too, maybe that's why. The running
+  sprinting, head wrong, shoulders wrong." So also: **feet flat** — in Idle and in every stance phase the sole lies on
+  the ground (toe and heel within 2 cm of the same height; find why they tilt up — rig rest, retarget or clip — and fix
+  it at the cause, in every clip it touches); **standing upright** — no backward lean (from the side, ear–shoulder–hip–
+  ankle within ±4° of vertical, weight over mid-foot); **sprint head and shoulders** — head in line with the spine,
+  eyes forward, chin level; shoulders low and relaxed (not shrugged or rounded), turning with the arm pump 15° at most.
 - **CHECK:** `art/hero/motion/after-{idle,walk,run}.png` with `tools/hero/clipsheet.py` (same cameras as before), and
   printed per clip: shoulder sagittal range, elbow min/max, hand height at the front of the swing vs chin, hand behind
   the hip at the back, arm–leg phase (opposite), idle hand-to-thigh gap and elbow angle — each inside RESEARCH.md's
   ranges. In game: `clip.mjs` of `auto=run` and `auto=walk` seen from the side (`shots/hero-motion-{run,walk}.mp4`),
-  planted-foot slide < 0.3 m/s; controls-check 7/7; errors []; fps ≥ 50; the probe `hero.strapSkin` > 0 (springs kept).
+  planted-foot slide < 0.3 m/s; printed foot pitch (sole vs ground) in idle and at mid-stance, and the idle side lean; controls-check 7/7; errors []; fps ≥ 50; the probe `hero.strapSkin` > 0 (springs kept).
