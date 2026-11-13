@@ -791,7 +791,9 @@ copy that." Research, target numbers and what is wrong today: `art/hero/motion/R
   likely source of foot slide; measure it.
 - Eddie: "When we do it right, save the positions and animations for future use." Once he approves, the orchestrator
   files the clips, the poses and the build script in `~/Documents/Character-Library/motion/` (not this lane's job; keep
-  the build reproducible so it can be).
+  the build reproducible so it can be). Eddie: "Get rid of the wrong ones" — read as: the old awkward Idle, Walk, Run
+  and Sprint are REPLACED, not kept beside the new ones — in `hero.glb` and in the library's drifter donor
+  (`rigged/drifter-v2-textured-51clips.glb`, which future characters copy from); the old files go to `~/.Trash/`.
 - **CHECK:** `art/hero/motion/after-{idle,walk,run}.png` with `tools/hero/clipsheet.py` (same cameras as before), and
   printed per clip: shoulder sagittal range, elbow min/max, hand height at the front of the swing vs chin, hand behind
   the hip at the back, arm–leg phase (opposite), idle hand-to-thigh gap and elbow angle — each inside RESEARCH.md's
