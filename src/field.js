@@ -12,10 +12,12 @@ const ss = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
 
 // The ground is written twice — JS (ctx.heightAt, terrain mesh) and TSL (grass roots). Keep them in lockstep.
 // Rolling ±3 m round the start; climbs to a ~25 m crest by z = −195; cliff lip near z ≈ −222…−242; sea floor −48.
+// West of Asterhaven (x < −1440) the crest bends north in coves and falls gently to a lower lip near z ≈ −622: settlements' bay lies at −1.5 out to z −550
+// and the north sea at −40, and two water levels need land between them (else the bay's edge hangs over the sea as a shelf).
 function heightAt(x, z) {
   const roll = 1.4 * Math.sin(x * 0.031 + 1.3) * Math.sin(z * 0.027 + 0.4) + 0.9 * Math.sin(x * 0.013 - z * 0.019 + 2.1) + 0.45 * Math.sin(x * 0.071 + z * 0.053)
-  const rise = ss(55, 195, -z), e = 222 + 14 * Math.sin(x * 0.011 + 0.7) + 6 * Math.sin(x * 0.037)
-  const land = roll * (1 - 0.5 * rise) + (25 + 3 * Math.sin(x * 0.02)) * rise
+  const bend = ss(-1440, -1660, x + 40 * Math.sin(z * 0.03)), rise = ss(55, 195, -z), e = 222 + 14 * Math.sin(x * 0.011 + 0.7) + 6 * Math.sin(x * 0.037) + 400 * bend
+  const land = roll * (1 - 0.5 * rise) + (25 + 3 * Math.sin(x * 0.02)) * rise - 19 * bend * ss(250, 700, -z)
   return land + (-48 - land) * ss(e - 4, e + 14, -z)
 }
 const rollTSL = (x, z) => sin(x.mul(0.031).add(1.3)).mul(sin(z.mul(0.027).add(0.4))).mul(1.4) // the meadow's ±3 m swell
@@ -25,8 +27,9 @@ const groundTSL = Fn(([p]) => { // → vec2(height, cliff 0..1)
   const x = p.x, z = p.y
   const roll = rollTSL(x, z)
   const rise = smoothstep(55, 195, z.negate())
-  const e = sin(x.mul(0.011).add(0.7)).mul(14).add(sin(x.mul(0.037)).mul(6)).add(222)
-  const land = roll.mul(rise.mul(-0.5).add(1)).add(sin(x.mul(0.02)).mul(3).add(25).mul(rise))
+  const bend = smoothstep(-1440, -1660, x.add(sin(z.mul(0.03)).mul(40)))
+  const e = sin(x.mul(0.011).add(0.7)).mul(14).add(sin(x.mul(0.037)).mul(6)).add(222).add(bend.mul(400))
+  const land = roll.mul(rise.mul(-0.5).add(1)).add(sin(x.mul(0.02)).mul(3).add(25).mul(rise)).sub(bend.mul(smoothstep(250, 700, z.negate())).mul(19))
   const cliff = smoothstep(e.sub(4), e.add(14), z.negate())
   return vec2(mix(land, float(-48), cliff), cliff)
 })
