@@ -799,3 +799,61 @@ copy that." Research, target numbers and what is wrong today: `art/hero/motion/R
   the hip at the back, arm–leg phase (opposite), idle hand-to-thigh gap and elbow angle — each inside RESEARCH.md's
   ranges. In game: `clip.mjs` of `auto=run` and `auto=walk` seen from the side (`shots/hero-motion-{run,walk}.mp4`),
   planted-foot slide < 0.3 m/s; printed foot pitch (sole vs ground) in idle and at mid-stance, and the idle side lean; controls-check 7/7; errors []; fps ≥ 50; the probe `hero.strapSkin` > 0 (springs kept).
+
+## Phase 4 finish — every creature and prop built and rigged (Eddie 2026-11-14: "work on getting all 3D assets and rig them")
+
+Missing on 2026-11-14: the Rootbinder's mesh (its first paid mesh was lost), Old Glim and the Ribmites (built from code
+by their rig routes), the Tolling Warden's anchor and the Stiltstalker's reed spear (props from code), and the
+Scarhorn's `ram_charge` (a free Kimodo clip). Five lanes, one owner per file. The orchestrator wires the finished files
+into `src/bestiary.js` (ROSTER, props in hands) afterwards and reviews the gallery. No lane spends credits.
+Use Ponytail: shortest working code, reuse before writing, mark corners `shortcut:` (Ponytail 5). Before reading
+code, read graphify-out/GRAPH_REPORT.md; if missing run `graphify update .`.
+
+### Lane rig-rootbinder — `art/bestiary/rootbinder/` (not concept.png) and `public/models/bestiary/rootbinder.glb` (Opus)
+Mesh: Hunyuan3D v3 job `c1cd9fd2-f643-4738-a366-6234fdd0fc07` (already paid; see art/bestiary/SOURCES.md). If
+`art/bestiary/rootbinder/hunyuan.glb` is not there yet, poll that job with the Higgsfield `jobs_wait` tool (free) and
+download its GLB to that path; never start a new generation. Then the "Lanes rig-<id>" steps 1–4 above, with BESTIARY.md
+"## 5. The Rootbinder": long arms that reach the ground, legs two twisted trunks, a root crown (rigid on the head for
+now; its spring chains come with the springs follow-up). Clips: Idle, Walk, Summon, Slash (Horizontal), Stab, Block,
+Hit (Front), Stagger, Death (Collapse) (only those in the hero's 51).
+- **CHECK:** the rig-<id> CHECK (skeleton.png every joint on a bend; idle.png arms clear at full length, head ahead,
+  feet flat; the glb lists exactly the available clips; ≤ 8 MB), and `art/bestiary/rootbinder/clips.png` shows one
+  key frame of each clip with no torn or spiked bark.
+
+### Lane glim — `tools/bestiary/old_glim.py`, `art/bestiary/old-glim/` (not concept.png), `public/models/bestiary/old-glim.glb` (Opus)
+BESTIARY.md "## 6. Old Glim", rig route C. Build her in Blender from code (no paid mesh): one eel 16 m long and 1.3 m
+thick at real scale, blunt broad head, jutting lower jaw with fine needle teeth, a ribbon fin along back and belly;
+milky turquoise, darker teal back, pale reed-gold belly; a row of lamp-orange spots down each flank in their own
+material named `glim-lamps` (so the game can make them glow at night). A 24-bone spine chain from code plus a jaw bone,
+smooth weights along the chain. Bake two loops for the gallery: `Swim` (a travelling S-wave, head steady) and `Coil`
+(neck drawn into an S, ready to lunge); the fight states stay procedural in game code later.
+- **CHECK:** `art/bestiary/old-glim/sheet.png` (side, top, front at rest, beside concept.png) reads as the concept;
+  `art/bestiary/old-glim/swim.png` (8 frames of Swim, top view) shows a smooth wave with no kinks, pinches or
+  stretched faces at the strongest bend; the glb holds the mesh, 25 bones and the clips `Swim`, `Coil`; ≤ 8 MB.
+
+### Lane ribmites — `tools/bestiary/ribmite.py`, `art/bestiary/ribmite-swarm/` (not concept.png), `public/models/bestiary/ribmite.glb` (Opus)
+BESTIARY.md "## 11. Ribmites", rig route I: one rigid mesh from code, no bones. A flat fist-sized beetle 0.3 m long,
+long wedge head, six spindly legs; rust-red shell with ochre stripes, bone-white legs and jaws, a polished shell
+(low roughness) that catches the sky. Tag each leg's vertices with a float attribute `leg` (1–6, 0 for the body) and
+`legT` (0 at the hip → 1 at the foot) so the game can wiggle them in TSL.
+- **CHECK:** `art/bestiary/ribmite-swarm/sheet.png` (top, side, three-quarter beside concept.png) reads as the
+  concept; a render of 40 copies scattered on sand reads as a rust-red carpet; ≤ 1,500 triangles; the attributes
+  `leg` and `legT` exist (printed per leg: vertex counts, legT range 0–1); glb ≤ 300 KB.
+
+### Lane props — `tools/bestiary/anchor.py`, `tools/bestiary/reed_spear.py`, `public/models/props/` (Sonnet)
+Built in Blender from code like `tools/monster/club.py`. The Tolling Warden's ship's anchor (BESTIARY "## 8"):
+black-green iron, stock, shank, two flukes, ring; a rust chain of 8 links as an 8-bone skinned chain from the ring,
+the last link with an empty `grip` where the fist holds it. Sized for the rigged 1.8 m warden (it reads huge in its
+fist). The Stiltstalker's reed spear (BESTIARY "## 7"): woven reed shaft twice the creature's height (3.6 m for the
+1.8 m rig), a bone or flint head, reed-gold bindings; an empty `grip` one third down the shaft.
+- **CHECK:** `art/bestiary/props.png` renders each prop front and side with a 1.8 m figure for scale; anchor.glb has 8
+  chain bones and a `grip` empty, reed-spear.glb a `grip` empty; each ≤ 1 MB.
+
+### Lane scarhorn-charge — `art/bestiary/scarhorn/` (not concept.png, hunyuan.glb) and `public/models/bestiary/scarhorn.glb` (Opus)
+The `ram_charge` clip (BESTIARY "## 9"): generate it with Kimodo on this Mac (skill kimodo-motion,
+`~/ai-stack/kimodo/kimodo-generate.sh`, steps 100) from "a person lowers their head and charges forward hunched over,
+then skids to a stop", retarget it onto the Scarhorn rig the way its other clips were built (art/bestiary/scarhorn/
+build.sh), and add it as `Kimodo: ram_charge` to scarhorn.glb, keeping every existing clip unchanged.
+- **CHECK:** the glb's clip list = the old list + `Kimodo: ram_charge`; `art/bestiary/scarhorn/charge.png` (6 frames,
+  side view) shows the head lowering with horns forward, a fast forward charge and a skid stop; feet do not slide
+  backwards or sink; ≤ 8 MB.
