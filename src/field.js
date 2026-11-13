@@ -284,7 +284,8 @@ export async function createField(ctx) {
     const air = mix(meadowFar(positionWorld.xz).mul(grass.mul(0.15).add(0.85)), vc.mul(vc), saturate(vc.b.div(vc.g.add(1e-4)).sub(0.4).div(0.45)))
     return mix(mix(vc.mul(vc).mul(mix(float(1), near, grass)), air, w), vec3(0.46, 0.45, 0.4), bare)
   }
-  // Other ground tiles (settlements' far tile and city) colour themselves with ctx.groundColor so they match from the air.
+  // Other ground tiles (settlements' far tile and city) colour themselves with ctx.groundColor (and light with ctx.groundNormal)
+  // so they match from the air.
   // Until one does, field's own ground fades back to the look on foot within 160 m of their rects (no colour seam).
   let shared = 0
   ctx.groundColor = (vc, grass, bare) => (shared++, groundColor(vc, grass, bare, uAloft))
@@ -326,6 +327,7 @@ export async function createField(ctx) {
   // From the air a meadow is a canopy of standing blades, not a lawn: its blades face a low sun and catch it, so the shading
   // normal leans toward the sun (by airW; on foot the real blades do this). Golden hour lights the land instead of dimming it.
   const canopy = (n, w) => normalize(cameraViewMatrix.mul(vec4(normalize(n).add(vec3(uSun.x, 0, uSun.z).mul(w.mul(0.5))), 0)).xyz)
+  ctx.groundNormal = n => canopy(n, uAloft) // world normal → normalNode, for the tiles that use ctx.groundColor (same light from the air)
   tm.normalNode = canopy(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y)), airW(positionWorld.xz))
   tm.colorNode = groundColor(vertexColor().rgb, tp.y, tp.z, airW(positionWorld.xz)).mul(tp.w)
   const terrain = new THREE.Mesh(tg, tm)

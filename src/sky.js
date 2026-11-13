@@ -45,11 +45,12 @@ export async function createSky(ctx) {
   // the first 0.8° below the horizon, so the land (fogged) and the sky dome below the horizon (where the land runs past the far
   // plane) take the same colour and the far land still melts into the horizon with no line.
   const uAloft = live(0).onRenderUpdate(() => ctx.aloft ?? 0)
-  // By day the veil is blue; in the golden hours it turns gold toward the sun and lilac away from it (mix-day.png's far hills).
+  // By day the veil is blue; in the golden hours the low sun lights the haze itself, gold toward it and peach with the sun
+  // behind (backscatter) — a lilac veil there turned the far meadow to mud.
   const golden = smoothstep(0.32, 0.12, uSun.y).mul(smoothstep(-0.06, 0.06, uSun.y))
   const aerial = d => {
     const toward = pow(max(dot(normalize(d.xz.add(1e-4)), normalize(uSun.xz.add(1e-4))), 0), 2)
-    return mix(vec3(1), mix(vec3(0.46, 0.6, 0.8), mix(vec3(0.55, 0.56, 0.8), vec3(0.85, 0.68, 0.48), toward), golden), smoothstep(0, 0.014, d.y.negate()).mul(uAloft))
+    return mix(vec3(1), mix(vec3(0.46, 0.6, 0.8), mix(vec3(0.85, 0.7, 0.58), vec3(0.85, 0.68, 0.48), toward), golden), smoothstep(0, 0.014, d.y.negate()).mul(uAloft))
   }
 
   // Haze: horizon→zenith gradient, a warm glow round the sun and along its horizon, a cool halo round the moon.
