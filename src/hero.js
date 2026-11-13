@@ -100,8 +100,8 @@ export async function createHero(ctx) {
       endAct()                                        // a new action cuts the one before it
       a.reset().setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity)
       a.clampWhenFinished = !loop; a.timeScale = speed
-      a.fadeIn(fade).play()
-      if (cur !== a) cur?.fadeOut(fade)
+      a.play()
+      if (cur && cur !== a) a.fadeIn(fade), cur.fadeOut(fade) // as play(): no fade from nothing (the bind pose)
       cur = a; clip = name
       return new Promise(resolve => { act = { action: a, lockMove, hold, resolve } })
     },
