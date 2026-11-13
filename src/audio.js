@@ -31,9 +31,9 @@ export async function createAudio(ctx) {
   let buf = null, leadMs = 0
   fetch(base + 'sounds.json').then(r => r.json()).then(async man => {
     const b = {}
-    await Promise.all(Object.entries(man).map(async ([n, s]) => {
-      b[n] = await Promise.all(s.files.map(f => fetch(base + f).then(r => r.arrayBuffer()).then(a => ac.decodeAudioData(a))))
-    }))
+    await Promise.all(Object.entries(man).map(([n, s]) => // a sound that fails is reported and left out; the rest still play
+      Promise.all(s.files.map(f => fetch(base + f).then(r => r.arrayBuffer()).then(a => ac.decodeAudioData(a))))
+        .then(x => (b[n] = x), e => window.__errors.push(`audio: ${n}: ${e?.message || e}`))))
     for (const n of ['step-grass', 'step-stone', 'step-water', 'wingbeat']) for (const x of b[n] || []) { // decoder delay, if any
       const d = x.getChannelData(0); let i = 0; while (i < d.length && Math.abs(d[i]) < 0.05) i++
       leadMs = Math.max(leadMs, i / x.sampleRate * 1000)
@@ -80,7 +80,7 @@ export async function createAudio(ctx) {
   // Hero: a step when a foot that swung clear (8 cm over its stance) ends its fall (its downward speed under a fifth of
   // that fall's fastest): the heel strike, on any clip. The slow roll onto the sole that follows is not the step.
   const bones = ['leftFoot', 'rightFoot'].map(n => ctx.heroRig?.model.getObjectByName(n)).filter(Boolean)
-  const foot = bones.map(() => ({ floor: Infinity, armed: false, h: 0, fast: 0 }))
+  const foot = bones.map(() => ({ floor: Infinity, armed: false, h: 0, fast: 0, top: -Infinity }))
   const ring = ctx.ring
   const surface = (x, z) => pond?.inside(x, z) > 0 ? 'step-water'
     : (ring && Math.hypot(x - ring.center.x, z - ring.center.z) < ring.radius + 3) || towns.some(t => Math.hypot(x - t.x, z - t.z) < t.r) ? 'step-stone' : 'step-grass'
@@ -110,9 +110,10 @@ export async function createAudio(ctx) {
         s.floor = Math.min(h, s.floor + dt * 0.08) // follows a new stance height (another clip) within a stride
         const fall = (s.h - h) / dt // m/s downward
         if (h > s.floor + 0.08) s.armed = true
-        if (s.armed) s.fast = Math.max(s.fast, fall)
-        if (s.armed && s.fast > 0.3 && fall < 0.2 * s.fast && h < s.floor + 0.1) { // the swing's fall has ended: the heel is down
-          s.armed = false; s.fast = 0
+        if (s.armed) s.fast = Math.max(s.fast, fall), s.top = Math.max(s.top, h)
+        // the swing's fall has ended (a run lands 5 cm over the stance it rolls down to, so: half way down, not at the floor)
+        if (s.armed && s.fast > 0.3 && fall < 0.2 * s.fast && s.top - h > 0.5 * (s.top - s.floor)) {
+          s.armed = false; s.fast = 0; s.top = -Infinity
           if (onFoot && speed > 0.5 && !air) {
             const n = surface(v.x, v.z)
             play(n, v, { gain: speed > 3 ? 0.9 : 0.55, rate: speed > 3 ? 1.08 : 1 }); note('step', k ? 'R' : 'L', n)

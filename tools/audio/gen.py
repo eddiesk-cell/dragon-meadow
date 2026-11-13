@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Make every sound in public/audio/ on this Mac, free: AudioGen (facebook/audiogen-medium) for effects and beds,
-MusicGen (facebook/musicgen-medium) for the two themes. Run unsandboxed (the GPU, MPS, is not visible in the sandbox):
+MusicGen (facebook/musicgen-medium) for the two 60 s themes (it extends past 30 s in windows). Run unsandboxed (the GPU, MPS, is not visible in the sandbox):
   python3 tools/audio/gen.py sfx [name ...]     # re-execs itself in ~/audio-skills-data/sfx/.venv
   python3 tools/audio/gen.py music [name ...]   # ... in ~/audio-skills-data/music-bgm/.venv
 Writes public/audio/<name>[-i].m4a (AAC, Safari plays it), merges public/audio/sounds.json ({name: {files, loop}}, what
@@ -43,9 +43,9 @@ SOUNDS = {
     'wingbeat': (AG, 'giant leathery wings flapping slowly, deep heavy whooshing wingbeats, separate flaps', 8, 'hits', 1.0),
     'roar': (AG, 'a huge dragon roaring, deep powerful growl, echoing over open land', 4, 'one', 4),
     'theme-day': (MG, 'gentle dreamy fantasy pastoral theme, soft harp arpeggios, warm wooden flute melody, light strings, '
-                      'slow tempo, peaceful sense of wonder, mesmerizing, instrumental', 30, 'loop', 4.0),
+                      'slow tempo, peaceful sense of wonder, mesmerizing, instrumental', 60, 'loop', 4.0),
     'theme-night': (MG, 'slow ethereal dreamy ambient lullaby, celesta and music box, soft warm synth pads, gentle harp, '
-                        'mysterious and mesmerizing starry night, instrumental', 30, 'loop', 4.0),
+                        'mysterious and mesmerizing starry night, instrumental', 60, 'loop', 4.0),
 }
 
 

@@ -68,7 +68,7 @@ try {
   const aStart = Date.now()
   rec = await page.screencast({ path: webm })
   const vStart = Date.now()
-  const clocks = () => page.evaluate(() => [performance.now() / 1000, window.__ctx.audio.listener.context.currentTime, window.__ctx.time])
+  const clocks = () => page.evaluate(() => [performance.now() / 1000, window.__ctx.audio.listener.context.currentTime, window.__ctx.time, window.__n])
   const c0 = await clocks()
   await page.evaluate(() => (window.__ctx.timeScale = 1))
   report.t0 = +c0[2].toFixed(3) // game time at the video's start: log time − t0 ≈ video time
@@ -77,6 +77,9 @@ try {
   for (let t = 0; t < +secs; t += 4) { await sleep(Math.min(4, +secs - t) * 1000); pcm.push(Buffer.from(await page.evaluate(() => window.__rec.take()), 'base64')); report.clockTrace.push((await clocks()).map(x => +x.toFixed(2)).concat(pcm.reduce((n, b) => n + b.length, 0) / 4 / rate)) }
   const c1 = await clocks()
   report.clocks = { wall: +(c1[0] - c0[0]).toFixed(2), audio: +(c1[1] - c0[1]).toFixed(2), game: +(c1[2] - c0[2]).toFixed(2) } // seconds each clock ran
+  // frames per second over each 4 s take (headless on a shared desk: compare runs, don't quote alone), and the worst
+  report.fps = report.clockTrace.map((c, i) => { const p = i ? report.clockTrace[i - 1] : c0; return +((c[3] - p[3]) / (c[0] - p[0])).toFixed(1) })
+  report.fpsMin = Math.min(...report.fps)
   if (report.clocks.game < 0.8 * report.clocks.wall) report.errors.push(`capture: the world stalled (game ${report.clocks.game} s of ${report.clocks.wall} s)`)
   const data = await page.evaluate(() => ({ audio: window.__probes.audio(true), ride: window.__probes.ride?.(), errors: window.__errors }))
   await rec.stop(); rec = null // slow on a busy desk (it flushes the webm): the readings above are taken before it
