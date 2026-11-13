@@ -336,9 +336,13 @@ export async function createField(ctx) {
 
   // --- far land: the meadow runs on past the 800 m square into the haze in every direction (the sea fills the north), so
   // no end of the world shows from the air. Built on the first frame, once every module has shaped ctx.heightAt (settlements'
-  // headland, Asterhaven's hill and coast). It lies sunk under heightAt — 2 m by the square, 6 m by 2.5 km, more than the
-  // depth buffer's step out there — so a ground tile another module lays over it (settlements' far tiles) always wins
-  // without z-fighting; a skirt closes the step at the square's edge. Not walkable ground: flora never plants on it.
+  // headland, Asterhaven's hill and coast). Under another module's ground tile (ctx.ground.rects) it lies sunk — 2 m by the
+  // square, 6 m by 2.5 km, more than the depth buffer's step out there — so that tile always wins without z-fighting;
+  // everywhere else it IS the ground, at its true height, so a sea that ends on it ends at a shore, never over a sunken
+  // shelf. A skirt closes any step at the square's edge. Not walkable ground: flora never plants on it.
+  // shortcut: Asterhaven's city tile (settlements' tile() at CITY −700…+500, −600…+600) is not in ctx.ground.rects yet; drop
+  // this copy once settlements pushes it there (until then a moved city would z-fight the far land: re-check this rect).
+  const KNOWN = [[-2200, -1000, 50, 1250]]
   const farMat = new THREE.MeshLambertNodeMaterial({ side: THREE.DoubleSide }) // double: the skirt is seen from outside
   farMat.colorNode = groundColor(vertexColor().rgb, float(1), float(0), airW(positionWorld.xz))
   farMat.normalNode = canopy(attribute('normal', 'vec3'), airW(positionWorld.xz)) // far land sits at the origin too
@@ -346,8 +350,13 @@ export async function createField(ctx) {
     // the lower of field's own ground and the final ctx.heightAt: under the city's coast and the town's stream bed, and sea
     // (so skipped) under Crestwatch's headland, whose cliffs a coarse grid would otherwise cut through
     const H = (x, z) => Math.min(ownHeight(x, z), ctx.heightAt(x, z))
-    const R = 3000, out = [], sink = (x, z) => 2 + 4 * ss(500, 2500, Math.hypot(x, z))
-    for (let v = SIDE / 2; v < R; v += 20 + (v - SIDE / 2) * 0.04) out.push(v) // 20 m cells by the square, ~120 m at the haze
+    const others = ctx.ground.rects.slice(1)
+    for (const k of KNOWN) if (!others.some(r => r.every((v, i) => v === k[i]))) others.push(k)
+    // a cell in from the edge, so the step from true ground to sunk lies under the tile (not a groove along it outside)
+    const under = (x, z) => others.some(([x0, x1, z0, z1]) => x > x0 + 20 && x < x1 - 20 && z > z0 + 20 && z < z1 - 20)
+    const R = 3000, out = [], sink = (x, z) => under(x, z) ? 2 + 4 * ss(500, 2500, Math.hypot(x, z)) : 0
+    // 20 m cells out to 1.6 km, so a coast (Asterhaven's drops 18 m in 60 m) reads as a shore, not a straight facet; ~150 m at the haze
+    for (let v = SIDE / 2; v < R; v += 20 + Math.max(0, v - 1600) * 0.1) out.push(v)
     out.push(R)
     const ax = [...out.map(v => -v).reverse(), ...Array.from({ length: SIDE / 20 - 1 }, (_, i) => 20 - SIDE / 2 + 20 * i), ...out], n = ax.length
     const pos = new Float32Array(n * n * 3), hs = new Float32Array(n * n), idx = []
@@ -383,8 +392,8 @@ export async function createField(ctx) {
     sg.setIndex(si)
     for (const geo of [g, sg]) colourGround(geo), scene.add(new THREE.Mesh(geo, farMat))
     farTris = (idx.length + si.length) / 3
-    // fade toward other modules' ground tiles until they colour themselves with ctx.groundColor (field's own rect is [0])
-    ctx.ground.rects.slice(1, 5).forEach((r, i) => uOther.array[i].set(...r))
+    // fade toward other modules' ground tiles until they colour themselves with ctx.groundColor
+    others.slice(0, 4).forEach((r, i) => uOther.array[i].set(...r))
     uFade.value = shared ? 0 : 1
   }
   let farTris = 0
