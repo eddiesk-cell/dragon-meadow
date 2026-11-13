@@ -111,11 +111,16 @@ export async function createSky(ctx) {
     const u = atan(d.x, d.z.negate())
     const hem = sin(u.mul(3.5).add(ph).add(uTime.mul(0.02))).mul(amp).add(sin(u.mul(7).sub(uTime.mul(0.05)).add(ph)).mul(0.015)).add(y0)
     const dy = d.y.sub(hem)
-    const rays = pow(sin(u.mul(140).add(sin(u.mul(17).add(uTime.mul(0.2))).mul(3)).add(uTime.mul(0.1))).mul(0.5).add(0.5), 3)
-      .mul(sin(u.mul(330).sub(uTime.mul(0.3))).mul(0.3).add(0.7)).mul(0.75).add(0.25)
-    const green = vec3(0.15, 1.0, 0.5).mul(smoothstep(-0.03, 0.006, dy)).mul(exp(dy.mul(-30))) // a soft hem, ~2° (night.png)
-    const violet = vec3(0.55, 0.18, 1.0).mul(smoothstep(0.01, 0.05, dy)).mul(exp(dy.mul(-9))).mul(0.6)
-    return green.add(violet).mul(rays).mul(smoothstep(1.4, 0.8, abs(u)))
+    // soft, uneven rays (night.png: a translucent curtain, not a wall of stripes — Eddie: "too harsh")
+    // their spacing and depth wander with a slow noise along the curtain, so they never read as a comb
+    const wander = mx_fractal_noise_float(vec3(u.mul(6), uTime.mul(0.02), ph), 2, 2, 0.5)
+    const rays = pow(sin(u.mul(70).add(wander.mul(9)).add(sin(u.mul(13).add(uTime.mul(0.15))).mul(3)).add(uTime.mul(0.08))).mul(0.5).add(0.5), 2)
+      .mul(sin(u.mul(190).sub(uTime.mul(0.2))).mul(0.15).add(0.85)).mul(wander.mul(0.35).add(0.4)).add(float(1).sub(wander.mul(0.35).add(0.4)))
+    // the curtain brightens and fades along its length as it folds, so stretches of it rest on dark sky
+    const folds = smoothstep(-0.6, 0.9, sin(u.mul(2.3).add(ph * 1.7 + 1.6).add(uTime.mul(0.03))).add(sin(u.mul(5.1).sub(uTime.mul(0.05))).mul(0.4))) // brightest ahead (u = 0) at first
+    const green = vec3(0.09, 0.52, 0.34).mul(smoothstep(-0.03, 0.006, dy)).mul(exp(dy.mul(-22))) // a soft hem, ~2° (night.png)
+    const violet = vec3(0.55, 0.2, 1.0).mul(smoothstep(0.015, 0.06, dy)).mul(exp(dy.mul(-10))).mul(0.65)
+    return green.add(violet).mul(rays).mul(folds.mul(0.6).add(0.4)).mul(smoothstep(1.4, 0.8, abs(u)))
   }
 
   const skyColor = Fn(([dir]) => {
@@ -127,7 +132,7 @@ export async function createSky(ctx) {
     const extra = vec3(0).toVar()
     If(uNight.greaterThan(0.01), () => {
       const moon = vec3(2.2, 2.15, 2.0).mul(smoothstep(0.99974, 0.99979, dot(d, uMoon))).mul(float(0.85).add(mx_fractal_noise_float(d.mul(900), 2, 2, 0.5).mul(0.25)))
-      const aur = ribbon(d, 0.31, 0.09, 3.67).add(ribbon(d, 0.38, 0.05, 0.5).mul(0.3)).mul(1.3) // main hem sweeps down from top-left of view to the right
+      const aur = ribbon(d, 0.31, 0.09, 3.67).add(ribbon(d, 0.38, 0.05, 0.5).mul(0.25)).mul(0.88) // main hem sweeps down from top-left of view to the right
       extra.assign(stars(d).mul(uStars).add(aur.mul(uAur)).mul(up).add(moon.mul(uNight)))
     })
     const cl = clouds(d)
