@@ -16,7 +16,7 @@ export async function createAudio(ctx) {
   const lim = ac.createDynamicsCompressor() // limiter on the master: stacked sounds never clip
   for (const [k, v] of Object.entries({ threshold: -10, knee: 0, ratio: 20, attack: 0.002, release: 0.25 })) lim[k].value = v
   listener.setFilter(lim)
-  const MASTER = 0.6 // the whole mix sits at about -17 LUFS (tools/audio/capture.mjs measures it)
+  const MASTER = 0.53 // the mix: about -17.5 LUFS walking, -15.5 at a run (tools/audio/capture.mjs measures it)
   let muted = false
   listener.setMasterVolume(MASTER)
   const wake = () => ac.state === 'running' || ac.resume()
