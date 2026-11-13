@@ -101,6 +101,51 @@ def idle():
         W |= arm(Q, P, s, th=1.5 + np.sin(w + (s < 0) * 0.7), al=7.5 + 0.5 * np.cos(w), ph=10 + 2 * np.sin(w), upright=True, carry=10)
     solve(L, W); return t, L
 
+def plant(sd, A, F, u, T, v, H, hz, duty=0.6):
+    """A walking foot's stance: the heel lands, the foot rolls flat, the heel rises over the ball, and whichever point bears
+    the weight holds still on the ground (in this in-place clip: slides back at exactly v); the heel rises early enough that
+    the leg from the hip joint H still reaches. The swing stays the donor's, eased into the stance over a tenth of a cycle
+    at each end. Returns ankle positions, foot and toe world rotations."""
+    f, tb = I[sd + 'Foot'], I[sd + 'Toes']; m = len(u) - 1; A = A.copy(); F = F.copy()   # one cycle: the last frame is the first
+    heel = np.array([RP[f][0], 0, -0.137]) - RP[f]; ball = RP[tb] - [0, 0.009, 0] - RP[f]  # sole points (boot heel, ball), from the ankle
+    dq = qmul(F[:m], qinv(RQ[f])); fz = qrot(dq, Z)
+    yaw, pitch = np.arctan2(fz[:, 0], fz[:, 2]), np.arctan2(-fz[:, 1], np.hypot(fz[:, 0], fz[:, 2]))
+    low = A[:m, 1] + np.minimum(qrot(dq, heel)[:, 1], qrot(dq, ball)[:, 1])     # the sole's lowest point
+    i_s = int(np.argmin(np.abs(u[:m] - landing(low, u[:m]))))                  # heel strike: the sole comes down (the donor then skids on)
+    reach = 0.99 * (l1 + l2)                                                    # a walking leg nearly straightens at both ends
+    for n_st in range(int(round(duty * m)), int(0.45 * m), -1):                # toe-off after the stance share of the cycle, or
+        i_o = (i_s + n_st) % m; j = np.arange(n_st + 1); idx = (i_s + j) % m; s_ = j / n_st   # sooner if the leg can't reach
+        yaw0 = yaw[(i_s + n_st // 2) % m]
+        p = np.where(s_ < 0.15, pitch[i_s] * (1 - smooth(s_ / 0.15)), np.where(s_ < 0.6, 0, pitch[i_o] * smooth((s_ - 0.6) / 0.4)))
+        turn = qa(Y, np.full(len(j), yaw0)); q = qmul(turn, qa(X, p)); back = np.stack([0 * j, 0 * j, -v * j * T / m], -1)
+        h0 = (A[i_s] + qrot(q[0], heel)) * [1, 0, 1]                            # heel lands on the ground (y = 0)
+        a0 = h0 - qrot(q[0], heel) - H[i_s]                                     # as far ahead as the leg reaches, both feet alike
+        h0[2] -= a0[2] - np.sqrt(max(reach**2 - a0[0]**2 - a0[1]**2, 0))
+        k15 = np.argmax(s_ >= 0.15); b0 = h0 + back[k15] + qrot(q[k15], ball - heel) - back[k15]
+        far = lambda k: np.linalg.norm(b0 + back[k] - qrot(qmul(turn[k], qa(X, p[k])), ball) - H[idx[k]]) > reach
+        for k in range(k15, len(j)):                                            # heel up just enough for the leg to reach
+            while p[k] < rad(60) and far(k): p[k] += rad(1)
+        if not any(far(k) for k in range(k15, len(j))): break
+    p[k15:] = np.maximum.accumulate(p[k15:]); q = qmul(turn, qa(X, p))          # once it rises it keeps rising to toe-off
+    planted = np.where((s_ < 0.15)[:, None], h0 + back - qrot(q, heel), b0 + back - qrot(q, ball))
+    lift = p[-1] - pitch[i_o]                                                    # the swing starts from the stance's last pitch
+    d_s, d_o = planted[0] - A[i_s], planted[-1] - A[i_o]
+    for k in range(m):                                                          # ease the swing into and out of the stance
+        before, after = (u[i_s] - u[k]) % 1, (u[k] - u[i_o]) % 1
+        if after < 0.1:
+            w_ = smooth(1 - after / 0.1); A[k] += d_o * w_
+            F[k] = qmul(qmul(qa(Y, (yaw0 - yaw[i_o]) * w_), qa(qrot(qa(Y, yaw0), X), lift * w_)), F[k])
+        if before < 0.1: A[k] += d_s * smooth(1 - before / 0.1); F[k] = qmul(qa(Y, (yaw0 - yaw[i_s]) * smooth(1 - before / 0.1)), F[k])
+    A[idx] = planted; F[idx] = qmul(q, RQ[f])
+    for k in range(m):                                                          # after toe-off the ball leaves the ground at once
+        after = (u[k] - u[i_o]) % 1
+        if 0 < after < 0.15: A[k, 1] += max(0, 0.012 + 0.5 * after - A[k, 1] - qrot(qmul(F[k], qinv(RQ[f])), ball)[1])
+    flat = np.zeros(m); flat[idx] = p > 0                                        # toes stay flat on the ground while the heel is up
+    for k in range(m): flat[k] = max(flat[k], smooth(1 - ((u[k] - u[i_o]) % 1) / 0.08))  # then follow the foot
+    Tq = slerp(qmul(qmul(F[:m], qinv(RQ[f])), RQ[tb]), qmul(qa(Y, np.full(m, yaw0)), RQ[tb]), flat[:, None])
+    A[m], F[m] = A[0], F[0]; Tq = np.concatenate([Tq, Tq[:1]])
+    return A, F, Tq
+
 def walk(v=1.6, k=1.3):
     """The Drifter's walk, sped up k times and its stride stretched by IK so the planted foot moves at the game's v (no
     skating) and the soles touch the ground (the donor floats ~5 cm); arms swing from the shoulder against the legs."""
@@ -109,11 +154,13 @@ def walk(v=1.6, k=1.3):
     sole = {sd: np.minimum(P[I[sd + 'Foot']][:, 1] - RP[I[sd + 'Foot']][1], P[I[sd + 'Toes']][:, 1] - RP[I[sd + 'Toes']][1]) for sd in ('left', 'right')}
     vz = np.median(np.concatenate([np.gradient(P[I[sd + 'Foot']][:, 2], t)[sole[sd] < sole[sd].min() + 0.01] for sd in sole]))
     stretch, drop = v / -vz, min(x.min() for x in sole.values())
-    hz = P[hips][:, 2:3]; A = {}; need = np.zeros(len(t))
+    hz = P[hips][:, 2:3]; A, Fw, Tw = {}, {}, {}; need = np.zeros(len(t))
     for sd in sole:
         A[sd] = P[I[sd + 'Foot']] - [0, drop, 0]; A[sd][:, 2:3] = hz + stretch * (A[sd][:, 2:3] - hz)
-        H = P[I[sd + 'UpperLeg']] - [0, drop, 0]; dxz = np.linalg.norm((A[sd] - H)[:, ::2], axis=-1)
-        need = np.maximum(need, H[:, 1] - A[sd][:, 1] - np.sqrt(np.maximum((0.985 * (l1 + l2))**2 - dxz**2, 0)))
+        H = P[I[sd + 'UpperLeg']] - [0, drop, 0]
+        A[sd], Fw[sd], Tw[sd] = plant(sd, A[sd], Q[I[sd + 'Foot']], u, T, v, H, hz)
+        dxz = np.linalg.norm((A[sd] - H)[:, ::2], axis=-1)
+        need = np.maximum(need, H[:, 1] - A[sd][:, 1] - np.sqrt(np.maximum((0.993 * (l1 + l2))**2 - dxz**2, 0)))
     # the hips dip only where the long step needs it (double support), smoothly; never less than needed
     loop = lambda x, w: np.convolve(np.concatenate([x[-w:-1], x, x[1:w]]), np.ones(2 * w - 1) / (2 * w - 1), 'valid')
     w = max(2, len(t) // 12); e = np.maximum(need, 0)
@@ -121,7 +168,7 @@ def walk(v=1.6, k=1.3):
     L['translation'][hips][:, 1] -= drop + e; Q2, P2 = solve(L, {}); W = {}
     for sd in sole:
         _, Wl = leg(sd, P2[I[sd + 'UpperLeg']], A[sd], P[I[sd + 'LowerLeg']] - P[I[sd + 'UpperLeg']]); W |= Wl  # knee as the donor's
-        W[sd + 'Foot'], W[sd + 'Toes'] = Q[I[sd + 'Foot']], Q[I[sd + 'Toes']]                                  # heel-toe roll as the donor's
+        W[sd + 'Foot'], W[sd + 'Toes'] = Fw[sd], Tw[sd]
     Q, P = solve(L, W)
     for s in (1, -1):  # each arm swings with the opposite leg, peaking a touch after that foot's heel strike
         c = np.cos(2 * np.pi * (u - strike(P, u, 'right' if s > 0 else 'left') - 0.02))

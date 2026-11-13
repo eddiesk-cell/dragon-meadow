@@ -92,4 +92,11 @@ for name, rng in (('Walk', dict(fw=(15, 20), bk=(10, 20), tot=(25, 40), elf=(15,
                   ok('handBehindHip', P[I[side + 'UpperLeg']][b, 2] - W[b, 2], 0.05, 0.4), opp,
                   ok('handFromMidline', np.abs(P[I[side + 'MiddleProximal']][:, 0] - P[I['hips']][:, 0]).min(), 0.05, 0.3),
                   ok('trunkLean', np.degrees(np.arcsin(up[:, 2].mean())), 5, 10))
+for name, v in (('Walk', 1.6), ('Run', 6.0)):  # hero.js's speeds; the same measure as its slide probe, at 60 fps over 3 loops
+    a = anim(name); T = max(g['accessors'][s['input']]['max'][0] for s in a['samplers'])
+    t = np.arange(int(T * 180)) / 60; _, P = R.fk(R.sample(B, a, np.mod(t, T))); sp = []
+    for side in ('left', 'right'):
+        b = P[I[side + 'Toes']] + np.outer(v * t, [0, 0, 1]); down = b[:, 1] < 0.03; both = down[1:] & down[:-1]
+        sp += list(np.hypot(np.diff(b[:, 0]), np.diff(b[:, 2]))[both] * 60)
+    print(name.upper(), ok('plantedFootSlide m/s', np.mean(sp) if sp else 99, 0, 0.3), f'({len(sp)} planted frames at {v} m/s)')
 print('MOTIONCHECK', 'ok' if not bad else f'{bad} OUT'); sys.exit(1 if bad else 0)
