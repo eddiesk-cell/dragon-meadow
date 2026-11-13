@@ -259,9 +259,9 @@ export async function createField(ctx) {
     const dist = length(xz.sub(cameraPosition.xz)), fine = smoothstep(700, 200, dist), speckW = smoothstep(320, 140, dist)
     const wide = lowNoise(xz.add(97), 0.008, 0.006), drift = lowNoise(xz.add(31), 0.06, 0.04), patch = lowNoise(xz, 0.11, 0.07)
     const bloom = smoothstep(0.5, 0.9, lowNoise(xz.add(57), 0.045, 0.06)) // the blades' own flower drifts
-    const jade = vec3(0.03, 0.12, 0.05), fresh = vec3(0.08, 0.19, 0.02), gold = vec3(0.15, 0.22, 0.03)
+    const jade = vec3(0.045, 0.14, 0.05), fresh = vec3(0.08, 0.19, 0.02), gold = vec3(0.15, 0.22, 0.03)
     const tuft = mx_fractal_noise_float(vec3(xz.mul(0.13), 0), 2, 2, 0.5).mul(fine) // 4–10 m tufts and clumps, gone before they alias
-    const col = mix(mix(jade, fresh, smoothstep(0.2, 0.8, drift.mul(0.6).add(wide.mul(0.4)))), gold, smoothstep(0.55, 0.95, patch).mul(wide.mul(0.4).add(0.12)))
+    const col = mix(mix(jade, fresh, smoothstep(0.2, 0.8, drift.mul(0.6).add(wide.mul(0.4)))), gold, smoothstep(0.55, 0.95, patch).mul(wide.mul(0.3).add(0.1)))
       .mul(tuft.mul(0.3).add(1))
       .mul(mix(float(0.7), float(1.08), smoothstep(-2.5, 2, rollTSL(xz.x, xz.y)))) // hollows darker, crowns catch the light
     // Flowers: within a drift, a head every few metres (white, gold, poppy, blush, as on foot) — dots from the air, a warm
@@ -323,7 +323,10 @@ export async function createField(ctx) {
   }, vec2(0, 0))
   const n0 = attribute('normal', 'vec3') // terrain sits at the origin: local = world
   tm.positionNode = positionLocal.add(vec3(0, patchAt(positionLocal.xz).x, 0))
-  tm.normalNode = normalize(cameraViewMatrix.mul(vec4(normalize(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y))), 0)).xyz)
+  // From the air a meadow is a canopy of standing blades, not a lawn: its blades face a low sun and catch it, so the shading
+  // normal leans toward the sun (by airW; on foot the real blades do this). Golden hour lights the land instead of dimming it.
+  const canopy = (n, w) => normalize(cameraViewMatrix.mul(vec4(normalize(n).add(vec3(uSun.x, 0, uSun.z).mul(w.mul(0.5))), 0)).xyz)
+  tm.normalNode = canopy(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y)), airW(positionWorld.xz))
   tm.colorNode = groundColor(vertexColor().rgb, tp.y, tp.z, airW(positionWorld.xz)).mul(tp.w)
   const terrain = new THREE.Mesh(tg, tm)
   terrain.receiveShadow = true
@@ -336,6 +339,7 @@ export async function createField(ctx) {
   // without z-fighting; a skirt closes the step at the square's edge. Not walkable ground: flora never plants on it.
   const farMat = new THREE.MeshLambertNodeMaterial({ side: THREE.DoubleSide }) // double: the skirt is seen from outside
   farMat.colorNode = groundColor(vertexColor().rgb, float(1), float(0), airW(positionWorld.xz))
+  farMat.normalNode = canopy(attribute('normal', 'vec3'), airW(positionWorld.xz)) // far land sits at the origin too
   function buildFar() {
     // the lower of field's own ground and the final ctx.heightAt: under the city's coast and the town's stream bed, and sea
     // (so skipped) under Crestwatch's headland, whose cliffs a coarse grid would otherwise cut through
