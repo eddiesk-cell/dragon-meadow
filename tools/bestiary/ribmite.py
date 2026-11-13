@@ -141,7 +141,7 @@ for side in (1, -1):
             v[L_LEG] = v[L_T] = 0
         for j in range(3):
             vs = [tri[j], tri[(j + 1) % 3], tv]
-            face(vs if side > 0 else vs[::-1], [(.9, .55), (.91, .55), (.905, .8)][:: 1 if side > 0 else -1])
+            face(vs if side > 0 else vs[::-1], [(.87, .55), (.88, .55), (.875, .8)][:: 1 if side > 0 else -1])
     eye = bmesh.ops.create_uvsphere(bm, u_segments=8, v_segments=4, radius=.0065)["verts"]
     for v in eye:
         v.co += Vector((side * .0235, Y(.285), .053))
