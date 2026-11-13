@@ -178,10 +178,7 @@ export async function createHero(ctx) {
   // the open ground between them; its hanging vines, mask 1, left out), cut into 4 m cells so a short ray walks only the few
   // dozen triangles near it (three has no BVH), each tree placed by its own matrix. Only trees whose trunk is within 30 m of
   // the hero join the ray test (picked in the 1 s scan). Double-sided: a winding slip in the model must not let a ray through.
-  // shortcut: flora's tree mesh is found as the tall InstancedMesh with aBend, and a tree's yaw by matching its x, z among
-  // that mesh's drawn instances; read both from ctx.flora.trees once flora publishes them.
-  let flora = null
-  scene.traverse(o => { if (!flora && o.isInstancedMesh && o.geometry.attributes.aBend && o.geometry.boundingBox?.max.y > 20) flora = o })
+  const flora = ctx.flora?.treeMesh // the vinetree InstancedMesh; each ctx.flora.trees[i].m places that tree
   const barkMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), cells = new Map(), keep = []
   if (flora) {
     const p = flora.geometry.attributes.position, a = flora.geometry.attributes.color, ix = flora.geometry.index.array
@@ -196,13 +193,7 @@ export async function createHero(ctx) {
   }
   const barkCells = [...cells.values()].map(v => new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(v, 3)))
   const trees = flora ? (ctx.flora?.trees || []).map(t => ({ ...t, cells: null })) : []
-  const place = t => { // its matrix among flora's drawn instances (a tree within ~45 m of the camera is always drawn)
-    const arr = flora.instanceMatrix.array
-    for (let i = 0; i < flora.count && !t.cells; i++) if (Math.abs(arr[i * 16 + 12] - t.x) < 0.01 && Math.abs(arr[i * 16 + 14] - t.z) < 0.01) {
-      const m = new THREE.Matrix4().fromArray(arr, i * 16)
-      t.cells = barkCells.map(g => Object.assign(new THREE.Mesh(g, barkMat), { matrixWorld: m }))
-    }
-  }
+  const place = t => { const m = new THREE.Matrix4().fromArray(t.m); t.cells = barkCells.map(g => Object.assign(new THREE.Mesh(g, barkMat), { matrixWorld: m })) }
   const treeBlock = params.get('treeblock') !== '0' // ?treeblock=0 leaves them out, so camtest=tree can show it sees trunks
   // The ring's stone meshes, found from ctx.ring.stones[].pos (not from the flag): they block the camera even unflagged, and
   // ?camtest=1 swings the orbit behind the nearest of them (in ?auto=fight, the barrow-door stones) and checks the real meshes.

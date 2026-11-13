@@ -176,7 +176,9 @@ export async function createFlora(ctx) {
   }
   update(0, 0)
   // For whoever flies or walks among them (the dragon's figure-eight is ~15 m up; a tree stands 29–40 m): trunk, canopy, top.
-  ctx.flora = { trees: trees.map(t => ({ x: t.x, z: t.z, r: 27 * t.s, top: t.y + kinds.find(K => K.name === 'vinetree').top * t.s })) }
+  // treeMesh: the vinetree InstancedMesh (its instances re-order every frame); m: each tree's own matrix (column-major array).
+  const VT = kinds.find(K => K.name === 'vinetree')
+  ctx.flora = { treeMesh: VT.mesh, trees: trees.map(t => ({ x: t.x, z: t.z, r: 27 * t.s, top: t.y + VT.top * t.s, m: t.m })) }
 
   // Every base against the live ground (heightAt may be re-wrapped after create): max |base − heightAt| in metres.
   window.__probes.flora = () => {
