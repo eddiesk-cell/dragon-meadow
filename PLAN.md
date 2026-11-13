@@ -95,7 +95,7 @@ Sky, fog, light, shadow, lens.
 `Jump`; clips are in place — no root motion).
 - AnimationMixer with 0.25 s crossfades. Third-person camera behind and above; mouse/touch drag
   orbits (pitch clamped), camera never dips under `heightAt + 0.4`.
-- WASD/arrows move relative to the camera; Shift runs (`Run`, ~5 m/s), default `Walk` (~1.6 m/s);
+- WASD/arrows move relative to the camera; Shift runs (`Run`, 6 m/s — hero-motion cut the sprint stride for it), default `Walk` (~1.6 m/s);
   Space jumps (simple gravity, `Jump` clip). The body turns smoothly toward travel. Feet on
   `heightAt`. Write `ctx.heroPos` every frame. Hero casts shadow.
 - `?auto=walk` / `?auto=run` hold the same input flags W / Shift+W set (same code path), for proof.
