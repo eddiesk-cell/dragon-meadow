@@ -786,6 +786,12 @@ copy that." Research, target numbers and what is wrong today: `art/hero/motion/R
   it at the cause, in every clip it touches); **standing upright** — no backward lean (from the side, ear–shoulder–hip–
   ankle within ±4° of vertical, weight over mid-foot); **sprint head and shoulders** — head in line with the spine,
   eyes forward, chin level; shoulders low and relaxed (not shrugged or rounded), turning with the arm pump 15° at most.
+- Known: the donor clips' own stride speeds (`~/Documents/Character-Library/2026-10-25-world-of-dreams-drifter/
+  MOTION-REPORT.md`) are Walk 0.92, Jog 3.26, Run 7.07, Sprint 8.34 m/s, against the game's 1.6 walk and 5 run — a
+  likely source of foot slide; measure it.
+- Eddie: "When we do it right, save the positions and animations for future use." Once he approves, the orchestrator
+  files the clips, the poses and the build script in `~/Documents/Character-Library/motion/` (not this lane's job; keep
+  the build reproducible so it can be).
 - **CHECK:** `art/hero/motion/after-{idle,walk,run}.png` with `tools/hero/clipsheet.py` (same cameras as before), and
   printed per clip: shoulder sagittal range, elbow min/max, hand height at the front of the swing vs chin, hand behind
   the hip at the back, arm–leg phase (opposite), idle hand-to-thigh gap and elbow angle — each inside RESEARCH.md's
