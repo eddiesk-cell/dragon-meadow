@@ -59,7 +59,7 @@ export function createRide(ctx, d) {
   const auto = params.get('auto') === 'ride' && can
   const press = (c, on = true) => dispatchEvent(new KeyboardEvent(on ? 'keydown' : 'keyup', { key: c }))
   const hold = (c, on) => on !== keys.has(c) && press(c, on)
-  const ri = ctx.landmarks?.rockisle, pond = ctx.pond
+  const ri = d.isle, pond = ctx.pond // the rock island as the dragon keeps clear of it (summit trees included)
   let ap = auto ? 'call' : null, wps = [], over = { isle: false, lake: false }
   const pilot = () => {
     const p = d.holder.position, i = d.input
@@ -75,8 +75,9 @@ export function createRide(ctx, d) {
       ap = 'loop'; note('takeoff') // the rock, over its top, back over the lake, swing round, home
       const ux = (ri.x - p.x) / Math.hypot(ri.x - p.x, ri.z - p.z), uz = (ri.z - p.z) / Math.hypot(ri.x - p.x, ri.z - p.z)
       const at = (bx, bz, f, l, y, name) => ({ x: bx + ux * f + uz * l, z: bz + uz * f - ux * l, y, name }) // f along home→rock, l to its left
-      wps = [at(p.x, p.z, 70, 70, 70), at(ri.x, ri.z, 90, 40, ri.top + 14), at(ri.x, ri.z, 0, 0, ri.top + 14, 'isle'),
-        { x: pond.x, z: pond.z, y: pond.level + 40, name: 'lake' }, at(p.x, p.z, 10, -60, 35), { home: p.clone() }]
+      const lk = Math.max(1, (ri.clear + 10) / Math.hypot(pond.x - ri.x, pond.z - ri.z)) // over the lake, out of the rock's clear ring
+      wps = [at(p.x, p.z, 70, 70, 70), at(ri.x, ri.z, 90, 40, ri.floor + 8), at(ri.x, ri.z, 0, 0, ri.floor + 8, 'isle'),
+        { x: ri.x + (pond.x - ri.x) * lk, z: ri.z + (pond.z - ri.z) * lk, y: pond.level + 40, name: 'lake' }, at(p.x, p.z, 10, -60, 35), { home: p.clone() }]
     }
     if (ap === 'loop') {
       if (ri) over.isle ||= Math.hypot(p.x - ri.x, p.z - ri.z) < ri.r && p.y > ri.top

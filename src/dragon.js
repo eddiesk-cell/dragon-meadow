@@ -27,16 +27,29 @@ export async function createDragon(ctx) {
     a.fadeIn(0.35).play(); act.fadeOut(0.35); act = a; clip = name
   }
 
-  // Solid things, as upright cylinders {x, z, r, top}: trees and towers are flown over, the 80 m rock island round (or over
+  // Solid things, as upright cylinders {x, z, r, top}: trees and towers are flown over, the rock island round (or over
   // its top). shortcut: Crestwatch is one drum round its seven towers and 54 m keep until settlements publishes
   // ctx.settlements.towers; then those are used as they are.
-  const ri = ctx.landmarks?.rockisle
+  // Clearances are from the dragon's body, not its holder: over a ridden loop its mesh reached 14.9 m out (wings, tail) and
+  // hung 1.8 m below the holder, so it is a cylinder SIDE wide reaching DOWN under the holder, kept CLEAR off every solid.
+  const SIDE = 15, DOWN = 2, CLEAR = 6
+  function isleOf(ri) { // the rock island and all it carries (summit trees 13 m over the rock, cottage), from its vertices
+    const g = scene.children.find(c => Math.hypot(c.position.x - ri.x, c.position.z - ri.z) < 1 && c.getObjectByName('trees'))
+    const o = g ? { x: ri.x, z: ri.z, r: 0, top: -1e9 } : { ...ri, r: ri.r + 6, top: ri.top + 13 } // shortcut: rockisle.glb as measured, if landmarks regroups it
+    const v = new THREE.Vector3()
+    g?.updateMatrixWorld(true)
+    g?.traverse(m => { if (m.isMesh) for (let i = 0, p = m.geometry.attributes.position; i < p.count; i++) {
+      v.fromBufferAttribute(p, i); m.localToWorld(v); o.top = Math.max(o.top, v.y); o.r = Math.max(o.r, Math.hypot(v.x - o.x, v.z - o.z))
+    } })
+    return Object.assign(o, { clear: o.r + SIDE + CLEAR, floor: o.top + DOWN + CLEAR }) // where the holder may be: outside clear, or over floor
+  }
+  const ri = ctx.landmarks?.rockisle, isle = ri && isleOf(ri)
   const trees = ctx.flora?.trees ?? []
   const towers = ctx.settlements?.towers ?? [{ x: -122, z: -390, r: 62, top: ctx.heightAt(-122, -396) + 60 }]
-  const lifted = [...trees, ...towers], solids = ri ? [ri, ...lifted] : lifted
-  const gap = (o, x, y, z) => Math.max(Math.hypot(x - o.x, z - o.z) - o.r, y - o.top) // metres outside its cylinder (< 0 inside)
-  // Lowest a flyer may be here: 6 m over a tree or tower within 12 m of it, falling off at 45° beyond, so it climbs over in time.
-  const floorAt = (x, z) => { let f = -1e9; for (const o of lifted) f = Math.max(f, o.top + 6 - Math.max(0, Math.hypot(x - o.x, z - o.z) - o.r - 12)); return f }
+  const lifted = [...trees, ...towers], solids = isle ? [isle, ...lifted] : lifted
+  const gap = (o, x, y, z) => Math.max(Math.hypot(x - o.x, z - o.z) - o.r - SIDE, y - DOWN - o.top) // body to cylinder, m (< 0 inside)
+  // Lowest a flyer may be here: CLEAR over a tree or tower while its wings could be over it, falling off at 45° beyond.
+  const floorAt = (x, z) => { let f = -1e9; for (const o of lifted) f = Math.max(f, o.top + DOWN + CLEAR - Math.max(0, Math.hypot(x - o.x, z - o.z) - o.r - SIDE - CLEAR)); return f }
 
   // --- free flight: figure-eight ahead of the hero; near mode: R=6 circle ~16 m ahead; the proof camera is aimed at it.
   const center = ctx.heroPos.clone().add(new THREE.Vector3(0, 0, -95)) // follows the hero with a ~5 s lag
@@ -51,12 +64,12 @@ export async function createDragon(ctx) {
       // level hero camera's frame and close enough to read through the haze.
       const u = 0.13 * t
       out.set(center.x + slide + 60 * Math.sin(u), 0, center.z + 30 * Math.sin(2 * u))
-      out.y = Math.max(ctx.heightAt(out.x, out.z) + 10, center.y + 14 + 4 * Math.sin(0.7 * u), floorAt(out.x, out.z))
-      if (ri) { // skirt round the rock island: soft radial push to >= r + 8 (softplus keeps the turn smooth)
-        const dx = out.x - ri.x, dz = out.z - ri.z, d = Math.hypot(dx, dz) || 1e-3, R = ri.r + 8, w = 12
+      if (isle) { // skirt round the rock island: soft radial push to >= its clear radius (softplus keeps the turn smooth)
+        const dx = out.x - isle.x, dz = out.z - isle.z, d = Math.hypot(dx, dz) || 1e-3, R = isle.clear, w = 12
         const k = (R + w * Math.log1p(Math.exp((d - R) / w))) / d
-        out.x = ri.x + dx * k; out.z = ri.z + dz * k
+        out.x = isle.x + dx * k; out.z = isle.z + dz * k
       }
+      out.y = Math.max(ctx.heightAt(out.x, out.z) + 10, center.y + 14 + 4 * Math.sin(0.7 * u), floorAt(out.x, out.z))
     }
     return out
   }
@@ -72,9 +85,9 @@ export async function createDragon(ctx) {
   const freePose = dt => { // the eight's pose now -> p0, v1 (velocity), qF
     cv.copy(center)
     center.lerp(p1.set(ctx.heroPos.x, ctx.heroPos.y, ctx.heroPos.z - 95), 1 - Math.exp(-dt / 5))
-    if (ri && !near) {
-      const dx = center.x - ri.x, want = Math.sign(dx || -1) * Math.max(0, 68 + ri.r - Math.abs(dx)) // 60 m lobe + 8 m clear
-        * smoothstep(ri.r + 58 - Math.abs(center.z - ri.z), 0, 20) // only while the lobes' z band meets it
+    if (isle && !near) {
+      const dx = center.x - isle.x, want = Math.sign(dx || -1) * Math.max(0, 60 + isle.clear - Math.abs(dx)) // 60 m lobe + clear
+        * smoothstep(isle.clear + 50 - Math.abs(center.z - isle.z), 0, 20) // only while the lobes' z band meets it
       slide = t < 0.1 ? want : slide + (want - slide) * (1 - Math.exp(-dt / 3))
     }
     cv.subVectors(center, cv).divideScalar(Math.max(dt, 1e-3)) // the centre's own drift: nose follows real travel
@@ -100,13 +113,13 @@ export async function createDragon(ctx) {
     P.x += Math.sin(psi) * spd * dt; P.z += Math.cos(psi) * spd * dt; P.y += vy * dt
     const f = Math.max(ctx.heightAt(P.x, P.z) + minAlt, minAlt > 0 ? floorAt(P.x, P.z) : -1e9)
     if (P.y < f) { P.y = f; vy = Math.max(vy, 0) }
-    if (ri && minAlt > 0 && P.y < ri.top + 6) { // the rock: out the nearer way, round its side 12 m off the apron or over its top
-      const dx = P.x - ri.x, dz = P.z - ri.z, d = Math.hypot(dx, dz) || 1e-3, R = ri.r + 12
-      if (R - d > 0 && R - d < ri.top + 6 - P.y) { P.x = ri.x + dx / d * R; P.z = ri.z + dz / d * R }
-      else if (R - d > 0) { P.y = ri.top + 6; vy = Math.max(vy, 0) }
+    if (isle && P.y < isle.floor) { // the island: out the nearer way, round its side or over its summit trees
+      const dx = P.x - isle.x, dz = P.z - isle.z, d = Math.hypot(dx, dz) || 1e-3, R = isle.clear
+      if (R - d > 0 && R - d < isle.floor - P.y) { P.x = isle.x + dx / d * R; P.z = isle.z + dz / d * R }
+      else if (R - d > 0) { P.y = isle.floor; vy = Math.max(vy, 0) }
     }
     climbS += ((P.y - y0) / Math.max(dt, 1e-3) - climbS) * Math.min(1, dt * 6)
-    if (ri) flown.isle = Math.min(flown.isle, gap(ri, P.x, P.y, P.z))
+    if (isle) flown.isle = Math.min(flown.isle, gap(isle, P.x, P.y, P.z))
     for (const o of trees) flown.tree = Math.min(flown.tree, gap(o, P.x, P.y, P.z))
     for (const o of towers) flown.tower = Math.min(flown.tower, gap(o, P.x, P.y, P.z))
   }
@@ -118,12 +131,13 @@ export async function createDragon(ctx) {
   }
   const steerTo = (tx, tz) => clamp(2 * Math.atan2(Math.sin(Math.atan2(tx - P.x, tz - P.z) - psi), Math.cos(Math.atan2(tx - P.x, tz - P.z) - psi)), -1, 1)
 
-  // --- landing sites: firm meadow clear of water, sea, every keepClear circle, and 12 m off any solid thing
+  // --- landing sites: firm meadow clear of water, sea, every keepClear circle, and the body CLEAR (+4 for the cut corner
+  // of the last 40 m, flown straight) off any solid thing
   const clear = (sx, sz) => {
     const h = ctx.heightAt(sx, sz)
     if (h < -3) return false
     for (const c of ctx.keepClear) if (Math.hypot(sx - c.x, sz - c.z) < c.r + 9) return false
-    for (const o of solids) if (Math.hypot(sx - o.x, sz - o.z) < o.r + 12) return false
+    for (const o of solids) if (Math.hypot(sx - o.x, sz - o.z) < o.r + SIDE + CLEAR + 4) return false
     for (let a = 0; a < 6.28; a += 0.785) {
       const ax = sx + 9 * Math.cos(a), az = sz + 9 * Math.sin(a)
       if ((ctx.pond?.inside(ax, az) ?? -1) > 0 || Math.abs(ctx.heightAt(ax, az) - h) > 2.5) return false
@@ -147,7 +161,7 @@ export async function createDragon(ctx) {
     P.copy(p0); psi = Math.atan2(v1.x, v1.z); spd = Math.hypot(v1.x, v1.z); vy = v1.y; yawRate = -turnF; roll = rollF; climbS = v1.y
   }
   const dragon = ctx.dragon = {
-    holder, model, seat: model.getObjectByName('rider-seat'),
+    holder, model, seat: model.getObjectByName('rider-seat'), isle,
     get state() { return state },
     heading: () => psi,
     yawRate: () => yawRate,
@@ -226,16 +240,11 @@ export async function createDragon(ctx) {
     if (list.length && !near) for (let i = 0; i < 500; i++) { pos(t + i * 0.1, s); for (const o of list) g = Math.min(g ?? 1e9, gap(o, s.x, s.y, s.z)) }
     return g && +g.toFixed(1)
   }
-  const isleGap = () => { // closest the whole current path comes to the rock island's apron edge (m; < 0 = inside it)
-    const q2 = new THREE.Vector3(); let g = null
-    if (ri && !near) for (let s = 0; s < 500; s++) { pos(t + s * 0.1, q2); g = Math.min(g ?? 1e9, Math.hypot(q2.x - ri.x, q2.z - ri.z) - ri.r) }
-    return g
-  }
   const r1 = v => v === Infinity ? null : +v.toFixed(1)
   window.__probes.dragon = () => ({
     clip, state, alt: holder.position.y - ctx.heightAt(holder.position.x, holder.position.z),
     speed: state === 'free' ? v1.length() : spd, x: holder.position.x, z: holder.position.z,
-    isleGap: isleGap(), treeGap: pathGap(trees), towerGap: pathGap(towers),
+    isleGap: isle && pathGap([isle]), treeGap: pathGap(trees), towerGap: pathGap(towers),
     flown: { isle: r1(flown.isle), tree: r1(flown.tree), tower: r1(flown.tower) },
     land: L && { x: +L.x.toFixed(1), z: +L.z.toFixed(1), final: L.final, d: +Math.hypot(L.x - P.x, L.z - P.z).toFixed(1) },
   })
