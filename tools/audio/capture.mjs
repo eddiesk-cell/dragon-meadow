@@ -2,19 +2,24 @@
 // (after src/audio.js's limiter, as PCM) from the same run, muxed into one mp4. Then check the sound against what moved:
 // steps vs the feet's contacts, wingbeats vs the wing's downstrokes, roars vs the ride's call and landing, wind vs speed,
 // and the loudness (ffmpeg ebur128). Lane sound, PLAN.md.
-//   node tools/audio/capture.mjs shots/sound-walk.mp4 "auto=walk" 20
+//   node tools/audio/capture.mjs shots/sound-walk.mp4 "auto=walk" 20      (auto=run 10, auto=ride 40, "auto=walk&tod=night" 20)
 // audio=log is added to the query. Writes <out>.mp4 and <out>.json (the analysis + the raw timeline); prints the analysis.
 import { createServer } from 'vite'
 import puppeteer from 'puppeteer-core'
 import { lock } from '../lock.mjs'
 import { execFileSync } from 'node:child_process'
-import { rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const [out, query = '', secs = '20'] = process.argv.slice(2)
 if (!out) { console.error('usage: node tools/audio/capture.mjs <out.mp4> [query] [secs]'); process.exit(2) }
+if (out.endsWith('.json')) { // re-check a take already recorded: node tools/audio/capture.mjs shots/sound-run.json
+  const j = JSON.parse(readFileSync(resolve(ROOT, out), 'utf8'))
+  const r = analyse({ log: j.log, feet: j.feet, wings: j.wingTrace, state: j.state, leadMs: j.leadMs }, { log: j.ride }, j.loudness)
+  console.log(JSON.stringify({ steps: r.steps, wings: r.wings, loudness: r.loudness })); process.exit(r.steps?.pass === false ? 1 : 0)
+}
 const CHROME = process.env.CHROME || `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const abs = resolve(ROOT, out), webm = abs + '.webm', wav = abs + '.wav'
@@ -119,33 +124,34 @@ function analyse(a, ride, loud) {
   const ev = name => a.log.filter(e => e[1] === name)
   const steps = ev('step'), r = { loudness: loud, state: a.state, leadMs: a.leadMs, counts: {} }
   for (const e of a.log) if (!['mix', 'loops'].includes(e[1])) r.counts[e[1]] = (r.counts[e[1]] || 0) + 1
-  if (steps.length) { // foot contact, read independently of audio.js's trigger: each fall of a swinging foot (from an apex 8 cm
-    // over its stance) ends where its downward speed drops under 15 % of that fall's fastest (the heel strike). Not from the
-    // ground speed: this walk clip slides its planted foot at ~0.6 m/s, so a foot never stops. Trace: [t, h, x, z] per foot.
-    const t0 = steps[0][0] - 0.5, t1 = steps.at(-1)[0] + 0.5, dts = [], missed = [], extra = []
-    const tr = a.feet.filter(f => f[0] >= t0 && f[0] <= t1)
+  if (steps.length) { // foot contacts, found from the motion alone: the start of each planted interval, after the foot swung
+    // clear (6 cm over its floor). Planted = the foot within 3 cm of its floor (its lowest over the 1.2 s around it) AND its
+    // world speed under a quarter of its swing's fastest (the 0.6 s before). Not the end of a fall: a sprinting foot pauses
+    // mid-swing at ~0.4 m while still moving at 9 m/s. Counted where audio.js may step (column 7: on foot, moving, not in the
+    // air; older traces: around the steps). Trace row: [t, hL, xL, zL, hR, xR, zR, gate].
+    const F = a.feet, T = F.map(f => f[0]), ok = F.map(f => f[7] ?? (f[0] > steps[0][0] - 0.5 && f[0] < steps.at(-1)[0] + 0.5))
+    const over = (i, back, ahead, arr, fn) => { let m = arr[i]; for (let q = i; q >= 0 && T[q] >= T[i] - back; q--) m = fn(m, arr[q]); for (let q = i; q < T.length && T[q] <= T[i] + ahead; q++) m = fn(m, arr[q]); return m }
+    const dts = [], missed = [], extra = []
     for (const k of [0, 1]) {
-      const h = tr.map(f => f[1 + 3 * k]), stance = [...h].sort((x, y) => x - y)[Math.floor(h.length * 0.05)], contacts = []
-      for (let i = 1; i < h.length - 1; i++) {
-        if (!(h[i] > stance + 0.08 && h[i] >= h[i - 1] && h[i] > h[i + 1])) continue // an apex
-        let j = i + 1, fast = 0
-        while (j < h.length - 1) {
-          const vy = (h[j - 1] - h[j]) / (tr[j][0] - tr[j - 1][0]); fast = Math.max(fast, vy)
-          if (fast > 0.3 && vy < 0.15 * fast) break
-          j++
-        }
-        if (j < h.length - 1) contacts.push(tr[j][0])
-        i = j
+      const h = F.map(f => f[1 + 3 * k]), sp = F.map((f, i) => T[i] > T[i - 1] ? Math.hypot(f[2 + 3 * k] - F[i - 1][2 + 3 * k], f[3 + 3 * k] - F[i - 1][3 + 3 * k]) / (T[i] - T[i - 1]) : 0)
+      const contacts = []
+      for (let i = 1, swung = false; i < T.length; i++) {
+        const floor = over(i, 0.6, 0.6, h, Math.min)
+        if (h[i] > floor + 0.06) swung = true
+        if (swung && h[i] < floor + 0.03 && sp[i] < 0.25 * over(i, 0.6, 0, sp, Math.max)) { swung = false; if (ok[i]) contacts.push(T[i]) }
       }
       const mine = steps.filter(s => s[2] === (k ? 'R' : 'L')).map(s => s[0])
-      extra.push(...mine.filter(s => !contacts.some(c => Math.abs(s - c) <= 0.08)).map(s => [k ? 'R' : 'L', s]))
+      const near = (x, list) => list.reduce((b, y) => Math.abs(y - x) < Math.abs(b - x) ? y : b, Infinity)
+      // an extra step is one with no contact within 80 ms (a mid-swing step, or a second step on one contact)
+      extra.push(...mine.filter(s => Math.abs(near(s, contacts) - s) > 0.08 || near(near(s, contacts), mine) !== s).map(s => [k ? 'R' : 'L', s]))
       for (const c of contacts) {
-        const near = mine.reduce((b, s) => Math.abs(s - c) < Math.abs(b - c) ? s : b, Infinity)
-        if (Math.abs(near - c) <= 0.08) dts.push(Math.round((near - c) * 1000)); else missed.push([k ? 'R' : 'L', +c.toFixed(2), Math.round((near - c) * 1000)])
+        const s = near(c, mine)
+        if (Math.abs(s - c) <= 0.08) dts.push(Math.round((s - c) * 1000)); else missed.push([k ? 'R' : 'L', +c.toFixed(2), Math.round((s - c) * 1000)])
       }
     }
     const abs = dts.map(Math.abs).sort((x, y) => x - y)
-    r.steps = { steps: steps.length, contactsMatched: dts.length, missed, extra, maxAbsMs: abs.at(-1), medianMs: [...dts].sort((x, y) => x - y)[dts.length >> 1], surfaces: [...new Set(steps.map(s => s[3]))] }
+    r.steps = { pass: !missed.length && !extra.length && dts.length > 0, steps: steps.length, contacts: dts.length + missed.length, contactsMatched: dts.length,
+      missed, extra, maxAbsMs: abs.at(-1), medianMs: [...dts].sort((x, y) => x - y)[dts.length >> 1], surfaces: [...new Set(steps.map(s => s[3]))] }
   }
   const wingsEv = ev('wing')
   if (wingsEv.length) { // a downstroke follows: the wing tip is lower 0.15 s later
