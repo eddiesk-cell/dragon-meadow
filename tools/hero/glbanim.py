@@ -91,10 +91,13 @@ class Rig:
         return Q, P
 
 def strike(sole, u):
-    """When a foot lands, from its sole height per frame over one cycle (u in [0,1)): the first frame back near the ground
-    (within 1.5 cm of its stance level) after being clearly up in the swing (4 cm). Robust to a stance that is not flat."""
-    base = np.percentile(sole, 10); up = sole > base + 0.04; low = sole < base + 0.015
-    k = np.argmax(up); n = len(sole)
+    """When a foot lands, from its sole height per frame over one cycle (u in [0,1)): the first frame of the longest stretch
+    near the ground (within 1.5 cm of its stance level). A swing that dips close to the ground mid-air (the Drifter's toe
+    clears by 1 cm) is a short stretch, not the landing."""
+    low = sole < np.percentile(sole, 10) + 0.015; n = len(sole)
+    if low.all() or not low.any(): raise ValueError('foot never lands')
+    k = int(np.argmin(low)); best, start, run = 0, 0, 0                          # walk round the loop from a frame in the air
     for j in range(1, n + 1):
-        if low[(k + j) % n]: return u[(k + j) % n]
-    raise ValueError('foot never lands')
+        i = (k + j) % n; run = run + 1 if low[i] else 0
+        if run > best: best, start = run, (i - run + 1) % n
+    return u[start]
