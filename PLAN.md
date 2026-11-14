@@ -960,3 +960,52 @@ gust passes. Not the motes (those glow and rise); these tumble, catch the light 
 **Production build fixed 2026-11-14** (`src/main.js`: `import.meta.glob`): a built copy now loads all 24 systems; check with `npx vite build --outDir <dir> && node tools/shot-build.mjs <dir> shots/x.png`. "vite build succeeds" alone proved nothing for four reviews.
 
 **Hare snout PASSED 2026-11-14** (aa39b41; `shots/review-snout.md`): standing rear 0.9 rad, nose 9 cm clear of the chest, ear tips 1.59 m. Open lows: snout short (0.8 would lengthen it); eye centre 1.11 m, below the 1.3 m grass tops; round from behind.
+
+## Wave G (2026-11-14) — the look backlog (an experience: the walk, the ride, the look)
+
+Five lanes, one owner per file set, no credits, each reviewed independently; three failed reviews and the orchestrator
+takes it. Three run now (dragon-breath, pet-day, clip-fades); two wait for a slot (egg-dome, rootbinder-crown).
+Captures: `node tools/shot.mjs` in the FOREGROUND only; a built copy with `tools/shot-build.mjs`.
+Use Ponytail: shortest working code, reuse before writing, mark corners `shortcut:` (Ponytail 5). Before reading
+code, read graphify-out/GRAPH_REPORT.md; if missing run `graphify update .`.
+
+### Lane dragon-breath — `src/dragon.js`, `src/vfx.js` (only the `smoke` function), `art/smoke/`, `public/fx/` (Opus)
+The baked smoke (`ctx.vfx.smoke`, `art/smoke/bake.py` → `public/fx/smoke.webp`, PLAN "OpenVDB test") is not on the
+dragon. Give the dragon breath: slow curls of smoke from its nostrils when it is landed or idling near the hero, and
+a thicker plume trailing from its jaws for a second or two after a roar or as it takes off; none while cruising far
+away. Reference: `refs/ref-dragon.png`, `refs/world/mix-day.png`, `refs/world/night.png`. Re-bake if the column shape
+does not suit a breath (a short puff that rolls and thins, lit not black); the atlas stays ≤ 500 KB.
+- **CHECK:** `shots/g-breath-landed.png` and `-b.png` (300 ms apart: the smoke differs) show smoke leaving the
+  nostrils of the landed dragon, attached to the head as it moves; `shots/g-breath-roar.png` shows the plume; a far
+  cruising shot shows none; night: lit by the scene, no glow; `?breath=off` removes it; fps cost < 3%; a built copy
+  shows it too (`tools/shot-build.mjs`).
+
+### Lane pet-day — `src/pet.js` (Sonnet)
+By day the pet reads as a grey rock (reviews, 2026-11-13): from the walking camera it is a pale ball with little
+face. Make it read as a small living companion at 3–10 m by day without changing its night look: clearer face from
+behind-and-above (ears that move, a tail, a glance back at the hero now and then), a body tone that separates from
+the grass and the egg stone, small idle life (a hop, a sniff, a look at a passing butterfly: `src/flutter.js` exists
+but publishes nothing; do not edit it).
+- **CHECK:** `shots/g-pet-day.png` (`auto=walk`, 6000) and a 4x crop: reads as a creature, not a stone; two shots
+  1 s apart differ in pose; `shots/g-pet-night.png` unchanged in character from `shots/reviewF4-flutter-night-6000.png`;
+  fps cost < 3%.
+
+### Lane clip-fades — `tools/audio/capture.mjs` (Sonnet)
+The day→night clip cuts hard at its start and end. Add a fade from black with the sound rising over the first
+second and a fade to black with the sound falling over the last 1.5 s, in the recorder (frames and audio), not in the
+game. Then record a fresh 40 s day→night clip with the ambient life on.
+- **CHECK:** the recorder's own file check still passes (fps, freezes, stream lengths, dropouts); first frame black,
+  frame at 1.0 s full picture, last frame black; audio RMS rises over the first second and falls over the last 1.5 s
+  (print the numbers); the clip is at `shots/g-clip-day-night.mp4` with six contact-sheet frames in
+  `shots/g-clip-sheet.jpg`.
+
+### Lane egg-dome — `src/landmarks.js` (the egg only), queued
+The egg stone is a plain pale dome. Give it the reference's character (`refs/world/mix-day.png`, `night.png`): a
+surface with soft veining or scales, a pearl sheen by day, the night glow kept.
+- **CHECK:** `shots/g-egg-day.png`, `-night.png`, a close shot; reads as a great egg, not a blank dome; fps unchanged.
+
+### Lane rootbinder-crown — `src/bestiary.js` (the Rootbinder only), `src/springs.js` reuse, queued
+The Rootbinder's root crown is rigid and its hands stop at mid-shin in Idle. Spring the crown's roots (reuse
+`src/springs.js`) and let the hands reach the ground.
+- **CHECK:** `bestiary=1&focus=rootbinder`: two shots 300 ms apart show the crown's roots trailing the head's motion;
+  Idle: fingertips at the plinth; no stretch tears; the rest of the gallery unchanged.
