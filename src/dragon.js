@@ -239,15 +239,16 @@ export async function createDragon(ctx) {
 
   // --- breath: the baked smoke (ctx.vfx.smoke) curling from both nostrils while it is down or hovering near, and a
   // thick plume from the jaws for 2 s after its touchdown roar and as it takes off; none while it flies far off.
-  // ?breath=off: none; ?breath=demo: landed side-on ahead of the hero, roaring every 8 s; ?breath=demo-off: the same, no smoke (A/B).
+  // ?breath=off: none; ?breath=demo: landed side-on ahead of the hero, roaring every 8 s (&breathview=front: turned
+  // three-quarters toward the camera); ?breath=demo-off: the same, no smoke (A/B).
   const bmode = params.get('breath'), head = model.getObjectByName('head')
   // head-bone space, measured from the skinned mesh: the snout runs along +y to a tip at y 0.35, its top toward +z
   const NOSE = [new THREE.Vector3(0.03, 0.31, 0.07), new THREE.Vector3(-0.03, 0.31, 0.07)], JAWS = new THREE.Vector3(0, 0.34, -0.01)
   const BACK = new THREE.Vector3(0, 0.1, 0.07)
   const mk = (size, phase) => { const s = ctx.vfx.smoke(new THREE.Vector3(), size); s.visible = false; s.userData.smoke = { alpha: 0, phase, rot: 0 }; s.userData.size = size; return s }
-  const demo = bmode?.startsWith('demo'), curls = bmode?.endsWith('off') || !ctx.vfx ? [] : [mk(3.4, 0), mk(3.4, 23)], plumes = curls.length ? [mk(7, 41), mk(5, 9)] : []
+  const demo = bmode?.startsWith('demo'), curls = bmode?.endsWith('off') || !ctx.vfx ? [] : [mk(2, 0), mk(2, 23), mk(1.3, 37), mk(1.3, 51)], plumes = curls.length ? [mk(2.4, 41), mk(1.8, 9)] : [] // per nostril a curl and a smaller wisp out of phase
   const bp = new THREE.Vector3(), bq = new THREE.Vector3(), bf = new THREE.Vector3(), bd = new THREE.Vector3(), up2 = new THREE.Vector3(), cr = new THREE.Vector3(), cu = new THREE.Vector3()
-  let bw = 0, plume = 0, bState = state, roars = 0, roarEnd = 0
+  let bw = 0, plume = 0, bState = state, roars = 0, roarEnd = 0, warm = 3 // warm: drawn unseen for 3 frames so the first roar doesn't build them mid-game
   const place = (s, foot, dir, size) => { // foot at the source, the column leaning along dir as the camera sees it
     const cam = ctx.camera
     bq.copy(foot).project(cam); bp.copy(foot).add(dir).project(cam)
@@ -272,21 +273,27 @@ export async function createDragon(ctx) {
     const ex = Math.max(0, Math.sin(t * 1.4)) // a slow breath: out, then a pause while it breathes in
     up2.copy(bd).multiplyScalar(0.4).add(ctx.camera.up) // curls drift up, a little forward
     curls.forEach((s, i) => {
-      if (!(s.visible = bw > 0.01)) return
-      place(s, head.localToWorld(bf.copy(NOSE[i])), up2, s.userData.size * (0.7 + 0.3 * ex))
-      s.userData.smoke.alpha = bw * (0.5 + 0.45 * ex)
+      if (!(s.visible = bw > 0.01 || warm > 0)) return
+      const e = i < 2 ? ex : Math.max(0, Math.sin(t * 1.4 - 0.9)) // the wisp trails the curl's breath
+      place(s, head.localToWorld(bf.copy(NOSE[i % 2])).addScaledVector(bd, i < 2 ? 0 : 0.12), up2, s.userData.size * (0.7 + 0.3 * e))
+      s.userData.smoke.alpha = bw * (0.5 + 0.45 * e) * (i < 2 ? 1 : 0.7)
     })
+    // the roar: two puffs out along the snout, the second further on, both rolling forward and swelling as they thin
+    const age = 2 - plume, out = Math.min(1, plume / 0.8)
     up2.copy(bd).addScaledVector(ctx.camera.up, 0.3)
-    plumes.forEach(s => {
-      if (!(s.visible = plume > 0)) return
-      place(s, head.localToWorld(bf.copy(JAWS)), up2, s.userData.size * (1.2 - 0.1 * plume))
-      s.userData.smoke.alpha = Math.min(1, (2 - plume) * 6) * Math.min(1, plume / 0.8) // in over 0.15 s, out over 0.8 s
+    if (warm > 0) warm--
+    plumes.forEach((s, i) => {
+      if (!(s.visible = plume > 0 || warm > 0)) return
+      head.localToWorld(bf.copy(JAWS)).addScaledVector(bd, i ? 1.5 + 0.9 * age : 0.2 + 0.5 * age).addScaledVector(ctx.camera.up, 0.15 * age)
+      place(s, bf, up2, s.userData.size * (1 + (i ? 0.35 : 0.25) * age))
+      s.userData.smoke.alpha = plume > 0 ? (i ? 0.5 * clamp((age - 0.2) * 5, 0, 1) : 0.6 * Math.min(1, age * 6)) * out : 0
     })
   }
   window.__probes.breath = () => ({ mode: bmode, w: +bw.toFixed(2), plume: +plume.toFixed(2), t: +t.toFixed(1), clip, state, curls: curls.filter(s => s.visible).length, plumes: plumes.filter(s => s.visible).length })
-  if (demo) { // landed 24 m ahead of the hero's view, side-on, head to the left
+  if (demo) { // landed 24 m ahead of the hero's view, side-on, head to the left (front: also turned toward the camera)
     const f = ctx.camera.getWorldDirection(cv).setY(0).normalize(), s = site(ctx.heroPos.x + f.x * 24 - f.z * 3, ctx.heroPos.z + f.z * 24 + f.x * 3)
-    P.set(s.x, ctx.heightAt(s.x, s.z), s.z); psi = Math.atan2(f.z, -f.x); go('landed'); setClip('idle')
+    const k = params.get('breathview') === 'front' ? 1 : 0
+    P.set(s.x, ctx.heightAt(s.x, s.z), s.z); psi = Math.atan2(f.z - k * f.x, -f.x - k * f.z); go('landed'); setClip('idle')
   }
   update(0.016)
 

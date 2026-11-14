@@ -310,13 +310,16 @@ export async function createVfx(ctx) {
       const map = new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'fx/smoke.webp')
       map.colorSpace = THREE.SRGBColorSpace
       const per = (k, d) => uniform(d).onObjectUpdate(({ object }) => object.userData.smoke?.[k] ?? d)
-      const f = time.mul(20).add(per('phase', 0)).mod(64), at = i => { const k = i.mod(64); return texture(map, uv().add(vec2(k.mod(8), float(7).sub(floor(k.div(8))))).div(8)) }
+      // each tile's column fills only its lower 0.62 and middle half, so the sprite samples that sub-rectangle: smoke fills it
+      const sub = vec2(uv().x.mul(0.56).add(0.22), uv().y.mul(0.64))
+      const f = time.mul(20).add(per('phase', 0)).mod(64), at = i => { const k = i.mod(64); return texture(map, sub.add(vec2(k.mod(8), float(7).sub(floor(k.div(8))))).div(8)) }
       // Lit by the sky's own lights (hemisphere + half the key), so it is pale by day and dim at night, never glowing.
       const hemi = scene.getObjectsByProperty('isHemisphereLight', true)[0], key = scene.getObjectsByProperty('isDirectionalLight', true)[0]
       const c = new THREE.Color(), lit = uniform(new THREE.Color(1, 1, 1)).onRenderUpdate((_, u) => {
         if (hemi) u.value.copy(hemi.color).lerp(c.copy(hemi.groundColor), 0.5).multiplyScalar(hemi.intensity)
         if (key) u.value.add(c.copy(key.color).multiplyScalar(key.intensity * 0.5))
         const m = Math.max(u.value.r, u.value.g, u.value.b); if (m > 1) u.value.multiplyScalar(1 / m) // ≤ 1: bloom never catches it
+        u.value.multiplyScalar(1 - 0.75 * ctx.night) // at night it sits at or under the sky behind it, not a pale halo
       })
       smokeMat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false })
       smokeMat.rotationNode = per('rot', 0)
@@ -325,7 +328,7 @@ export async function createVfx(ctx) {
       // so the tile's cut edge never shows
       const a = mix(at(floor(f)), at(floor(f).add(1)), fract(f)).a
       smokeMat.colorNode = vec4(mix(vec3(0.95, 0.95, 0.97), vec3(0.5, 0.5, 0.54), smoothstep(0.25, 0.95, a)).add(uv().y.mul(0.15)).min(1).mul(lit),
-        a.mul(smoothstep(0, 0.12, uv().y)).mul(per('alpha', 1)))
+        a.mul(smoothstep(0, 0.04, uv().y)).mul(per('alpha', 1)))
     }
     const sp = new THREE.Sprite(smokeMat)
     sp.scale.setScalar(size); sp.position.copy(pos).y += size / 2 // pos is the foot of the column
