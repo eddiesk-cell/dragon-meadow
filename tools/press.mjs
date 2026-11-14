@@ -18,14 +18,20 @@ try {
   page.on('pageerror', e => r.errors.push(String(e).slice(0, 200))); page.on('console', m => m.type() === 'error' && !m.text().startsWith('Failed to load') && r.errors.push(m.text().slice(0, 200)))
   await page.goto(`${server.resolvedUrls.local[0]}?${query}`, { waitUntil: 'domcontentloaded' })
   let ready = false; for (let i = 0; i < 120 && !ready; i++) { ready = await page.evaluate(() => !!window.__ready); if (!ready) await sleep(500) }
-  await sleep(1500); await page.mouse.click(640, 360); await sleep(+at * 1000) // a click on the canvas, like a player starting to look around
+  await sleep(1500); await page.mouse.click(640, 360); await sleep((+at || 0) * 1000) // a click on the canvas, like a player starting to look around
+  if (at === 'late') { // the owner's case: no E; wait for it to land by itself, then press E and see what happens
+    for (let i = 0; i < 240; i++) { const st = await page.evaluate(() => window.__probes.dragon().state); if (st === 'landed') break; await sleep(500) }
+    r.selfLanded = await page.evaluate(() => { const d = window.__probes.dragon(), h = window.__probes.hero(); return +Math.hypot(d.x - h.x, d.z - h.z).toFixed(1) })
+    await sleep(1500)
+  }
   await page.keyboard.press('e')
   let last = ''
   for (let i = 0; i < +secs * 2; i++) {
     const s = await page.evaluate(() => { const d = window.__probes.dragon(), h = window.__probes.hero(); return { st: d.state, gap: Math.hypot(d.x - h.x, d.z - h.z), hint: [...document.querySelectorAll('div')].map(e => e.textContent).filter(t => /dragon|E —|room/.test(t) && t.length < 60).join('|') } })
     if (s.st !== last) r.states.push([i / 2, s.st]), last = s.st
+    if (i === 0) r.hint0 = s.hint
     r.gap = +s.gap.toFixed(1); r.hint = s.hint; r.final = s.st
-    if (s.st === 'landed') break
+    if (s.st === 'landed' && (at !== 'late' || i > 6)) break
     await sleep(500)
   }
   r.dragon = await page.evaluate(() => window.__probes.dragon())

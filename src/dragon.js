@@ -134,25 +134,26 @@ export async function createDragon(ctx) {
 
   // --- landing sites: firm meadow clear of water, sea, every keepClear circle, and the body CLEAR (+4 for the cut corner
   // of the last 40 m, flown straight) off any solid thing
-  const clear = (sx, sz) => {
+  const clear = (sx, sz, loose) => { // loose: for a crowded hero (town, gorge): 3 m off keepClear, 6 m ring, 5 m of slope
     const h = ctx.heightAt(sx, sz)
     if (h < -3) return false
-    for (const c of ctx.keepClear) if (Math.hypot(sx - c.x, sz - c.z) < c.r + 9) return false
+    for (const c of ctx.keepClear) if (Math.hypot(sx - c.x, sz - c.z) < c.r + (loose ? 3 : 9)) return false
     for (const o of solids) if (Math.hypot(sx - o.x, sz - o.z) < o.r + SIDE + CLEAR + 4) return false
     for (let a = 0; a < 6.28; a += 0.785) {
-      const ax = sx + 9 * Math.cos(a), az = sz + 9 * Math.sin(a)
-      if ((ctx.pond?.inside(ax, az) ?? -1) > 0 || Math.abs(ctx.heightAt(ax, az) - h) > 2.5) return false
+      const ax = sx + (loose ? 6 : 9) * Math.cos(a), az = sz + (loose ? 6 : 9) * Math.sin(a)
+      if ((ctx.pond?.inside(ax, az) ?? -1) > 0 || Math.abs(ctx.heightAt(ax, az) - h) > (loose ? 5 : 2.5)) return false
     }
     return true
   }
   const site = (px, pz, hero) => {
-    if (hero) { // called to the hero: the nearest clear ground in a ring round HIM (14 m out and on), preferring the side (px, pz) points to
+    if (hero) { // called to the hero: the nearest clear ground in a ring round HIM, preferring the side (px, pz) points to
       const pa = Math.atan2(pz - hero.z, px - hero.x)
-      for (let r = 14; r <= 110; r += 6) for (let i = 0, n = Math.ceil(6.28 * r / 5); i < n; i++) {
+      const ring = (r0, r1, loose) => { for (let r = r0; r <= r1; r += 3) for (let i = 0, n = Math.ceil(6.28 * r / 5); i < n; i++) {
         const a = pa + (i & 1 ? 1 : -1) * Math.ceil(i / 2) * 6.28 / n, sx = hero.x + r * Math.cos(a), sz = hero.z + r * Math.sin(a)
-        if (clear(sx, sz)) return { x: sx, z: sz }
-      }
-      return null
+        if (clear(sx, sz, loose)) return { x: sx, z: sz, r }
+      } }
+      const s = ring(12, 110), s2 = (!s || s.r > 18) && ring(12, 18, true) // shortcut: a loose landing only when the strict one is far, tune if it ever clips
+      return s2 || s || null
     }
     for (let r = 0; r <= 96; r += 8) for (let a = 0; a < 6.28; a += r ? 4 / r : 7) {
       const sx = px + r * Math.cos(a), sz = pz + r * Math.sin(a)
@@ -198,7 +199,7 @@ export async function createDragon(ctx) {
       setClip('fly')
       if (!ride.busy() && (landT -= dt) < 0) { // lands on its own beside the hero, ahead and to the right of his view
         const f = ctx.camera.getWorldDirection(cv).setY(0).normalize()
-        dragon.land(ctx.heroPos.x + f.x * 20 - f.z * 12, ctx.heroPos.z + f.z * 20 + f.x * 12)
+        dragon.land(ctx.heroPos.x + f.x * 20 - f.z * 12, ctx.heroPos.z + f.z * 20 + f.x * 12, undefined, ctx.heroPos)
         landT = 90
       }
     } else if (state === 'land') {

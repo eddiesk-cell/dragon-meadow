@@ -13,7 +13,7 @@ export function createRide(ctx, d) {
   addEventListener('keyup', e => keys.delete(e.key.toLowerCase()))
   addEventListener('blur', () => keys.clear())
   const hint = document.createElement('div')
-  hint.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);color:#fff;font:13px system-ui,sans-serif;opacity:.85;text-shadow:0 1px 3px #0008;pointer-events:none'
+  hint.style.cssText = 'position:fixed;left:50%;bottom:52px;transform:translateX(-50%);color:#fff;font:13px system-ui,sans-serif;opacity:.85;text-shadow:0 1px 3px #0008;pointer-events:none'
   document.body.append(hint)
 
   let mode = 'foot', mt = 0, lean = 0 // foot | mount | ride | dismount; mt: seconds in this mode
@@ -59,7 +59,7 @@ export function createRide(ctx, d) {
       seat(); ctx.heroAct.face(seatW.x - from.x, seatW.z - from.z)
       ctx.heroAct.play('Mount', { lockMove: true })
     } else if (s === 'free' || s === 'rejoin') { if (callDown()) note('called'); else say('no room to land here') }
-    else if (s === 'landed' && reach() > 30) { d.takeoff(); pending = true; note('recall') } // it landed somewhere far off: up again, then called here
+    else if (s === 'landed' && reach() > 20) { d.takeoff(); pending = true; note('recall') } // it landed somewhere far off: up again, then called here
     else if (s === 'takeoff') pending = true
     else say(s === 'landed' ? 'walk to the dragon and press E' : 'the dragon is coming')
   }
@@ -115,7 +115,7 @@ export function createRide(ctx, d) {
       if ((msgT -= dt) < 0) msg = ''
       if (pending && (d.state === 'free' || d.state === 'rejoin')) { pending = false; if (!callDown()) say('no room to land here') }
       const text = mode === 'ride' ? 'W fly · A D turn · Space up · Shift down · E land' : mode !== 'foot' ? '' : msg
-        || (pending || d.state === 'land' || d.state === 'touch' ? 'the dragon is coming' : d.state === 'landed' ? (reach() < 12 ? 'E — climb on the dragon' : 'walk to the dragon and press E') : '')
+        || (pending || d.state === 'land' || d.state === 'touch' ? 'the dragon is coming' : d.state === 'landed' ? (reach() < 7 ? 'E — climb on the dragon' : 'walk to the dragon and press E') : '')
       if (text !== lastHint) hint.textContent = lastHint = text
       if (mode === 'foot') return
 
