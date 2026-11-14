@@ -946,3 +946,5 @@ under the trees, dandelion-like seed tufts lifting from the grass in gusts. Spar
 gust passes. Not the motes (those glow and rise); these tumble, catch the light and land.
 - **CHECK:** `shots/f-drift-day.png` shows petals near bellflowers and leaves near trees, tumbling (two shots 300 ms
   apart differ in rotation); they follow the grass's wind direction; `?drift=off` removes them; fps cost < 3%.
+
+**Wave E — status 2026-11-14:** field-keepclear PASSED r2, bestiary-polish PASSED r3 (report `shots/review-waveE.md`); pushed up to bb5f430. Open lows: at Throw 5000 a stock end reads as a short post; a thin anchor part leans between the legs at Throw 12000 / cycle 26300; chain loops heap at the fist; Old Glim shows only head and neck in the default view.
