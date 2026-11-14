@@ -71,11 +71,11 @@ export async function createLandmarks(ctx) {
   const eVein = float(1).sub(smoothstep(0.012, 0.04, abs(eN.add(eV.mul(0.25))))).mul(smoothstep(-0.2, 0.3, mx_noise_float(EP.mul(0.6).add(3))))
   const eRim = pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 3)
   const eDay = float(1).sub(uNight.mul(2)).max(0), eGlow = uNight.mul(8).min(1) // day tint fades out as the glow fades in: never both at zero
-  egg.colorNode = mix(mix(vertexColor().rgb, vec3(1, 0.88, 0.82), 0.9).mul(eN.mul(0.3).add(1.25)).mul(smoothstep(0, 3.5, positionLocal.y).mul(0.3).add(0.7)),
+  egg.colorNode = mix(mix(vertexColor().rgb, vec3(1, 0.92, 0.9), 0.9).mul(eN.mul(0.3).add(1.25)).mul(smoothstep(0, 3.5, positionLocal.y).mul(0.3).add(0.7)),
     vec3(0.6, 0.74, 0.95), eRim.mul(0.5))
-  egg.colorNode = mix(egg.colorNode, vec3(0.38, 0.52, 0.85), eVein.mul(eDay).mul(0.85)) // blue-grey veins by day
+  egg.colorNode = mix(egg.colorNode, vec3(0.55, 0.65, 0.85), eVein.mul(eDay).mul(0.35)) // blue-grey veins by day
   egg.emissiveNode = mix(vec3(0.35, 0.6, 0.75).mul(eRim.mul(0.6).add(0.03)), vec3(0.3, 0.85, 0.85).mul(eVein.mul(0.6).add(eRim.mul(0.2))), 0.6).mul(uNight)
-    .add(vec3(0.3, 0.85, 0.85).mul(eVein.mul(0.4).mul(eGlow)))
+    .add(vec3(0.3, 0.85, 0.85).mul(eVein.mul(0.4).mul(eGlow).mul(float(1).sub(uNight.mul(0.5)))))
 
   const nodes = Object.fromEntries(isle.scene.children.map(o => [o.name, o]))
   const ground = (x, z) => ctx.heightAt(x, z)
