@@ -1013,3 +1013,5 @@ The Rootbinder's root crown is rigid and its hands stop at mid-shin in Idle. Spr
 **Wave G — clip-fades PASSED r1** (09efaf1; `shots/review-waveG-clip.md`). Open lows in `tools/audio/capture.mjs`: last frame near-black not pure black (`fadeOut = dur - fo - 1/FPS`); fade lengths duplicated in `fileCheck`; loudness reported before fading and the json does not record fades on/off; a freeze running to the end of the checked stretch is not measured.
 
 **Wave G — pet-day PASSED r1** (e92c59f; `shots/review-waveG-pet.md`). A polish turn is with the builder for the two mediums (ears read as horns from behind; shaded brown face in the glance) and four lows.
+
+**Soft look approved by Eddie 2026-11-14** ("Middle is right"): `src/post.js` diffusion at `soft=1` is the default (fa35e57); `?soft=0` is the old crisp frame. If the trees and rocks still read hard-edged, the next step is smoothing their faceted shading.
