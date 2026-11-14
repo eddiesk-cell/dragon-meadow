@@ -288,17 +288,18 @@ export async function createDragon(ctx) {
     // seen down the snout the heading has no direction on screen (the puff used to land a metre beside the head): lean up instead, and thin
     bh.set(bd.x, 0, bd.z).normalize()
     // its own factor, by ground heading, biting only near true head-on (the curls' `face` already thins at 45 degrees)
-    const fp = 1 - 0.85 * THREE.MathUtils.smoothstep(Math.abs(bh.dot(bq.subVectors(ctx.camera.position, head.getWorldPosition(bp)).setY(0).normalize())), 0.8, 0.97)
+    const on2 = plumes.on = Math.abs(bh.dot(bq.subVectors(ctx.camera.position, head.getWorldPosition(bp)).setY(0).normalize())) // 1 = snout at the lens
+    const fp = 1 - 0.9 * THREE.MathUtils.smoothstep(on2, 0.84, 0.91)
     up2.copy(bh).multiplyScalar(fp).addScaledVector(ctx.camera.up, 1.15 - fp)
     if (warm > 0) warm--
     plumes.forEach((s, i) => {
       if (!(s.visible = plume > 0.3 || warm > 0)) return
       head.localToWorld(bf.copy(JAWS)).addScaledVector(bh, i ? 1.5 + 0.9 * age : 0.2 + 0.5 * age).addScaledVector(ctx.camera.up, 0.15 * age)
       place(s, bf, up2, s.userData.size * (1 + (i ? 0.35 : 0.25) * age), fp) // head-on it comes at the lens from the jaws, not up over the head
-      s.userData.smoke.alpha = plume > 0.3 ? (i ? 0.55 * clamp((age - 0.2) * 5, 0, 1) : 0.8 * Math.min(1, age * 6)) * out * (0.15 + 0.85 * fp) : 0
+      s.userData.smoke.alpha = plume > 0.3 ? (i ? 0.55 * clamp((age - 0.2) * 5, 0, 1) : 0.8 * Math.min(1, age * 6)) * out * (0.1 + 0.9 * fp) : 0
     })
   }
-  window.__probes.breath = () => ({ mode: bmode, w: +bw.toFixed(2), plume: +plume.toFixed(2), t: +t.toFixed(1), clip, state, curls: curls.filter(s => s.visible).length, plumes: plumes.filter(s => s.visible).length })
+  window.__probes.breath = () => ({ mode: bmode, w: +bw.toFixed(2), plume: +plume.toFixed(2), t: +t.toFixed(1), clip, state, curls: curls.filter(s => s.visible).length, plumes: plumes.filter(s => s.visible).length, headOn: +(plumes.on ?? 0).toFixed(2) })
   if (demo) { // landed 24 m ahead of the hero's view, side-on, head to the left (front: also turned toward the camera)
     const f = ctx.camera.getWorldDirection(cv).setY(0).normalize(), s = site(ctx.heroPos.x + f.x * 24 - f.z * 3, ctx.heroPos.z + f.z * 24 + f.x * 3)
     const v = params.get('breathview'), k = v === 'front' ? 1 : 0
