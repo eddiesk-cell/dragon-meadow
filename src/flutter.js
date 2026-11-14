@@ -6,7 +6,7 @@ import { Fn, attribute, uniform, uv, vec2, vec3, vec4, float, length, saturate, 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
 const NB = 34, NF = 70, R = 30 // butterflies, fireflies, radius round the hero (m)
 // Flower colours of refs/world/mix-day.png: lilac, blush peach, pale gold, poppy orange, soft white.
-const PAL = [[0.74, 0.58, 0.95], [0.97, 0.66, 0.82], [0.99, 0.86, 0.45], [0.98, 0.5, 0.25], [0.95, 0.92, 0.85], [0.7, 0.62, 1]]
+const PAL = [[0.74, 0.58, 0.95], [0.97, 0.66, 0.82], [0.99, 0.86, 0.45], [0.98, 0.5, 0.25], [1, 0.76, 0.6], [0.7, 0.62, 1]]
 
 export async function createFlutter(ctx) {
   const { THREE, scene, heroPos, params, camera } = ctx
@@ -50,6 +50,7 @@ export async function createFlutter(ctx) {
   const WZ0 = -0.55, WZ1 = 0.65
   const bpos = [], buv = []
   for (const sx of [-1, 1]) bpos.push(0, 0, WZ0, sx, 0, WZ0, sx, 0, WZ1, 0, 0, WZ1), buv.push(0, 0, 1, 0, 1, 1, 0, 1)
+  bpos.push(-0.09, 0, -0.42, 0.09, 0, -0.42, 0.09, 0, 0.6, -0.09, 0, 0.6), buv.push(2, 0, 2, 0, 2, 1, 2, 1) // the body: a dark strip (uv.x 2)
   const bmat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide })
   bmat.positionNode = Fn(() => {
     const p = attribute('aP', 'vec4'), a = attribute('aA', 'vec4'), l = attribute('position', 'vec3')
@@ -59,26 +60,30 @@ export async function createFlutter(ctx) {
   })()
   bmat.colorNode = Fn(() => {
     const c = attribute('aC', 'vec4'), q = uv()
-    // Forewing and hindwing lobes; the wing's own rim darkens, with a pale spot on each lobe.
-    const e1 = length(vec2(q.x.sub(0.58), q.y.sub(0.72)).mul(vec2(1.5, 2.2))), e2 = length(vec2(q.x.sub(0.42), q.y.sub(0.27)).mul(vec2(2.0, 2.9)))
+    // Forewing and hindwing lobes; dark wing tips and rim with pale spots in them, a lighter glow near the body, a dark body strip.
+    const e1 = length(vec2(q.x.sub(0.55), q.y.sub(0.68).sub(q.x.mul(0.22))).mul(vec2(1.9, 2.5))), e2 = length(vec2(q.x.sub(0.42), q.y.sub(0.27)).mul(vec2(2.4, 3.5)))
     const inside = max(float(1).sub(e1), float(1).sub(e2))
-    const alpha = tsmooth(0.0, 0.07, inside)
-    const rim = tsmooth(0.32, 0.0, inside)
-    const spot = tsmooth(0.1, 0.0, length(vec2(q.x.sub(0.68), q.y.sub(0.8)).mul(vec2(1, 1.4))).sub(0.06))
-    const col = mix(c.rgb, c.rgb.mul(0.28), rim.mul(0.85)).add(spot.mul(0.35)).add(tsmooth(0.12, 0.0, q.x).mul(0.2).mul(vec3(0.2, 0.12, 0.05)))
-    return vec4(col.mul(1.05), alpha.mul(c.a))
+    const rim = float(1).sub(tsmooth(0.12, 0.5, inside)).max(tsmooth(0.6, 0.9, q.x).mul(0.85)) // dark margin and tip
+    const spot = float(1).sub(tsmooth(0.0, 0.06, length(vec2(q.x.sub(0.84), q.y.sub(0.55)).mul(vec2(1, 1.6))).sub(0.05))).max(float(1).sub(tsmooth(0.0, 0.06, length(vec2(q.x.sub(0.74), q.y.sub(0.22)).mul(vec2(1, 1.6))).sub(0.045))))
+    const wing = mix(c.rgb.mul(c.rgb).mul(1.15), vec3(0.07, 0.05, 0.06), rim.mul(0.92)).add(spot.mul(vec3(0.7, 0.68, 0.62)))
+    const isBody = tsmooth(1.0, 1.5, q.x)
+    return vec4(mix(wing, vec3(0.05, 0.04, 0.04), isBody), mix(tsmooth(0.0, 0.07, inside), float(1), isBody).mul(c.a))
   })()
   const BATT = quad(bmat, NB, {
     geo: { position: new THREE.Float32BufferAttribute(bpos, 3), uv: new THREE.Float32BufferAttribute(buv, 2) },
-    index: [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7], inst: ['aP', 'aA', 'aC'],
+    index: [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11], inst: ['aP', 'aA', 'aC'],
   })
 
   const B = Array.from({ length: NB }, (_, i) => ({
-    x: 0, y: 0, z: 0, vx: 0, vz: 0, yaw: 0, tx: 0, tz: 0, ty: 1, rest: 0, ph: rnd(0, 6.28), hz: rnd(7, 10), col: PAL[i % PAL.length], size: rnd(0.12, 0.17), alive: false, fade: 0,
+    x: 0, y: 0, z: 0, vx: 0, vz: 0, yaw: 0, tx: 0, tz: 0, ty: 1, rest: 0, ph: rnd(0, 6.28), hz: rnd(7, 10), col: PAL[i % PAL.length], size: rnd(0.15, 0.21), alive: false, fade: 0,
   }))
   function pick(b) {
     const demoC = demo ? camera.position : null
-    if (demo) { b.tx = demoC.x + fwd.x * 3 + rnd(-1.2, 1.2); b.tz = demoC.z + fwd.z * 3 + rnd(-1.2, 1.2); b.ty = rnd(-0.1, 0.8) + camera.position.y - gy(b.tx, b.tz); return }
+    if (demo) { // pinned in front of the lens, re-aimed every frame so a moving camera keeps them
+      b.o ??= rnd(-0.7, 0.7); b.f ??= rnd(1.2, 1.9); b.oy ??= rnd(-1.0, -0.5)
+      const w = Math.sin(performance.now() / 900 + b.ph) * 0.3
+      b.tx = camera.position.x + fwd.x * b.f + fwd.z * (b.o + w); b.tz = camera.position.z + fwd.z * b.f - fwd.x * (b.o + w); b.ty = camera.position.y - gy(b.tx, b.tz) + b.oy; return
+    }
     const bl = bells()
     let s
     if (bl.length && Math.random() < 0.35) { // a bellflower within reach
@@ -144,6 +149,7 @@ export async function createFlutter(ctx) {
       if (i >= nb) { b.alive = false; continue }
       if (!b.alive) spawnB(b)
       const gnd = gy(b.x, b.z)
+      if (demo) { pick(b); b.rest = 0 }
       if (b.rest > 0) { // sitting: slow open-close, then up again
         b.rest -= dt; b.vx *= 0.8; b.vz *= 0.8
         b.y += (gnd + b.ty - b.y) * Math.min(1, dt * 4)
@@ -156,13 +162,13 @@ export async function createFlutter(ctx) {
         b.vz += ((dz / (d + 0.01)) * sp - (dx / (d + 0.01)) * wob * 0.5 - b.vz) * Math.min(1, dt * 2.5)
         b.x += b.vx * dt; b.z += b.vz * dt
         b.y += (dy * 1.6 + Math.sin(t * b.hz * 0.45 + b.ph) * 0.5) * dt // bobbing: each wing beat lifts it a little
-        if (d < 0.4) { if (Math.random() < 0.5 || demo) b.rest = demo ? rnd(0.5, 1.2) : rnd(2, 5); else pick(b) }
+        if (d < 0.4 && !demo) { if (Math.random() < 0.5) b.rest = demo ? rnd(0.5, 1.2) : rnd(2, 5); else pick(b) }
         if (Math.hypot(b.x - heroPos.x, b.z - heroPos.z) > R + 4 && !demo) spawnB(b)
       }
       const moving = b.rest > 0 ? 0 : 1
       if (moving && (b.vx || b.vz)) { const y = Math.atan2(b.vx, b.vz); let dy2 = y - b.yaw; dy2 = Math.atan2(Math.sin(dy2), Math.cos(dy2)); b.yaw += dy2 * Math.min(1, dt * 6) }
       b.fade = Math.min(1, b.fade + dt * 1.2) // fade in after respawn
-      const flap = moving ? 0.5 + 0.85 * Math.sin(t * b.hz + b.ph) : 1.2 + 0.18 * Math.sin(t * 1.3 + b.ph) // closed-up at rest
+      const flap = moving ? 0.55 + 0.6 * Math.sin(t * b.hz + b.ph) : 1.0 + 0.2 * Math.sin(t * 1.3 + b.ph) // closed-up at rest
       const k = i * 4
       BP[k] = b.x; BP[k + 1] = Math.max(b.y, gnd + 0.15); BP[k + 2] = b.z; BP[k + 3] = b.size
       BA[k] = b.yaw; BA[k + 1] = flap; BA[k + 2] = 0; BA[k + 3] = 0
