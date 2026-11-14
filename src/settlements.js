@@ -451,7 +451,10 @@ export async function createSettlements(ctx) {
     const d = Math.hypot(x - CITY.x, z - CITY.z)
     return d > 1400 ? 0 : 46 * Math.exp(-((d / 175) ** 2)) - 18 * ss(-1690, -1750, x + 20 * Math.sin(z * 0.013)) * ss(1100, 700, Math.abs(z - CITY.z))
   }
-  ctx.heightAt = (x, z) => Math.max(landAt(x, z), crag(x, z)) + hill(x, z)
+  // the bridge deck is ground too: 36 m along the lane, 4.4 m wide, level at R (he used to fall through into the stream)
+  // shortcut: one height per (x, z), so wading under the arches pops him onto the deck; give the hero a y-aware ground if the stream bed becomes a path
+  const deck = (x, z) => { const dx = x - B.x, dz = z - B.z; return Math.abs(dx * B.tx + dz * B.tz) < 18 && Math.abs(dx * B.tz - dz * B.tx) < 2.2 ? R : -1e9 }
+  ctx.heightAt = (x, z) => Math.max(landAt(x, z), crag(x, z), deck(x, z)) + hill(x, z)
 
   {
     const x0 = KEEP.x - 112, z0 = KEEP.z - 108, w = 224, d = NECK.z + 8 - z0
@@ -633,6 +636,7 @@ export async function createSettlements(ctx) {
     let gap = 0, worst = null
     for (const b of bases) { const e = Math.abs(b.y - ctx.heightAt(b.x, b.z)); if (e > gap) gap = e, worst = b.name }
     return {
+      bridge: { x: +B.x.toFixed(1), z: +B.z.toFixed(1), tx: +B.tx.toFixed(3), tz: +B.tz.toFixed(3), deck: +R.toFixed(2), bed: +landAt(B.x, B.z).toFixed(2) },
       settlements: 3, springwell: { houses: placed.filter(b => !['market', 'well', 'church'].includes(b.name)).length, trees: trees.map(l => l.length), lanterns: lanterns.length, chimneys: T.tops.length, bridgeDeck: r2(R), water: [r2(Wl[0]), r2(Wl[Wl.length - 1])], patchEdge: r2(edge) },
       crestwatch: { at: [KEEP.x, KEEP.z], plateau: r2(cy(0, 0)), towers: towers.length, bearingDeg: r2(Math.atan2(-KEEP.x, -KEEP.z + 6) * 180 / Math.PI) },
       asterhaven: { at: [CITY.x, CITY.z], houses }, bases: bases.length, maxBaseGap: r2(gap), worst, night: r2(uNight.value), lamps: r2(uLamps.value), createMs,
