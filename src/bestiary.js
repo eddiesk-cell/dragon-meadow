@@ -1,6 +1,7 @@
 // Phase 4d lane bestiary — ?bestiary=1: every rigged creature on a plinth in the real world, turning and cycling its
 // clips, with a name + land label. &focus=<id> frames one large. Without the param it costs nothing. See PLAN.md.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { createSprings } from './springs.js'
 import { attribute, positionLocal, modelPosition, time, vec3, sin, cos, max, mod, floor, step } from 'three/tsl'
 
 // id, name, land, size in metres (BESTIARY.md; models are rigged at 1.80 m), options. Order = build order along the arc.
@@ -143,7 +144,9 @@ export async function createBestiary(ctx) {
       el.style.cssText = 'position:absolute;transform:translate(-50%,-100%);text-align:center;white-space:nowrap'
       el.innerHTML = `<div style="font-size:20px;font-weight:bold">${name}</div><div style="font-size:13px;opacity:.85;font-style:italic">${land}</div>`
       label.append(el)
-      items.push({ id, size, root, mixer, seq, len, total, play, el, pos: new THREE.Vector3(x, top, z), yaw: 0, lie: !!o.lie, rope, clipName: idle, phase: i * 3.1, height: hi - lo, footY: lo - top })
+      // the Rootbinder's six crown roots: stiff springs, run after the mixer (its clips hold them at rest) and the turntable
+      const springs = id === 'rootbinder' ? await createSprings(ctx, { model, prefix: 'spring_crown', kind: 'root', probe: 'crown' }) : null
+      items.push({ id, size, root, mixer, springs, seq, len, total, play, el, pos: new THREE.Vector3(x, top, z), yaw: 0, lie: !!o.lie, rope, clipName: idle, phase: i * 3.1, height: hi - lo, footY: lo - top })
     } catch (e) { window.__errors.push(`bestiary: ${id}: ${e.message || e}`) }
   }
 
@@ -216,6 +219,7 @@ export async function createBestiary(ctx) {
         : Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + (params.get('still') ? 0 : t * 0.3)
       it.root.rotation.y = it.yaw
       if (it.rope) chain(it.rope, dt)
+      it.springs?.update(dt, t)
     }
     if (target) {
       const p = target.pos, fs = Math.max(target.size, 1.2), d = fs * 1.3 + 1

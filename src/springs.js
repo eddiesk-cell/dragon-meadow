@@ -17,16 +17,21 @@ export const PART = {
   bandana: { k: 380, air: 1.5, wind: 2.6, grav: 0.35, lift: 0.3, damp: 12, max: [1.1, 1.75, 1.75], flutter: 1.6, inertia: 0.6, stream: [0.7, 0.71], taut: 2, lee: 0.6 },
   // leg: how far a hem panel's resting place follows its thigh (0 at the belt → leg at the hem), so it swings with the stride
   hem: { k: 230, air: 0, wind: 1.0, grav: 1, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3, leg: 0.55 },
+  // root: a stiff appendage (the Rootbinder's crown roots): held hard to its sculpt, near critically damped (settles in
+  // ~0.3 s), a trace of gravity, no wind, a small cap; it lags only the head's jolts and turns
+  root: { k: 400, air: 0, wind: 0, grav: 0.05, damp: 36, max: 0.35, flutter: 0, inertia: 1 },
 }
 const STEP = 1 / 120, G = -9.8
 
-export async function createSprings(ctx) {
+// opts, for another model's appendages: { model, prefix (bone names, e.g. 'spring_crown'), kind (a PART key), probe }.
+// No colliders, no wind. Without opts: the hero, exactly as before.
+export async function createSprings(ctx, opts) {
   const { THREE, heroPos } = ctx
-  const model = ctx.heroRig?.model
+  const model = opts ? opts.model : ctx.heroRig?.model
   if (!model) throw new Error('no ctx.heroRig.model')
   const V = () => new THREE.Vector3()
   const named = {}
-  model.traverse(o => { if (o.name.startsWith('spring_')) named[o.name] = o })
+  model.traverse(o => { if (o.name.startsWith(opts?.prefix || 'spring_')) named[o.name] = o })
   const bone = n => model.getObjectByName(n)
   model.updateWorldMatrix(true, true) // still the bind pose: hero has not animated yet
   const wp = o => o.getWorldPosition(V())
@@ -34,9 +39,13 @@ export async function createSprings(ctx) {
   // Colliders: capsules A→B (a sphere when A = B) fixed to a body bone, written in the bind pose.
   // A, B: where it is this substep; A0/B0 last frame, A1/B1 this frame
   const cap = (on, A, B, r) => ({ on: bone(on), a: bone(on).worldToLocal(A.clone()), b: bone(on).worldToLocal(B.clone()), r, A: V(), B: V(), A0: V(), B0: V(), A1: A.clone(), B1: B.clone() })
+  // gravity in rig units: a model drawn s times its rig size sags the same angle (k and damping are per second, scale-free)
+  const gs = opts ? model.getWorldScale(V()).y : 1
+  let UPPER = [], LOWER = []
+  if (!opts) {
   const head = wp(bone('head')), top = wp(bone('HeadTop_End'))
   const headC = head.clone().lerp(top, 0.45)
-  const UPPER = [
+  UPPER = [
     cap('head', headC, headC, 0.13), // skull + spiky hair
     cap('head', ...Array(2).fill(headC.clone().add(new THREE.Vector3(0, -0.07, 0.11))), 0.085), // the face: tails never blow across it
     cap('neck', wp(bone('neck')), head, 0.06),
@@ -46,10 +55,11 @@ export async function createSprings(ctx) {
       cap(s + 'UpperArm', wp(bone(s + 'UpperArm')), wp(bone(s + 'LowerArm')), 0.055),
     ]),
   ]
-  const LOWER = [
+  LOWER = [
     cap('hips', wp(bone('hips')), wp(bone('hips')), 0.12),
     ...['left', 'right'].map(s => cap(s + 'UpperLeg', wp(bone(s + 'UpperLeg')), wp(bone(s + 'LowerLeg')), 0.12)), // baggy trousers
   ]
+  }
 
   const closest = (p, c, out) => { // point on capsule c's axis nearest p
     const l2 = ab.subVectors(c.B, c.A).lengthSq()
@@ -66,8 +76,8 @@ export async function createSprings(ctx) {
     for (let i = 0; named[`spring_${m[1]}_${i}`]; i++) bones.push(named[`spring_${m[1]}_${i}`])
     const end = named[`spring_${m[1]}_end`]
     if (!end) throw new Error(`spring_${m[1]} has no _end tip`)
-    const nodes = [...bones, end], kind = m[1].startsWith('bandana') ? 'bandana' : 'hem'
-    const rest = nodes.map(wp), cols = kind === 'bandana' ? UPPER : LOWER
+    const nodes = [...bones, end], kind = opts?.kind || (m[1].startsWith('bandana') ? 'bandana' : 'hem')
+    const rest = nodes.map(wp), cols = opts ? [] : kind === 'bandana' ? UPPER : LOWER
     for (const c of cols) { c.A.copy(c.A1); c.B.copy(c.B1) }
     const restQ = bones.map(b => b.quaternion.clone())
     // The sculpt's tails stick out sideways, a little forward and droopier than drawn: lift them `lift` and aim them 35° back
@@ -98,7 +108,7 @@ export async function createSprings(ctx) {
       rest, prev: rest.map(V), rs: rest.map(V), x: rest.map(r => r.clone()), v: rest.map(V), spd: 0, phase: chains.length * 1.7, ready: false,
     })
   }
-  if (!chains.length) throw new Error('hero.glb has no spring_ bones (rebuild with tools/hero/build.sh)')
+  if (!chains.length) throw new Error(opts ? `no ${opts.prefix}*_0 bones` : 'hero.glb has no spring_ bones (rebuild with tools/hero/build.sh)')
 
   const q = new THREE.Quaternion(), wq = new THREE.Quaternion(), pq = new THREE.Quaternion(), sc = V(), hp = V()
   const wind = V(), wc = V(), rel = V(), wj = V(), acc = V(), off = V(), d = V(), cur = V(), vroot = V(), pOld = V(), carry = V(), vlag = V()
@@ -106,7 +116,8 @@ export async function createSprings(ctx) {
   let fresh = true
   let maxSwing = 0, knotSwing = 0
   const nb = chains.reduce((a, c) => a + c.bones.length, 0)
-  window.__probes.springs = () => ({ chains: chains.length, bones: nb, maxSwingDeg: Math.round(maxSwing * 57.3), knotSwingDeg: Math.round(knotSwing * 57.3) })
+  if (opts) window.__probes[opts.probe] = () => Object.fromEntries(chains.map(c => [c.name, { swingDeg: Math.round(c.sw * 57.3), atCap: c.atCap }]))
+  else window.__probes.springs = () => ({ chains: chains.length, bones: nb, maxSwingDeg: Math.round(maxSwing * 57.3), knotSwingDeg: Math.round(knotSwing * 57.3) })
 
   return {
     update(dt, t) {
@@ -162,7 +173,7 @@ export async function createSprings(ctx) {
             wj.copy(wc).addScaledVector(rel, 0.3 * flutter * Math.sin(ts * 9 + j * 1.9 + c.phase))
             wj.y += rel.length() * 0.35 * flutter * Math.sin(ts * 13.7 + j * 2.3 + c.phase) // cloth flutters, it does not just lean
             acc.addScaledVector(tmp.subVectors(wj, v).sub(carry), cw)                  // air drag: wind, and running through still air
-            acc.y += G * grav
+            acc.y += G * grav * gs
             v.addScaledVector(acc, h).sub(vlag).multiplyScalar(fade).add(vlag)
             cur.copy(x).addScaledVector(v, h)
             nrm.set(0, 0, 0)
@@ -201,6 +212,7 @@ export async function createSprings(ctx) {
           off.subVectors(c.x[i + 1], hp).normalize()
           const sw = off.angleTo(tmp.subVectors(c.rest[i + 1], c.rest[i]).normalize())
           maxSwing = Math.max(maxSwing, sw)
+          c.sw = Math.max(i ? c.sw : 0, sw); c.atCap = (i && c.atCap) || sw > 0.97 * (c.p.max[i] ?? c.p.max) // this chain, for opts.probe
           if (c.runQ && !i) knotSwing = Math.max(knotSwing, sw) // the bandana knot's own swing (capped at max[0])
           q.setFromUnitVectors(d, off).multiply(wq)
           b.parent.matrixWorld.decompose(tmp, pq, sc)
