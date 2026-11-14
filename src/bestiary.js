@@ -1,6 +1,7 @@
 // Phase 4d lane bestiary — ?bestiary=1: every rigged creature on a plinth in the real world, turning and cycling its
 // clips, with a name + land label. &focus=<id> frames one large. Without the param it costs nothing. See PLAN.md.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import * as THREE from 'three/webgpu'
 import { createSprings } from './springs.js'
 import { attribute, positionLocal, modelPosition, time, vec3, sin, cos, max, mod, floor, step } from 'three/tsl'
 
@@ -25,6 +26,83 @@ const ROSTER = [
   ['rime-warden', 'The Rime Warden', 'Wyrmcrown', 4.5],
 ]
 const RIG = 1.8, R = 20.4, SPAN = 1.0, PLINTH = 0.75 // arc radius (m), half-angle (rad), plinth height (m)
+
+// Ribmites: rigid beetles whose legs walk in a tripod gait in the shader (attributes _leg, _legt); a scuttle, legs ~3 cm.
+export function scuttle(model) {
+  model.traverse(m => {
+    if (!m.isMesh) return
+    const old = m.material, leg = attribute('_leg', 'float'), lt = attribute('_legt', 'float')
+    m.material = new THREE.MeshStandardNodeMaterial({ map: old.map, normalMap: old.normalMap, roughnessMap: old.roughnessMap, roughness: old.roughness, metalness: old.metalness, color: old.color })
+    const ph = time.mul(14).add(mod(leg.add(floor(leg.sub(1).div(2))), 2).mul(Math.PI)).add(modelPosition.x.mul(7)).add(modelPosition.z.mul(5))
+    m.material.positionNode = positionLocal.add(vec3(0, max(sin(ph), 0).mul(0.028), cos(ph).mul(0.035)).mul(lt).mul(step(0.5, leg))) // a scuttle, legs ~3 cm
+  })
+}
+
+// The tolling warden's anchor on its chain (gallery and world): the rope state for chain(), from the fist `bone` down the
+// anchor prop `p`'s 8 chain bones. top/x/z/rad: the plinth (roam sets them every frame to the ground under the creature).
+export function makeRope({ p, bone, s, top, x, z, rad, root }) {
+  const bones = [8, 7, 6, 5, 4, 3, 2, 1].map(k => p.getObjectByName('chain_' + k)), h = bone.getWorldPosition(new THREE.Vector3())
+  // points: the 8 links from the fist down, then the anchor's crown (its shank is 1.08 m below the ring in the model)
+  const lens = [...bones.map(() => 0.14 * s), 1.08 * s]
+  const rope = { bone, bones, lens, pts: lens.map((_, k) => h.clone().setY(h.y - lens.slice(0, k + 1).reduce((a, b) => a + b, 0))), old: null, top, x, z, rad, root, s }
+  // start with the anchor lying outward from the fist: hung straight down it balances on its crown under a still fist
+  rope.pts.at(-1).copy(rope.pts.at(-2)).addScaledVector(new THREE.Vector3(h.x - x, 0, h.z - z).normalize(), lens.at(-1))
+  rope.old = rope.pts.map(q => q.clone())
+  return rope
+}
+
+// A hanging chain: Verlet points from the fist down to the anchor's ring, held to their link length, kept on and above
+// the plinth (the anchor lies and drags on it); then each chain bone is set from its point toward the next one up.
+const fist = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), q = new THREE.Quaternion(), pq = new THREE.Quaternion()
+export const chain = (r, dt) => {
+  const fl = (x, z) => r.floor?.(x, z) ?? r.top // r.floor(x, z): the ground under a point when it is not a flat plinth (roam)
+  r.root.updateMatrixWorld(true); r.bone.getWorldPosition(fist)
+  const g = 9.8 * Math.min(dt, 1 / 30) ** 2
+  // damping: the anchor (k > 6) settles instead of swinging like a pendulum
+  r.pts.forEach((p, k) => { const v = p.clone().sub(r.old[k]).multiplyScalar(k > 6 ? 0.9 : 0.96); r.old[k].copy(p); if (k > 6) v.y = Math.min(v.y, 0); p.add(v).y -= g }) // the heavy anchor never flies up on its own momentum: no overshoot above the fist
+  { // an anchor propped up with a slack chain is leaning on the body column or balanced on its crown, not held:
+    // slide its ring round the body and outward so it lies down (it stood up after Death, and leaned after rising)
+    const ring = r.pts.at(-2), crown = r.pts.at(-1), ox = ring.x - r.x, oz = ring.z - r.z, rr = Math.hypot(ox, oz) || 1e-6
+    const slack = fist.distanceTo(ring) < 0.95 * 8 * r.lens[0]
+    if (slack && crown.y < fl(crown.x, crown.z) + 0.2 * r.s && ring.y > fl(ring.x, ring.z) + 0.3 * r.s) {
+      const sg = (-oz * (ring.x - crown.x) + ox * (ring.z - crown.z)) < 0 ? -1 : 1, st = 0.02 * r.s / rr
+      ring.x += (-oz * sg + ox * 0.5) * st; ring.z += (ox * sg + oz * 0.5) * st
+    }
+  }
+  for (let n = 0; n < 12; n++) {
+    r.pts.forEach((p, k) => {
+      const a = k ? r.pts[k - 1] : fist, d = p.distanceTo(a) || 1e-6, e = (d - r.lens[k]) / d
+      // the anchor (ring and crown) is 12x a link's weight, so the fist drags it instead of whipping it into the air
+      const wa = k > 7 ? 0.08 : 1, wp = k > 6 ? 0.08 : 1
+      if (k) { dir.subVectors(p, a).multiplyScalar(e / (wa + wp)); a.addScaledVector(dir, wa); p.addScaledVector(dir, -wp) } else p.lerp(a, e)
+    })
+    for (const p of r.pts) { // on the plinth: above its top, inside its rim, outside the body (a 0.4 m-rig column)
+      // the rim and the body column must leave a chord longer than the shank (2.04 m on the warden), or the anchor is forced upright
+      const ox = p.x - r.x, oz = p.z - r.z, rr = Math.hypot(ox, oz) || 1e-6, lim = r.rad - 0.08, body = 0.4 * r.s, top = fl(p.x, p.z)
+      if (p.y > top + 0.3 * r.s) continue // only what lies on the stone is fenced in: a raised fist carries the chain out past the rim
+      if (rr > lim) p.x = r.x + ox * lim / rr, p.z = r.z + oz * lim / rr
+      else if (rr < body && p.y < top + 1.6 * r.s) p.x = r.x + ox * body / rr, p.z = r.z + oz * body / rr
+      if (rr <= r.rad) p.y = Math.max(p.y, top + (p === r.pts.at(-1) ? 0.14 * r.s : p === r.pts.at(-2) ? 0.1 * r.s : 0.04)) // crown, ring, links
+    }
+  }
+  r.pts.forEach((p, k) => { if (p.y < fl(p.x, p.z) + 0.15 * r.s && (k < 8 || r.pts[7].y < fl(r.pts[7].x, r.pts[7].z) + 0.3 * r.s)) r.old[k].x += (p.x - r.old[k].x) * 0.6, r.old[k].z += (p.z - r.old[k].z) * 0.6 }) // friction on the stone
+  for (let k = r.bones.length - 1; k >= 0; k--) { // anchor (chain_1, the root) first, up to the fist; +Y to the next link up
+    const b = r.bones[k], toward = k ? r.pts[k - 1] : fist
+    b.parent.updateMatrixWorld(true)
+    b.position.copy(b.parent.worldToLocal(r.pts[k].clone()))
+    if (k === r.bones.length - 1) dir.subVectors(r.pts[k], r.pts[k + 1]).normalize() // the ring: its shank runs to the crown (−Y)
+    else dir.subVectors(toward, r.pts[k]).normalize()
+    q.setFromUnitVectors(up, dir); b.parent.getWorldQuaternion(pq)
+    if (k === r.bones.length - 1) { // the stock (crossbar, local x) always lies level: x = shank × up; near-vertical shank keeps last frame's stock so it cannot flip
+      const prev = r.stock || (r.stock = new THREE.Vector3(1, 0, 0)), sx = dir.clone().cross(up)
+      if (sx.lengthSq() < 0.0975) sx.copy(prev).addScaledVector(dir, -dir.dot(prev))
+      sx.normalize(); if (sx.dot(prev) < 0) sx.negate()
+      r.stock.copy(sx); sx.copy(r.stock).multiplyScalar(Math.cos(0.95)).addScaledVector(dir.clone().cross(r.stock), Math.sin(0.95)) // lowest lying pose: the flukes' span is the longer one, so level-stock would stand them 1.1 m up; 0.95 rad off level (stock 0.8 m half-span, flukes 1.1 m) leaves every tip under ~0.7 m
+      q.setFromRotationMatrix(new THREE.Matrix4().makeBasis(sx, dir, sx.clone().cross(dir)))
+    }
+    b.quaternion.copy(pq.invert().multiply(q)); b.updateMatrixWorld(true)
+  }
+}
 
 export async function createBestiary(ctx) {
   const { THREE, scene, camera, params } = ctx
@@ -83,13 +161,7 @@ export async function createBestiary(ctx) {
       })
       root.add(model); root.scale.setScalar(s); root.position.set(x, top, z); scene.add(root)
       if (o.swarm) { // ribmites: rigid beetles whose legs walk in a tripod gait in the shader (attributes _leg, _legt)
-        model.traverse(m => {
-          if (!m.isMesh) return
-          const old = m.material, leg = attribute('_leg', 'float'), lt = attribute('_legt', 'float')
-          m.material = new THREE.MeshStandardNodeMaterial({ map: old.map, normalMap: old.normalMap, roughnessMap: old.roughnessMap, roughness: old.roughness, metalness: old.metalness, color: old.color })
-          const ph = time.mul(14).add(mod(leg.add(floor(leg.sub(1).div(2))), 2).mul(Math.PI)).add(modelPosition.x.mul(7)).add(modelPosition.z.mul(5))
-          m.material.positionNode = positionLocal.add(vec3(0, max(sin(ph), 0).mul(0.028), cos(ph).mul(0.035)).mul(lt).mul(step(0.5, leg))) // a scuttle, legs ~3 cm
-        })
+        scuttle(model)
         for (let k = 1; k < o.swarm; k++) {
           const c = model.clone(), r = rad * 0.85 * Math.sqrt(k / o.swarm), t = k * 2.4 // sunflower spacing: none overlap
           c.position.set(Math.cos(t) * r, 0, Math.sin(t) * r); c.rotation.y = t * 1.7; root.add(c)
@@ -124,13 +196,7 @@ export async function createBestiary(ctx) {
         p.traverse(m => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false } })
         if (o.prop[2] === 'rope') { // the anchor stays in the model (the turntable carries it); its chain bones follow the rope
           model.add(p)
-          const bones = [8, 7, 6, 5, 4, 3, 2, 1].map(k => p.getObjectByName('chain_' + k)), h = bone.getWorldPosition(new THREE.Vector3())
-          // points: the 8 links from the fist down, then the anchor's crown (its shank is 1.08 m below the ring in the model)
-          const lens = [...bones.map(() => 0.14 * s), 1.08 * s]
-          rope = { bone, bones, lens, pts: lens.map((_, k) => h.clone().setY(h.y - lens.slice(0, k + 1).reduce((a, b) => a + b, 0))), old: null, top, x, z, rad, root, s }
-          // start with the anchor lying outward from the fist: hung straight down it balances on its crown under a still fist
-          rope.pts.at(-1).copy(rope.pts.at(-2)).addScaledVector(new THREE.Vector3(h.x - x, 0, h.z - z).normalize(), lens.at(-1))
-          rope.old = rope.pts.map(q => q.clone())
+          rope = makeRope({ p, bone, s, top, x, z, rad, root })
         } else {
           const pivot = new THREE.Group(); model.add(pivot); pivot.add(p); model.updateMatrixWorld(true)
           p.position.sub(model.worldToLocal(p.getObjectByName('grip').getWorldPosition(new THREE.Vector3()))) // grip at the pivot
@@ -155,57 +221,6 @@ export async function createBestiary(ctx) {
     let k = (t + it.phase) % it.total
     for (const n of it.seq) { const l = it.len(n); if (k < l) return n; k -= l }
     return it.seq[0]
-  }
-  // A hanging chain: Verlet points from the fist down to the anchor's ring, held to their link length, kept on and above
-  // the plinth (the anchor lies and drags on it); then each chain bone is set from its point toward the next one up.
-  const fist = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), q = new THREE.Quaternion(), pq = new THREE.Quaternion()
-  const chain = (r, dt) => {
-    r.root.updateMatrixWorld(true); r.bone.getWorldPosition(fist)
-    const g = 9.8 * Math.min(dt, 1 / 30) ** 2
-    // damping: the anchor (k > 6) settles instead of swinging like a pendulum
-    r.pts.forEach((p, k) => { const v = p.clone().sub(r.old[k]).multiplyScalar(k > 6 ? 0.9 : 0.96); r.old[k].copy(p); if (k > 6) v.y = Math.min(v.y, 0); p.add(v).y -= g }) // the heavy anchor never flies up on its own momentum: no overshoot above the fist
-    { // an anchor propped up with a slack chain is leaning on the body column or balanced on its crown, not held:
-      // slide its ring round the body and outward so it lies down (it stood up after Death, and leaned after rising)
-      const ring = r.pts.at(-2), crown = r.pts.at(-1), ox = ring.x - r.x, oz = ring.z - r.z, rr = Math.hypot(ox, oz) || 1e-6
-      const slack = fist.distanceTo(ring) < 0.95 * 8 * r.lens[0]
-      if (slack && crown.y < r.top + 0.2 * r.s && ring.y > r.top + 0.3 * r.s) {
-        const sg = (-oz * (ring.x - crown.x) + ox * (ring.z - crown.z)) < 0 ? -1 : 1, st = 0.02 * r.s / rr
-        ring.x += (-oz * sg + ox * 0.5) * st; ring.z += (ox * sg + oz * 0.5) * st
-      }
-    }
-    for (let n = 0; n < 12; n++) {
-      r.pts.forEach((p, k) => {
-        const a = k ? r.pts[k - 1] : fist, d = p.distanceTo(a) || 1e-6, e = (d - r.lens[k]) / d
-        // the anchor (ring and crown) is 12x a link's weight, so the fist drags it instead of whipping it into the air
-        const wa = k > 7 ? 0.08 : 1, wp = k > 6 ? 0.08 : 1
-        if (k) { dir.subVectors(p, a).multiplyScalar(e / (wa + wp)); a.addScaledVector(dir, wa); p.addScaledVector(dir, -wp) } else p.lerp(a, e)
-      })
-      for (const p of r.pts) { // on the plinth: above its top, inside its rim, outside the body (a 0.4 m-rig column)
-        // the rim and the body column must leave a chord longer than the shank (2.04 m on the warden), or the anchor is forced upright
-        const ox = p.x - r.x, oz = p.z - r.z, rr = Math.hypot(ox, oz) || 1e-6, lim = r.rad - 0.08, body = 0.4 * r.s
-        if (p.y > r.top + 0.3 * r.s) continue // only what lies on the stone is fenced in: a raised fist carries the chain out past the rim
-        if (rr > lim) p.x = r.x + ox * lim / rr, p.z = r.z + oz * lim / rr
-        else if (rr < body && p.y < r.top + 1.6 * r.s) p.x = r.x + ox * body / rr, p.z = r.z + oz * body / rr
-        if (rr <= r.rad) p.y = Math.max(p.y, r.top + (p === r.pts.at(-1) ? 0.14 * r.s : p === r.pts.at(-2) ? 0.1 * r.s : 0.04)) // crown, ring, links
-      }
-    }
-    r.pts.forEach((p, k) => { if (p.y < r.top + 0.15 * r.s && (k < 8 || r.pts[7].y < r.top + 0.3 * r.s)) r.old[k].x += (p.x - r.old[k].x) * 0.6, r.old[k].z += (p.z - r.old[k].z) * 0.6 }) // friction on the stone
-    for (let k = r.bones.length - 1; k >= 0; k--) { // anchor (chain_1, the root) first, up to the fist; +Y to the next link up
-      const b = r.bones[k], toward = k ? r.pts[k - 1] : fist
-      b.parent.updateMatrixWorld(true)
-      b.position.copy(b.parent.worldToLocal(r.pts[k].clone()))
-      if (k === r.bones.length - 1) dir.subVectors(r.pts[k], r.pts[k + 1]).normalize() // the ring: its shank runs to the crown (−Y)
-      else dir.subVectors(toward, r.pts[k]).normalize()
-      q.setFromUnitVectors(up, dir); b.parent.getWorldQuaternion(pq)
-      if (k === r.bones.length - 1) { // the stock (crossbar, local x) always lies level: x = shank × up; near-vertical shank keeps last frame's stock so it cannot flip
-        const prev = r.stock || (r.stock = new THREE.Vector3(1, 0, 0)), sx = dir.clone().cross(up)
-        if (sx.lengthSq() < 0.0975) sx.copy(prev).addScaledVector(dir, -dir.dot(prev))
-        sx.normalize(); if (sx.dot(prev) < 0) sx.negate()
-        r.stock.copy(sx); sx.copy(r.stock).multiplyScalar(Math.cos(0.95)).addScaledVector(dir.clone().cross(r.stock), Math.sin(0.95)) // lowest lying pose: the flukes' span is the longer one, so level-stock would stand them 1.1 m up; 0.95 rad off level (stock 0.8 m half-span, flukes 1.1 m) leaves every tip under ~0.7 m
-        q.setFromRotationMatrix(new THREE.Matrix4().makeBasis(sx, dir, sx.clone().cross(dir)))
-      }
-      b.quaternion.copy(pq.invert().multiply(q)); b.updateMatrixWorld(true)
-    }
   }
   const target = items.find(it => it.id === focus)
   const tp = new THREE.Vector3(), cp = new THREE.Vector3(), sp = new THREE.Vector3()

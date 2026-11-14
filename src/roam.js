@@ -5,7 +5,7 @@
 // as ?at=<x>,<z> (probe roam: view.at). Gallery table, props and the ribmites' scuttle follow src/bestiary.js.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { createSprings } from './springs.js'
-import { attribute, positionLocal, modelPosition, time, vec3, sin, cos, max, mod, floor, step } from 'three/tsl'
+import { scuttle, makeRope, chain } from './bestiary.js'
 
 const RIG = 1.8, STRIDE = 1.6 // models are rigged at 1.80 m; the Walk clips are cut for a 1.6 m/s stride on that rig (tools/hero/motion.py)
 const LOAD = 200, SHOW = 300, LIVE = 150 // metres from the hero: start loading, hide beyond, animate within
@@ -24,7 +24,7 @@ const ROAM = [
   ['marrowkeeper', 'The Marrowkeeper', 'open ground west (Redwaste)', -180, 40, 3.5],
   ['lantern-cap', 'Lantern-cap', 'vine-tree grove south of the start (Lanternwood)', 22, 272, 1.6, { clear: 5.5 }],
   ['rootbinder', 'The Rootbinder', 'vine-tree grove south-west (Lanternwood)', -272, 166, 4.0],
-  ['tolling-warden', 'The Tolling Warden', 'north of Springwell, over the stream (Bellholm)', -20, 415, 3.4, { prop: ['anchor', 'rightHand'] }],
+  ['tolling-warden', 'The Tolling Warden', 'north of Springwell, over the stream (Bellholm)', -20, 415, 3.4, { prop: ['anchor', 'rightHand', 'rope'] }],
 ]
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a))
 const rnd = (a, b) => a + Math.random() * (b - a)
@@ -81,13 +81,7 @@ export async function createRoam(ctx) {
     root.position.set(it.hx, gy, it.hz); scene.add(root)
     if (!o.water) ctx.keepClear.push({ x: it.hx, z: it.hz, r: it.o.clear || it.body + 1.5, bare: it.o.clear || it.body + 1.5, roam: true }) // field strips the grass at its home (16 such circles at most)
     if (o.swarm) { // ribmites: rigid beetles whose legs walk in a tripod gait in the shader (attributes _leg, _legt)
-      model.traverse(m => {
-        if (!m.isMesh) return
-        const old = m.material, leg = attribute('_leg', 'float'), lt = attribute('_legt', 'float')
-        m.material = new THREE.MeshStandardNodeMaterial({ map: old.map, normalMap: old.normalMap, roughnessMap: old.roughnessMap, roughness: old.roughness, metalness: old.metalness, color: old.color })
-        const ph = time.mul(14).add(mod(leg.add(floor(leg.sub(1).div(2))), 2).mul(Math.PI)).add(modelPosition.x.mul(7)).add(modelPosition.z.mul(5))
-        m.material.positionNode = positionLocal.add(vec3(0, max(sin(ph), 0).mul(0.028), cos(ph).mul(0.035)).mul(lt).mul(step(0.5, leg)))
-      })
+      scuttle(model)
       for (let k = 1; k < o.swarm; k++) {
         const c = model.clone(), r = it.body * 0.85 * Math.sqrt(k / o.swarm), a = k * 2.4
         c.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); c.rotation.y = a * 1.7; root.add(c)
@@ -98,18 +92,23 @@ export async function createRoam(ctx) {
     it.actions = actions; it.mixer = mixer; it.root = root; it.model = model; it.cur = null
     it.idleN = o.idle || 'Idle'; it.walkN = o.walk || 'Walk'
     play(it, it.idleN); mixer.update(0.4) // let the fade-in finish, else this measures the rest pose
+    const [lo, hi] = extent(root)
+    it.footY = lo - gy; it.h = hi - lo // the body's idle pose's lowest vertex above/below the ground: undone every frame so the feet stand on it
     if (o.prop) { // held in the hand, its grip at the bone; slid up through the hand if it would reach under the ground (a spear's butt)
       const p = (await loader.loadAsync(url(`models/props/${o.prop[0]}.glb`))).scene, bone = model.getObjectByName(o.prop[1])
       p.traverse(m => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false } })
-      const pivot = new THREE.Group(); model.add(pivot); pivot.add(p); model.updateMatrixWorld(true)
-      p.position.sub(model.worldToLocal(p.getObjectByName('grip').getWorldPosition(new THREE.Vector3())))
-      pivot.position.copy(model.worldToLocal(bone.getWorldPosition(new THREE.Vector3()))); model.updateMatrixWorld(true)
-      const below = gy - extent(p)[0]
-      if (below > 0) p.position.y += below / s
-      pivot.updateMatrixWorld(true); bone.attach(pivot)
+      if (o.prop[2] === 'rope') { // the anchor hangs on its chain from the fist (bestiary.js's rope), lying on the open ground: no plinth rim
+        model.add(p); it.rope = makeRope({ p, bone, s, top: gy, x: it.hx, z: it.hz, rad: 1e3, root }); it.rope.floor = ground
+      } else {
+        const pivot = new THREE.Group(); model.add(pivot); pivot.add(p); model.updateMatrixWorld(true)
+        p.position.sub(model.worldToLocal(p.getObjectByName('grip').getWorldPosition(new THREE.Vector3())))
+        pivot.position.copy(model.worldToLocal(bone.getWorldPosition(new THREE.Vector3()))); model.updateMatrixWorld(true)
+        const below = gy - extent(p)[0]
+        if (below > 0) p.position.y += below / s
+        pivot.updateMatrixWorld(true); bone.attach(pivot)
+  
+      }
     }
-    const [lo, hi] = extent(root)
-    it.footY = lo - gy; it.h = hi - lo // the idle pose's lowest vertex above/below the ground: undone every frame so the feet stand on it
     it.springs = it.id === 'rootbinder' ? await createSprings(ctx, { model, prefix: 'spring_crown', kind: 'root', probe: 'crown' }) : null
     // what this creature must keep off: the no-go circles (water, ring, town, stones) and solid plants near its home
     const near = c => !c.roam && Math.hypot(c.x - it.hx, c.z - it.hz) < c.r + it.R + it.size + 4
@@ -206,6 +205,7 @@ export async function createRoam(ctx) {
         it.root.position.set(it.x, (it.o.water ? ctx.pond.level - 0.6 : ground(it.x, it.z)) - it.footY, it.z) // Old Glim floats: her belly 0.6 m under the surface
         it.root.rotation.y = it.yaw
         it.springs?.update(dt, t)
+        if (it.rope) { it.rope.top = ground(it.x, it.z); it.rope.x = it.x; it.rope.z = it.z; chain(it.rope, dt) }
         for (const m of it.lamps) m.emissiveIntensity = 0.3 + 2.7 * ctx.night
         push(it)
       }
