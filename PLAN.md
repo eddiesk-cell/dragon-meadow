@@ -1055,3 +1055,5 @@ roots: they hold their rest shape, trail the head's motion a little, and settle;
   the rest of the gallery and the Warden's anchor unchanged; a built copy runs.
 
 **Wave G — egg-dome PASSED r3** (cbe182a; `shots/review-waveG-egg.md`). Open lows: day veins read olive-grey close up and ~19% darker than the body; night veins brighter than the faint aurora band in the close view; body olive-khaki close up from the light.
+
+**Wave G — crown-springs PASSED r1** (5a00946, 451e302; `shots/review-waveG-crown.md`): hero cloth unchanged by code and by run; the Rootbinder crown holds its rest shape, trails and settles. Open lows: Walk swing sits low (1–5 degrees; `hard` 14 → ~8 would show more); crown chains still look up wind each frame; the probe is null before the first frame; Death (Collapse) floats with legs tucked mid-fall (from the re-rig). Only dragon-breath is left in this wave.
