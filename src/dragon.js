@@ -248,7 +248,7 @@ export async function createDragon(ctx) {
   const mk = (size, phase) => { const s = ctx.vfx.smoke(new THREE.Vector3(), size); s.visible = false; s.userData.smoke = { alpha: 0, phase, rot: 0 }; s.userData.size = size; return s }
   const demo = bmode?.startsWith('demo'), curls = bmode?.endsWith('off') || !ctx.vfx ? [] : [mk(2, 0), mk(2, 23), mk(1.3, 37), mk(1.3, 51)], plumes = curls.length ? [mk(2.4, 41), mk(1.8, 9)] : [] // per nostril a curl and a smaller wisp out of phase
   const bp = new THREE.Vector3(), bq = new THREE.Vector3(), side = new THREE.Vector3(), bh = new THREE.Vector3(), bf = new THREE.Vector3(), bd = new THREE.Vector3(), up2 = new THREE.Vector3(), cr = new THREE.Vector3(), cu = new THREE.Vector3()
-  let bw = 0, plume = 0, bState = state, roars = 0, roarEnd = 0, warm = 3 // warm: drawn unseen for 3 frames so the first roar doesn't build them mid-game
+  let bw = 0, plume = 0, headOn = 0, bState = state, roars = 0, roarEnd = 0, warm = 3 // warm: drawn unseen for 3 frames so the first roar doesn't build them mid-game
   const place = (s, foot, dir, size, k = 1) => { // foot at the source, the column leaning along dir as the camera sees it; k < 1 pulls its centre back onto the foot
     const cam = ctx.camera
     bq.copy(foot).project(cam); bp.copy(foot).add(dir).project(cam)
@@ -288,8 +288,8 @@ export async function createDragon(ctx) {
     // seen down the snout the heading has no direction on screen (the puff used to land a metre beside the head): lean up instead, and thin
     bh.set(bd.x, 0, bd.z).normalize()
     // its own factor, by ground heading, biting only near true head-on (the curls' `face` already thins at 45 degrees)
-    const on2 = plumes.on = Math.abs(bh.dot(bq.subVectors(ctx.camera.position, head.getWorldPosition(bp)).setY(0).normalize())) // 1 = snout at the lens
-    const fp = 1 - 0.9 * THREE.MathUtils.smoothstep(on2, 0.84, 0.91)
+    const on2 = headOn = Math.abs(bh.dot(bq.subVectors(ctx.camera.position, head.getWorldPosition(bp)).setY(0).normalize())) // 1 = snout at the lens
+    const fp = 1 - 0.9 * THREE.MathUtils.smoothstep(on2, 0.87, 0.95)
     up2.copy(bh).multiplyScalar(fp).addScaledVector(ctx.camera.up, 1.15 - fp)
     if (warm > 0) warm--
     plumes.forEach((s, i) => {
@@ -299,11 +299,11 @@ export async function createDragon(ctx) {
       s.userData.smoke.alpha = plume > 0.3 ? (i ? 0.55 * clamp((age - 0.2) * 5, 0, 1) : 0.8 * Math.min(1, age * 6)) * out * (0.1 + 0.9 * fp) : 0
     })
   }
-  window.__probes.breath = () => ({ mode: bmode, w: +bw.toFixed(2), plume: +plume.toFixed(2), t: +t.toFixed(1), clip, state, curls: curls.filter(s => s.visible).length, plumes: plumes.filter(s => s.visible).length, headOn: +(plumes.on ?? 0).toFixed(2) })
+  window.__probes.breath = () => ({ mode: bmode, w: +bw.toFixed(2), plume: +plume.toFixed(2), t: +t.toFixed(1), clip, state, curls: curls.filter(s => s.visible).length, plumes: plumes.filter(s => s.visible).length, headOn: +headOn.toFixed(2) })
   if (demo) { // landed 24 m ahead of the hero's view, side-on, head to the left (front: also turned toward the camera)
     const f = ctx.camera.getWorldDirection(cv).setY(0).normalize(), s = site(ctx.heroPos.x + f.x * 24 - f.z * 3, ctx.heroPos.z + f.z * 24 + f.x * 3)
     const v = params.get('breathview'), k = v === 'front' ? 1 : 0
-    P.set(s.x, ctx.heightAt(s.x, s.z), s.z); psi = v === 'head-on' ? Math.atan2(-f.x, -f.z) : Math.atan2(f.z - k * f.x, -f.x - k * f.z); go('landed'); setClip('idle')
+    P.set(s.x, ctx.heightAt(s.x, s.z), s.z); psi = v === 'head-on' ? Math.atan2(ctx.camera.position.x - s.x, ctx.camera.position.z - s.z) : Math.atan2(f.z - k * f.x, -f.x - k * f.z); go('landed'); setClip('idle')
   }
   update(0.016)
 
