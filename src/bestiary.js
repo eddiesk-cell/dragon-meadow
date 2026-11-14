@@ -17,7 +17,7 @@ const ROSTER = [
   ['stiltstalker', 'Stiltstalker', 'Mirrormere', 2.8, { prop: ['reed-spear', 'rightHand', 'slide'] }],
   ['old-glim', 'Old Glim', 'Mirrormere', 16, { real: true, idle: 'Swim', lie: true }],
   ['tolling-warden', 'The Tolling Warden', 'Bellholm', 3.4, { prop: ['anchor', 'rightHand', 'rope'] }],
-  ['scarhorn', 'Scarhorn', 'The Greyspine', 2.6],
+  ['scarhorn', 'Scarhorn', 'The Greyspine', 2.6, { rad: 1.6 }], // its charge strides wider than the default plinth
   ['gapshrike', 'The Gapshrike', 'The Greyspine', 2.4],
   ['ribmite', 'Ribmites', 'The Redwaste', 0.3, { real: true, swarm: 14 }],
   ['marrowkeeper', 'The Marrowkeeper', 'The Redwaste', 3.5],
@@ -61,7 +61,7 @@ export async function createBestiary(ctx) {
       const j = arc.indexOf(ROSTER[i]), a = -SPAN + (2 * SPAN * j) / (arc.length - 1)
       const x = o.lie ? A.x : A.x + R * Math.sin(a), z = o.lie ? A.z - R - 12 : A.z - R * Math.cos(a)
       const top = ctx.heightAt(x, z) + (o.lie ? 0 : PLINTH)
-      const rad = o.lie ? size / 2 : Math.max(1.1, size * 0.45)
+      const rad = o.lie ? size / 2 : o.rad || Math.max(1.1, size * 0.45)
       if (!o.lie) {
         const plinth = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.12, PLINTH + 0.6, 24), stone)
         plinth.position.set(x, top - (PLINTH + 0.6) / 2, z)
@@ -123,6 +123,8 @@ export async function createBestiary(ctx) {
           // points: the 8 links from the fist down, then the anchor's crown (its shank is 1.08 m below the ring in the model)
           const lens = [...bones.map(() => 0.14 * s), 1.08 * s]
           rope = { bone, bones, lens, pts: lens.map((_, k) => h.clone().setY(h.y - lens.slice(0, k + 1).reduce((a, b) => a + b, 0))), old: null, top, x, z, rad, root, s }
+          // start with the anchor lying outward from the fist: hung straight down it balances on its crown under a still fist
+          rope.pts.at(-1).copy(rope.pts.at(-2)).addScaledVector(new THREE.Vector3(h.x - x, 0, h.z - z).normalize(), lens.at(-1))
           rope.old = rope.pts.map(q => q.clone())
         } else {
           const pivot = new THREE.Group(); model.add(pivot); pivot.add(p); model.updateMatrixWorld(true)
@@ -142,6 +144,7 @@ export async function createBestiary(ctx) {
   }
 
   const cur = (it, t) => {
+    if (it.id === focus && params.get('clip')) return params.get('clip') // ?focus=id&clip=Name holds one clip, for review shots
     let k = (t + it.phase) % it.total
     for (const n of it.seq) { const l = it.len(n); if (k < l) return n; k -= l }
     return it.seq[0]
@@ -152,19 +155,25 @@ export async function createBestiary(ctx) {
   const chain = (r, dt) => {
     r.root.updateMatrixWorld(true); r.bone.getWorldPosition(fist)
     const g = 9.8 * Math.min(dt, 1 / 30) ** 2
-    r.pts.forEach((p, k) => { const v = p.clone().sub(r.old[k]).multiplyScalar(0.96); r.old[k].copy(p); p.add(v).y -= g })
+    // damping: the anchor (k > 6) settles instead of swinging like a pendulum
+    r.pts.forEach((p, k) => { const v = p.clone().sub(r.old[k]).multiplyScalar(k > 6 ? 0.9 : 0.96); r.old[k].copy(p); p.add(v).y -= g })
     for (let n = 0; n < 12; n++) {
       r.pts.forEach((p, k) => {
         const a = k ? r.pts[k - 1] : fist, d = p.distanceTo(a) || 1e-6, e = (d - r.lens[k]) / d
-        if (k) { dir.subVectors(p, a).multiplyScalar(e / 2); a.add(dir); p.sub(dir) } else p.lerp(a, e)
+        // the anchor (ring and crown) is 12x a link's weight, so the fist drags it instead of whipping it into the air
+        const wa = k > 7 ? 0.08 : 1, wp = k > 6 ? 0.08 : 1
+        if (k) { dir.subVectors(p, a).multiplyScalar(e / (wa + wp)); a.addScaledVector(dir, wa); p.addScaledVector(dir, -wp) } else p.lerp(a, e)
       })
-      for (const p of r.pts) { // on the plinth: above its top, inside its rim, outside the body (a 0.45 m-rig column)
-        const ox = p.x - r.x, oz = p.z - r.z, rr = Math.hypot(ox, oz) || 1e-6, lim = r.rad - 0.25, body = 0.45 * r.s
+      for (const p of r.pts) { // on the plinth: above its top, inside its rim, outside the body (a 0.4 m-rig column)
+        // the rim and the body column must leave a chord longer than the shank (2.04 m on the warden), or the anchor is forced upright
+        const ox = p.x - r.x, oz = p.z - r.z, rr = Math.hypot(ox, oz) || 1e-6, lim = r.rad - 0.08, body = 0.4 * r.s
+        if (p.y > r.top + 0.3 * r.s) continue // only what lies on the stone is fenced in: a raised fist carries the chain out past the rim
         if (rr > lim) p.x = r.x + ox * lim / rr, p.z = r.z + oz * lim / rr
         else if (rr < body && p.y < r.top + 1.6 * r.s) p.x = r.x + ox * body / rr, p.z = r.z + oz * body / rr
-        p.y = Math.max(p.y, r.top + (p === r.pts.at(-1) ? 0.14 * r.s : p === r.pts.at(-2) ? 0.1 * r.s : 0.04)) // crown, ring, links
+        if (rr <= r.rad) p.y = Math.max(p.y, r.top + (p === r.pts.at(-1) ? 0.14 * r.s : p === r.pts.at(-2) ? 0.1 * r.s : 0.04)) // crown, ring, links
       }
     }
+    r.pts.forEach((p, k) => { if (p.y < r.top + 0.15 * r.s) r.old[k].x += (p.x - r.old[k].x) * 0.6, r.old[k].z += (p.z - r.old[k].z) * 0.6 }) // friction on the stone
     for (let k = r.bones.length - 1; k >= 0; k--) { // anchor (chain_1, the root) first, up to the fist; +Y to the next link up
       const b = r.bones[k], toward = k ? r.pts[k - 1] : fist
       b.parent.updateMatrixWorld(true)
