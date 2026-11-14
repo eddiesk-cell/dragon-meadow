@@ -249,10 +249,10 @@ export async function createDragon(ctx) {
   const demo = bmode?.startsWith('demo'), curls = bmode?.endsWith('off') || !ctx.vfx ? [] : [mk(2, 0), mk(2, 23), mk(1.3, 37), mk(1.3, 51)], plumes = curls.length ? [mk(2.4, 41), mk(1.8, 9)] : [] // per nostril a curl and a smaller wisp out of phase
   const bp = new THREE.Vector3(), bq = new THREE.Vector3(), side = new THREE.Vector3(), bh = new THREE.Vector3(), bf = new THREE.Vector3(), bd = new THREE.Vector3(), up2 = new THREE.Vector3(), cr = new THREE.Vector3(), cu = new THREE.Vector3()
   let bw = 0, plume = 0, bState = state, roars = 0, roarEnd = 0, warm = 3 // warm: drawn unseen for 3 frames so the first roar doesn't build them mid-game
-  const place = (s, foot, dir, size) => { // foot at the source, the column leaning along dir as the camera sees it
+  const place = (s, foot, dir, size, k = 1) => { // foot at the source, the column leaning along dir as the camera sees it; k < 1 pulls its centre back onto the foot
     const cam = ctx.camera
     bq.copy(foot).project(cam); bp.copy(foot).add(dir).project(cam)
-    const th = Math.atan2(-(bp.x - bq.x) * cam.aspect, bp.y - bq.y), h = size / 2
+    const th = Math.atan2(-(bp.x - bq.x) * cam.aspect, bp.y - bq.y), h = size / 2 * k
     cr.setFromMatrixColumn(cam.matrixWorld, 0); cu.setFromMatrixColumn(cam.matrixWorld, 1)
     s.position.copy(foot).addScaledVector(cr, -h * Math.sin(th)).addScaledVector(cu, h * Math.cos(th))
     s.scale.setScalar(size); s.userData.smoke.rot = th
@@ -285,13 +285,14 @@ export async function createDragon(ctx) {
     // the roar: two puffs rolling out level from the jaws (the roar throws the head up, the smoke goes forward), the second
     // further on, both swelling as they thin, gone by plume 0.3
     const age = 2 - plume, out = clamp((plume - 0.3) / 0.8, 0, 1)
-    bh.set(bd.x, 0, bd.z).normalize(); up2.copy(bh).addScaledVector(ctx.camera.up, 0.15)
+    // seen down the snout the heading has no direction on screen (the puff used to land a metre beside the head): lean up instead, and thin
+    bh.set(bd.x, 0, bd.z).normalize(); up2.copy(bh).multiplyScalar(face).addScaledVector(ctx.camera.up, 1.15 - face)
     if (warm > 0) warm--
     plumes.forEach((s, i) => {
       if (!(s.visible = plume > 0.3 || warm > 0)) return
       head.localToWorld(bf.copy(JAWS)).addScaledVector(bh, i ? 1.5 + 0.9 * age : 0.2 + 0.5 * age).addScaledVector(ctx.camera.up, 0.15 * age)
-      place(s, bf, up2, s.userData.size * (1 + (i ? 0.35 : 0.25) * age))
-      s.userData.smoke.alpha = plume > 0.3 ? (i ? 0.55 * clamp((age - 0.2) * 5, 0, 1) : 0.8 * Math.min(1, age * 6)) * out : 0
+      place(s, bf, up2, s.userData.size * (1 + (i ? 0.35 : 0.25) * age), face) // head-on it comes at the lens from the jaws, not up over the head
+      s.userData.smoke.alpha = plume > 0.3 ? (i ? 0.55 * clamp((age - 0.2) * 5, 0, 1) : 0.8 * Math.min(1, age * 6)) * out * (0.15 + 0.85 * face) : 0
     })
   }
   window.__probes.breath = () => ({ mode: bmode, w: +bw.toFixed(2), plume: +plume.toFixed(2), t: +t.toFixed(1), clip, state, curls: curls.filter(s => s.visible).length, plumes: plumes.filter(s => s.visible).length })
