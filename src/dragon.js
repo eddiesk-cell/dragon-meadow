@@ -286,13 +286,16 @@ export async function createDragon(ctx) {
     // further on, both swelling as they thin, gone by plume 0.3
     const age = 2 - plume, out = clamp((plume - 0.3) / 0.8, 0, 1)
     // seen down the snout the heading has no direction on screen (the puff used to land a metre beside the head): lean up instead, and thin
-    bh.set(bd.x, 0, bd.z).normalize(); up2.copy(bh).multiplyScalar(face).addScaledVector(ctx.camera.up, 1.15 - face)
+    bh.set(bd.x, 0, bd.z).normalize()
+    // its own factor, by ground heading, biting only near true head-on (the curls' `face` already thins at 45 degrees)
+    const fp = 1 - 0.85 * THREE.MathUtils.smoothstep(Math.abs(bh.dot(bq.subVectors(ctx.camera.position, head.getWorldPosition(bp)).setY(0).normalize())), 0.8, 0.97)
+    up2.copy(bh).multiplyScalar(fp).addScaledVector(ctx.camera.up, 1.15 - fp)
     if (warm > 0) warm--
     plumes.forEach((s, i) => {
       if (!(s.visible = plume > 0.3 || warm > 0)) return
       head.localToWorld(bf.copy(JAWS)).addScaledVector(bh, i ? 1.5 + 0.9 * age : 0.2 + 0.5 * age).addScaledVector(ctx.camera.up, 0.15 * age)
-      place(s, bf, up2, s.userData.size * (1 + (i ? 0.35 : 0.25) * age), face) // head-on it comes at the lens from the jaws, not up over the head
-      s.userData.smoke.alpha = plume > 0.3 ? (i ? 0.55 * clamp((age - 0.2) * 5, 0, 1) : 0.8 * Math.min(1, age * 6)) * out * (0.15 + 0.85 * face) : 0
+      place(s, bf, up2, s.userData.size * (1 + (i ? 0.35 : 0.25) * age), fp) // head-on it comes at the lens from the jaws, not up over the head
+      s.userData.smoke.alpha = plume > 0.3 ? (i ? 0.55 * clamp((age - 0.2) * 5, 0, 1) : 0.8 * Math.min(1, age * 6)) * out * (0.15 + 0.85 * fp) : 0
     })
   }
   window.__probes.breath = () => ({ mode: bmode, w: +bw.toFixed(2), plume: +plume.toFixed(2), t: +t.toFixed(1), clip, state, curls: curls.filter(s => s.visible).length, plumes: plumes.filter(s => s.visible).length })
