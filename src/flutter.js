@@ -1,9 +1,10 @@
 // Wave F lane flutter: butterflies by day (flapping two-wing quads that wander, hover and rest), fireflies from dusk
 // (gold blinking points low over the grass, nearer trees and water). Two instanced batches, CPU-steered (60 agents).
 // ?flutter=off removes them; ?flutter=demo keeps a few butterflies 3 m in front of the camera (for close shots).
-import { Fn, attribute, uniform, uv, vec2, vec3, vec4, float, length, saturate, mix, smoothstep as tsmooth, cos, sin, abs, max } from 'three/tsl'
+import { Fn, attribute, uniform, uv, vec2, vec3, vec4, float, length, saturate, mix, cameraPosition, smoothstep as tsmooth, cos, sin, abs, max } from 'three/tsl'
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+const TIP = 0.6 // shortcut: grass-tip height by eye from the plates (~0.6 m), not read from field.js; upgrade if the grass height gets published
 const NB = 34, NF = 70, R = 30 // butterflies, fireflies, radius round the hero (m)
 // Flower colours of refs/world/mix-day.png: lilac, blush peach, pale gold, poppy orange, soft white.
 const PAL = [[0.74, 0.58, 0.95], [0.97, 0.66, 0.82], [0.99, 0.86, 0.45], [0.98, 0.5, 0.25], [1, 0.76, 0.6], [0.7, 0.62, 1]]
@@ -24,7 +25,7 @@ export async function createFlutter(ctx) {
   function spot(near) {
     for (let i = 0; i < 12; i++) {
       camera.getWorldDirection(fwd)
-      const a = Math.atan2(fwd.x, fwd.z) + (Math.random() < 0.85 ? rnd(-0.7, 0.7) : rnd(-3.1, 3.1)), d = near ?? 3 + (R - 3) * Math.pow(Math.random(), 2.2)
+      const a = Math.atan2(fwd.x, fwd.z) + (Math.random() < 0.4 ? rnd(-0.9, 0.9) : rnd(-3.1, 3.1)), d = near ?? 3 + (R - 3) * Math.pow(Math.random(), 2.2)
       const x = heroPos.x + Math.sin(a) * d, z = heroPos.z + Math.cos(a) * d
       if (!blocked(x, z)) return [x, z]
     }
@@ -61,11 +62,11 @@ export async function createFlutter(ctx) {
   bmat.colorNode = Fn(() => {
     const c = attribute('aC', 'vec4'), q = uv()
     // Forewing and hindwing lobes; dark wing tips and rim with pale spots in them, a lighter glow near the body, a dark body strip.
-    const e1 = length(vec2(q.x.sub(0.55), q.y.sub(0.68).sub(q.x.mul(0.22))).mul(vec2(1.9, 2.5))), e2 = length(vec2(q.x.sub(0.42), q.y.sub(0.27)).mul(vec2(2.4, 3.5)))
+    const e1 = length(vec2(q.x.sub(0.5), q.y.sub(0.5).sub(q.x.sub(0.5).mul(0.3))).mul(vec2(2.2, 3.7))), e2 = length(vec2(q.x.sub(0.42), q.y.sub(0.3)).mul(vec2(2.5, 3.6)))
     const inside = max(float(1).sub(e1), float(1).sub(e2))
-    const rim = float(1).sub(tsmooth(0.12, 0.5, inside)).max(tsmooth(0.6, 0.9, q.x).mul(0.85)) // dark margin and tip
-    const spot = float(1).sub(tsmooth(0.0, 0.06, length(vec2(q.x.sub(0.84), q.y.sub(0.55)).mul(vec2(1, 1.6))).sub(0.05))).max(float(1).sub(tsmooth(0.0, 0.06, length(vec2(q.x.sub(0.74), q.y.sub(0.22)).mul(vec2(1, 1.6))).sub(0.045))))
-    const wing = mix(c.rgb.mul(c.rgb).mul(1.15), vec3(0.07, 0.05, 0.06), rim.mul(0.92)).add(spot.mul(vec3(0.7, 0.68, 0.62)))
+    const rim = float(1).sub(tsmooth(0.15, 0.6, inside)).max(tsmooth(0.6, 0.9, q.x).mul(0.85)) // dark margin and tip
+    const spot = float(1).sub(tsmooth(0.0, 0.06, length(vec2(q.x.sub(0.84), q.y.sub(0.55)).mul(vec2(1, 1.6))).sub(0.075))).max(float(1).sub(tsmooth(0.0, 0.06, length(vec2(q.x.sub(0.74), q.y.sub(0.24)).mul(vec2(1, 1.6))).sub(0.07))))
+    const wing = mix(c.rgb.mul(c.rgb).mul(1.15), vec3(0.07, 0.05, 0.06), rim.mul(0.97)).add(spot.mul(vec3(0.7, 0.68, 0.62)))
     const isBody = tsmooth(1.0, 1.5, q.x)
     return vec4(mix(wing, vec3(0.05, 0.04, 0.04), isBody), mix(tsmooth(0.0, 0.07, inside), float(1), isBody).mul(c.a))
   })()
@@ -75,7 +76,7 @@ export async function createFlutter(ctx) {
   })
 
   const B = Array.from({ length: NB }, (_, i) => ({
-    x: 0, y: 0, z: 0, vx: 0, vz: 0, yaw: 0, tx: 0, tz: 0, ty: 1, rest: 0, ph: rnd(0, 6.28), hz: rnd(7, 10), col: PAL[i % PAL.length], size: rnd(0.24, 0.32), alive: false, fade: 0,
+    x: 0, y: 0, z: 0, vx: 0, vz: 0, yaw: 0, tx: 0, tz: 0, ty: 1, rest: 0, ph: rnd(0, 6.28), hz: rnd(7, 10), col: PAL[i % PAL.length], size: rnd(0.09, 0.13), alive: false, fade: 0,
   }))
   function pick(b) {
     const demoC = demo ? camera.position : null
@@ -93,7 +94,7 @@ export async function createFlutter(ctx) {
     const a = rnd(0, 6.28), d = rnd(2, 7)
     s = [b.x + Math.sin(a) * d, b.z + Math.cos(a) * d]
     if (blocked(...s) || Math.hypot(s[0] - heroPos.x, s[1] - heroPos.z) > R || Math.random() < 0.25) s = spot() // now and then drift toward where the camera looks
-    b.tx = s[0]; b.tz = s[1]; b.ty = Math.random() < 0.4 ? 1.0 : rnd(0.8, 2.0) // 1.0: a grass tip
+    b.tx = s[0]; b.tz = s[1]; b.ty = Math.random() < 0.4 ? TIP : rnd(0.8, 2.0)
   }
   function spawnB(b) {
     const s = spot(demo ? 3 : undefined)
@@ -111,7 +112,8 @@ export async function createFlutter(ctx) {
   })()
   fmat.colorNode = Fn(() => {
     const c = attribute('aC', 'vec4'), s = saturate(float(1).sub(length(uv().sub(0.5).mul(2))))
-    return vec4(c.rgb.mul(s.mul(s).mul(0.5).add(s.mul(0.55))), s.mul(s).mul(c.a))
+    const near = tsmooth(3.5, 8.0, length(cameraPosition.sub(attribute('aP', 'vec4').xyz))) // fade at the lens, as motes do
+    return vec4(c.rgb.mul(s.mul(s).mul(0.5).add(s.mul(0.55))), s.mul(s).mul(c.a).mul(near))
   })()
   const FATT = quad(fmat, NF, {
     geo: { position: new THREE.Float32BufferAttribute(fgeo, 3), uv: new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2) },
@@ -131,6 +133,7 @@ export async function createFlutter(ctx) {
       }
       if (x === undefined || Math.hypot(x - heroPos.x, z - heroPos.z) > R) [x, z] = spot()
     } while (ctx.keepClear.some(c => Math.hypot(x - c.x, z - c.z) < c.r) && i++ < 6)
+    if (Math.hypot(x - heroPos.x, z - heroPos.z) < 2.5) { x += 4; z += 4 }
     f.x = x; f.z = z; f.y = Math.max(gy(x, z), ctx.pond?.level ?? -1e9) + rnd(0.3, 1.6)
     f.ang = rnd(0, 6.28); f.sp = rnd(0.25, 0.6); f.h = f.y - gy(x, z); f.ph = rnd(0, 6.28); f.w = rnd(1.3, 2.6); f.alive = true
   }
@@ -144,11 +147,13 @@ export async function createFlutter(ctx) {
     const n = night()
     camera.getWorldDirection(fwd)
     // ---- butterflies: all day, thinning through dusk ----
-    nb = demo ? 5 : Math.round(NB * (1 - ss(0.05, 0.55, n)))
+    nb = demo ? 5 : Math.round(NB * (1 - ss(0.1, 0.95, n)))
     const BP = BATT.arrs.aP.array, BA = BATT.arrs.aA.array, BC = BATT.arrs.aC.array
+    let top = 0
     for (let i = 0; i < NB; i++) {
       const b = B[i]
-      if (i >= nb) { b.alive = false; continue }
+      const leaving = i >= nb // thinned out at dusk: fade, then gone
+      if (leaving && (!b.alive || b.fade <= 0)) { b.alive = false; continue }
       if (!b.alive) spawnB(b)
       const gnd = gy(b.x, b.z)
       if (demo) { pick(b); b.rest = 0 }
@@ -162,25 +167,29 @@ export async function createFlutter(ctx) {
         const wob = Math.sin(t * 2.3 + b.ph) * 0.9 // side to side drift of a real flutter path
         b.vx += ((dx / (d + 0.01)) * sp + (dz / (d + 0.01)) * wob * 0.5 - b.vx) * Math.min(1, dt * 2.5)
         b.vz += ((dz / (d + 0.01)) * sp - (dx / (d + 0.01)) * wob * 0.5 - b.vz) * Math.min(1, dt * 2.5)
+        const ax = b.x - heroPos.x, az = b.z - heroPos.z, ad = Math.hypot(ax, az)
+        if (ad < 1.3 && b.y < heroPos.y + 2.3) { b.vx += ax / (ad + 0.01) * 4 * dt * (1.3 - ad); b.vz += az / (ad + 0.01) * 4 * dt * (1.3 - ad) } // steer round the hero (the pet publishes no position)
         b.x += b.vx * dt; b.z += b.vz * dt
         b.y += (dy * 1.6 + Math.sin(t * b.hz * 0.45 + b.ph) * 0.5) * dt // bobbing: each wing beat lifts it a little
-        if (d < 0.4 && !demo) { if (Math.random() < 0.5) b.rest = demo ? rnd(0.5, 1.2) : rnd(2, 5); else pick(b) }
+        if (d < 0.4 && !demo) { if (b.ty <= TIP + 0.05) b.rest = rnd(2, 5); else pick(b) } // only ever lands on a grass tip
         const hx = b.x - heroPos.x, hz = b.z - heroPos.z
         // out of range, or well behind the camera where nobody sees it: flutter back in ahead of it
         if (!demo && (Math.hypot(hx, hz) > R + 4 || (hx * fwd.x + hz * fwd.z < -6 && b.rest <= 0))) spawnB(b)
       }
       const moving = b.rest > 0 ? 0 : 1
       if (moving && (b.vx || b.vz)) { const y = Math.atan2(b.vx, b.vz); let dy2 = y - b.yaw; dy2 = Math.atan2(Math.sin(dy2), Math.cos(dy2)); b.yaw += dy2 * Math.min(1, dt * 6) }
-      b.fade = Math.min(1, b.fade + dt * 1.2) // fade in after respawn
-      const flap = moving ? 0.55 + 0.6 * Math.sin(t * b.hz + b.ph) : 1.0 + 0.2 * Math.sin(t * 1.3 + b.ph) // closed-up at rest
+      b.fade = leaving ? Math.max(0, b.fade - dt * 0.8) : Math.min(1, b.fade + dt * 1.2) // in after a respawn, out at dusk
+      if (!leaving) top = i + 1
+      const flap = moving ? 0.55 + 0.6 * Math.sin(t * b.hz + b.ph) : 1.5 - 0.45 * Math.pow(Math.max(0, Math.sin(t * 0.8 + b.ph)), 12) // folded shut above the body, now and then a slow half-open
       const k = i * 4
       BP[k] = b.x; BP[k + 1] = Math.max(b.y, gnd + 0.15); BP[k + 2] = b.z; BP[k + 3] = b.size
       BA[k] = b.yaw; BA[k + 1] = flap; BA[k + 2] = 0; BA[k + 3] = 0
       BC[k] = b.col[0]; BC[k + 1] = b.col[1]; BC[k + 2] = b.col[2]; BC[k + 3] = b.fade
     }
     BATT.arrs.aP.needsUpdate = BATT.arrs.aA.needsUpdate = BATT.arrs.aC.needsUpdate = true
-    if (!nb) BC[3] = 0 // an instance count of 0 reads as Infinity in the WebGPU draw call: keep one, invisible
-    BATT.geo.instanceCount = Math.max(1, nb)
+    for (let i = top; i < NB; i++) if (B[i].alive) top = i + 1
+    if (!top) BC[3] = 0 // an instance count of 0 reads as Infinity in the WebGPU draw call: keep one, invisible
+    BATT.geo.instanceCount = Math.max(1, top)
 
     // ---- fireflies: from dusk ----
     nf = demo ? 0 : Math.round(NF * ss(0.25, 0.75, n))
@@ -194,7 +203,8 @@ export async function createFlutter(ctx) {
       f.x += Math.sin(f.ang) * f.sp * dt; f.z += Math.cos(f.ang) * f.sp * dt
       const gnd = gy(f.x, f.z)
       f.y += ((Math.max(gnd, ctx.pond?.level ?? -1e9) + f.h + Math.sin(t * 0.6 + f.ph) * 0.25) - f.y) * Math.min(1, dt)
-      if (Math.hypot(f.x - heroPos.x, f.z - heroPos.z) > R + 4) spawnF(f)
+      const fd = Math.hypot(f.x - heroPos.x, f.z - heroPos.z)
+      if (fd > R + 4 || fd < 2.5) spawnF(f)
       const b = Math.pow(0.5 + 0.5 * Math.sin(t * f.w + f.ph), 6) // brief glow, long dark: a blink, unlike the steady motes
       tc.copy(gold).lerp(green, 0.15 * Math.sin(f.ph) + 0.15)
       const k = i * 4, gain = 1.8
