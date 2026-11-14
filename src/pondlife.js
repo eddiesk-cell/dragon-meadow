@@ -45,8 +45,8 @@ export async function createPondlife(ctx) {
     const ring = (rad, w) => smoothstep(w, 0, abs(r.sub(rad))) // a soft line at radius rad
     const k = ring(age.mul(0.92).add(0.04), 0.07).add(ring(age.mul(0.6), 0.05).mul(0.55)).mul(pow(float(1).sub(age), 1.4)).mul(a.y)
     // by day a pale sky-white line, at night a faint cool glow (HDR, so bloom lifts it a little)
-    const col = vec3(0.88, 0.95, 1).mul(float(1).sub(uNight)).add(vec3(0.35, 0.75, 1.0).mul(uNight.mul(2.2)))
-    return vec4(col, k.mul(float(0.5).add(uNight.mul(0.4))))
+    const col = vec3(0.88, 0.95, 1).mul(float(1).sub(uNight)).add(vec3(0.35, 0.75, 1.0).mul(uNight.mul(0.6)))
+    return vec4(col, k.mul(float(0.5).sub(uNight.mul(0.2))))
   })()
   const rings = new THREE.Mesh(rGeo, rMat)
   rings.frustumCulled = false; rings.renderOrder = 2
@@ -67,7 +67,8 @@ export async function createPondlife(ctx) {
   wingM.colorNode = vec3(0.92, 1.0, 1.0)
   const im = (g, m, n) => { const o = new THREE.InstancedMesh(g, m, n); o.frustumCulled = false; o.renderOrder = 3; scene.add(o); return o }
   const dBody = im(bodyG, bodyM, ND), dFore = im(wingG(0.085), wingM, ND * 2), dHind = im(wingG(0.1), wingM, ND * 2)
-  ;[0x3fb7e0, 0xe0603a, 0x7ad04a, 0x2f6fe0, 0xd8b030, 0x3fb7e0, 0xe0603a].forEach((c, i) => dBody.setColorAt(i, new THREE.Color(c)))
+  ;[0x3aa59a, 0xc9784a, 0xe0b84a, 0x9a8ad0, 0xf0a888, 0x3aa59a, 0xe0b84a].forEach((c, i) => dBody.setColorAt(i, new THREE.Color(c)))
+  const WINGS = [[dFore, -0.04, 0, 1], [dHind, 0.05, Math.PI, 1.05]]
   const fly = Array.from({ length: ND }, () => {
     const [x, z] = inWater(); return { x, z, y: LEVEL + 0.7, tx: x, tz: z, ty: LEVEL + 0.7, st: 0, t: rnd(0, 2), yaw: rnd(0, 6.28), ph: rnd(0, 6.28), dip: false }
   })
@@ -78,13 +79,18 @@ export async function createPondlife(ctx) {
   const jump = { on: false, t: 0, x: 0, z: 0, dx: 0, dz: 0 }
 
   // ---- frogs on the bank: sites on land a metre or so from the shore
+  const tint = (g, back, belly) => { // vertex colours: a dark back fading to a pale belly (by the vertex normal)
+    g = g.toNonIndexed(); const n = g.attributes.normal, c = new Float32Array(n.count * 3), a = new THREE.Color(back), b = new THREE.Color(belly), o = new THREE.Color()
+    for (let i = 0; i < n.count; i++) { o.copy(b).lerp(a, ss(-0.5, 0.3, n.getY(i))); c.set([o.r, o.g, o.b], i * 3) }
+    return g.setAttribute('color', new THREE.BufferAttribute(c, 3))
+  }
   const frogG = mergeGeometries([
-    new THREE.SphereGeometry(0.15, 8, 6).scale(1, 0.62, 1.25).translate(0, 0.1, 0),
-    new THREE.SphereGeometry(0.1, 7, 5).translate(0, 0.17, -0.19),
-    new THREE.SphereGeometry(0.035, 5, 4).translate(-0.06, 0.26, -0.2), new THREE.SphereGeometry(0.035, 5, 4).translate(0.06, 0.26, -0.2),
-    new THREE.SphereGeometry(0.06, 5, 4).scale(1, 0.5, 1.6).translate(-0.13, 0.04, 0.14), new THREE.SphereGeometry(0.06, 5, 4).scale(1, 0.5, 1.6).translate(0.13, 0.04, 0.14),
+    tint(new THREE.SphereGeometry(0.15, 8, 6).scale(1, 0.62, 1.25).translate(0, 0.1, 0), 0x55742a, 0xe6e19a),
+    tint(new THREE.SphereGeometry(0.1, 7, 5).translate(0, 0.17, -0.19), 0x55742a, 0xe6e19a),
+    tint(new THREE.SphereGeometry(0.035, 5, 4).translate(-0.06, 0.26, -0.2), 0xe8d870, 0xe8d870), tint(new THREE.SphereGeometry(0.035, 5, 4).translate(0.06, 0.26, -0.2), 0xe8d870, 0xe8d870),
+    tint(new THREE.SphereGeometry(0.06, 5, 4).scale(1, 0.5, 1.6).translate(-0.13, 0.04, 0.14), 0x55742a, 0x8a9a46), tint(new THREE.SphereGeometry(0.06, 5, 4).scale(1, 0.5, 1.6).translate(0.13, 0.04, 0.14), 0x55742a, 0x8a9a46),
   ])
-  const frogM = new THREE.MeshStandardNodeMaterial({ color: 0x82b83e, roughness: 0.55 })
+  const frogM = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.55 })
   const frogMesh = new THREE.InstancedMesh(frogG, frogM, NF)
   frogMesh.frustumCulled = false; frogMesh.castShadow = true; frogMesh.receiveShadow = true
   scene.add(frogMesh)
@@ -105,10 +111,10 @@ export async function createPondlife(ctx) {
   frogs.forEach((f, i) => { stones.setMatrixAt(i, M0.makeTranslation(f.hx, ctx.heightAt(f.hx, f.hz) + 0.02, f.hz)) })
   stones.count = frogs.length
   const nearest = frogs.reduce((b, f) => (!b || Math.hypot(f.hx - heroPos.x, f.hz - heroPos.z) < Math.hypot(b.hx - heroPos.x, b.hz - heroPos.z) ? f : b), null)
-  if (demo && nearest) { // stage: the hero 6.5 m from the nearest frog, on the land side, facing it (walk on with ?auto=walk)
+  if (demo && nearest) { // stage: the hero 8.5 m from the nearest frog, on the land side, facing it (walk on with ?auto=walk)
     const dx = nearest.hx - nearest.wx, dz = nearest.hz - nearest.wz, l = Math.hypot(dx, dz)
-    const sx = nearest.hx + dx / l * 6.5, sz = nearest.hz + dz / l * 6.5
-    heroPos.set(sx, ctx.heightAt(sx, sz), sz); ctx.heroAct?.face(-dx / l, -dz / l)
+    const sx = nearest.hx + dx / l * 8.5, sz = nearest.hz + dz / l * 8.5
+    heroPos.set(sx, ctx.heightAt(sx, sz), sz); ctx.heroAct?.face(-dx / l * Math.cos(0.3) - dz / l * Math.sin(0.3), -dz / l * Math.cos(0.3) + dx / l * Math.sin(0.3)) // aimed 0.3 rad aside: the frog is on screen, and a walk still passes within ~2 m
     nearest.demo = true; foc[0] = nearest.wx; foc[1] = nearest.wz; foc[2] = 8
     for (const f of frogs) if (f !== nearest) f.gone = 1e9
   }
@@ -175,10 +181,10 @@ export async function createPondlife(ctx) {
         f.x += Math.sin(t * 5 + f.ph) * 0.12 * dt; f.z += Math.cos(t * 4.3 + f.ph) * 0.12 * dt; f.y += (f.ty - f.y) * Math.min(1, dt * 3) + Math.sin(t * 3 + f.ph) * 0.1 * dt
         f.yaw += Math.sin(t * 0.7 + f.ph) * 0.5 * dt
       }
-      const sc = day * 1.4, flap = Math.sin((t + f.ph) * 160) * 0.55 + 0.15
+      const sc = day * 0.55
       E.set(f.st ? -0.12 : 0.05, f.yaw, Math.sin(t * 2 + f.ph) * 0.05, 'YXZ'); Q.setFromEuler(E)
       M.compose(V.set(f.x, f.y, f.z), Q, S.set(sc, sc, sc)); dBody.setMatrixAt(i, M)
-      for (const [mesh, zo, ph, scl] of [[dFore, -0.04, 0, 1], [dHind, 0.05, Math.PI, 1.05]]) for (const side of [1, -1]) {
+      for (const [mesh, zo, ph, scl] of WINGS) for (const side of [1, -1]) {
         const a = Math.sin((t + f.ph) * 160 + ph) * 0.55 + 0.15
         TT.makeTranslation(side * 0.025, 0.025, zo); RZ.makeRotationZ(side * a); SS.makeScale(side * scl, 1, 1)
         Mw.copy(M).multiply(TT).multiply(RZ).multiply(SS); mesh.setMatrixAt(i * 2 + (side > 0 ? 0 : 1), Mw)
@@ -193,7 +199,7 @@ export async function createPondlife(ctx) {
       const hd = Math.hypot(f.x - heroPos.x, f.z - heroPos.z)
       if (f.gone) { if (f.gone < 1e8) f.gone -= dt; if (f.gone <= 0 && Math.hypot(f.hx - heroPos.x, f.hz - heroPos.z) > 14) { f.gone = 0; f.x = f.hx; f.z = f.hz; f.st = 0 } else f.gone = Math.max(f.gone, 1e-3) }
       let y = ctx.heightAt(f.x, f.z), sc = f.gone ? 0 : 1, pulse = 1 + Math.sin(t * 3 + i) * 0.04
-      if (f.st === 0 && !f.gone && hd < 5) { // the hero came near: first hop
+      if (f.st === 0 && !f.gone && hd < 5 && night < 0.7) { // the hero came near: first hop
         f.st = 1; f.t = 0; f.fx = f.x; f.fz = f.z
         const dx = f.wx - f.x, dz = f.wz - f.z, l = Math.hypot(dx, dz), s = Math.min(l, 1.4); f.tx = f.x + dx / l * s; f.tz = f.z + dz / l * s
         f.yaw = Math.atan2(-dx, -dz); hops++
@@ -203,7 +209,7 @@ export async function createPondlife(ctx) {
         f.x = f.fx + (f.tx - f.fx) * s; f.z = f.fz + (f.tz - f.fz) * s
         y = Math.max(ctx.heightAt(f.fx, f.fz), ctx.heightAt(f.tx, f.tz)) + 0.1 + Math.sin(s * Math.PI) * 0.4
         if (s >= 1) {
-          if (inside(f.x, f.z) > 0.1 || Math.hypot(f.wx - f.x, f.wz - f.z) < 0.3) { f.st = 0; f.gone = 45; sc = 0; addRing(f.x, f.z, 0.9, 1, 2.4); splashes++ }
+          if (inside(f.x, f.z) > 0.1 || Math.hypot(f.wx - f.x, f.wz - f.z) < 0.3) { f.st = 0; f.gone = 45; sc = 0; if (night < 0.7) addRing(f.x, f.z, 0.9, 1, 2.4); splashes++ }
           else { f.st = 2; f.t = 0.12 } // a short rest between hops
         }
       } else if (f.st === 2) {
