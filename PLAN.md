@@ -950,3 +950,5 @@ gust passes. Not the motes (those glow and rise); these tumble, catch the light 
 **Wave E — status 2026-11-14:** field-keepclear PASSED r2, bestiary-polish PASSED r3 (report `shots/review-waveE.md`); pushed up to bb5f430. Open lows: at Throw 5000 a stock end reads as a short post; a thin anchor part leans between the legs at Throw 12000 / cycle 26300; chain loops heap at the fist; Old Glim shows only head and neck in the default view.
 
 **Wave F — status 2026-11-14:** pondlife PASSED r2 (543bfa9; report `shots/review-waveF-pondlife.md`). Open: the demo cannot show frog-then-gone in one run (fixed frog site + held walk wanted); frog eyes read as two yellow balls; distant dragonfly wings are flat white. Push waits for the other three lanes (their commits are interleaved on main).
+
+**Wave F — flutter PASSED r4** (after orchestrator takeover; report `shots/review-waveF-flutter.md`). The r4 medium (lens fade) applied as the reviewer specified. Open lows: fireflies near eye height line up along the far shore; flat-open butterflies read as two ovals; no steering round the pet.
