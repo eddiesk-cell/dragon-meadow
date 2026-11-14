@@ -42,6 +42,14 @@ const hash = Fn(([c, salt]) => {
 })
 const lowNoise = (p, a, b) => sin(p.x.mul(a).add(sin(p.y.mul(b)).mul(2))).mul(sin(p.y.mul(a * 1.2).add(sin(p.x.mul(b * 0.8)).mul(1.5)))).mul(0.5).add(0.5)
 
+// Height of a drawn PlaneGeometry grid g { x0, z0, dx, dz, nx, nz, y(i, j) } at (x, z), by its own triangles (diagonal b–d); -Infinity off it.
+export const gridY = (g, x, z) => {
+  const q = (x - g.x0) / g.dx, r = (z - g.z0) / g.dz, i = Math.floor(q), j = Math.floor(r), u = q - i, v = r - j
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return -Infinity
+  const a = g.y(i, j), b = g.y(i, j + 1), c = g.y(i + 1, j + 1), d = g.y(i + 1, j)
+  return u + v <= 1 ? a + u * (d - a) + v * (b - a) : c + (1 - u) * (b - c) + (1 - v) * (d - c)
+}
+
 export async function createField(ctx) {
   const { THREE, scene, camera } = ctx
 

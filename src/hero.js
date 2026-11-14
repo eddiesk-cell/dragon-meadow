@@ -1,6 +1,7 @@
 // Hero lane: the Drifter, third-person camera, WASD/Shift/Space, ?auto=walk|run for proof.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js'
+import { gridY } from './field.js'
 
 export async function createHero(ctx) {
   const { THREE, scene, camera, params, heroPos } = ctx
@@ -238,12 +239,7 @@ export async function createHero(ctx) {
   // far below heightAt means a structure the meshes do not draw (the bridge deck): heightAt stands.
   const gr = new THREE.Raycaster(), gDown = new THREE.Vector3(0, -1, 0), gO = new THREE.Vector3()
   let gMeshes = [], gScan = 0, gMin = 1e9, gMax = -1e9, gNow = null, gWorst = null
-  const gridY = (g, x, z) => {
-    const q = (x - g.x0) / g.dx, r = (z - g.z0) / g.dz, i = Math.floor(q), j = Math.floor(r), u = q - i, v = r - j
-    if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return -Infinity
-    const a = g.y(i, j), b = g.y(i, j + 1), c = g.y(i + 1, j + 1), d = g.y(i + 1, j)
-    return u + v <= 1 ? a + u * (d - a) + v * (b - a) : c + (1 - u) * (b - c) + (1 - v) * (d - c)
-  }
+  const onDeck = (x, z) => gMeshes.some(m => m.userData.ground.over?.(x, z)) // structures the meshes do not draw (the bridge deck): heightAt stands
   const layers = (x, z, rays = false) => { // rays: proof only, the real triangles of every mesh that holds its own heights (all but field's, whose patch metres are on the GPU)
     if (!gMeshes.length) scene.traverse(o => o.userData.ground && gMeshes.push(o))
     let y = -Infinity
@@ -251,12 +247,15 @@ export async function createHero(ctx) {
     for (const m of gMeshes) { const g = m.userData.ground; y = Math.max(y, g.nx && !(rays && !g.gpu) ? gridY(g, x, z) : (gr.intersectObject(m, false)[0]?.point.y ?? -Infinity)) }
     return y
   }
-  const groundY = (x, z) => { const h = ctx.heightAt(x, z), y = params.get('stand') === 'analytic' ? -Infinity : layers(x, z); return y > h - 0.5 ? y : h } // ?stand=analytic: the old behaviour, for the before numbers // shortcut: 0.5 m tells a deck from a coarse triangle; a bridge over a 0.5 m dip would be missed
-  window.__groundAt = (x, z) => ({ h: ctx.heightAt(x, z), drawn: layers(x, z), real: layers(x, z, true), stand: groundY(x, z) })
+  const groundY = (x, z) => {
+    const h = ctx.heightAt(x, z), y = params.get('stand') === 'analytic' ? -Infinity : layers(x, z) // ?stand=analytic: the old behaviour, for the before numbers
+    return y > h - 3 && !onDeck(x, z) ? y : h // shortcut: a drawn surface 3 m under heightAt is a hole in the meshes (a stream bed), not ground
+  }
+  window.__groundAt = (x, z) => ({ h: ctx.heightAt(x, z), drawn: layers(x, z), real: layers(x, z, true), stand: groundY(x, z), deck: onDeck(x, z) })
   const measureGap = dt => {
     if ((gScan -= dt) <= 0) { gScan = 2; gMeshes = []; scene.traverse(o => o.userData.ground && gMeshes.push(o)) }
     gNow = pos.y - layers(pos.x, pos.z, true)
-    if (grounded && gNow > -1 && gNow < 1) (gNow < gMin && (gWorst = [+pos.x.toFixed(1), +pos.z.toFixed(1)])), gMin = Math.min(gMin, gNow), gMax = Math.max(gMax, gNow)
+    if (grounded && gNow > -1 && gNow < 1 && !onDeck(pos.x, pos.z)) (gNow < gMin && (gWorst = [+pos.x.toFixed(1), +pos.z.toFixed(1)])), gMin = Math.min(gMin, gNow), gMax = Math.max(gMax, gNow)
   }
 
   const dirOf = () => {

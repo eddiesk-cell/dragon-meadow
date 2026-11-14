@@ -4,6 +4,7 @@
 // chimneys smoke, footprints go into ctx.keepClear, everything stands on ctx.heightAt. The haze is the sky's own fogNode
 // on every material, so far walls fade into the same air as the land.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { gridY } from './field.js'
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
   uniform, attribute, vertexColor, vec2, vec3, vec4, float, sin, fract, floor, dot, mix, step, smoothstep, saturate, pow, max, min,
@@ -293,7 +294,8 @@ export async function createSettlements(ctx) {
   // ground beyond the field's 800 m terrain: fine over the patch, coarse to the haze
   const inPatch = (x, z) => x > X0 && x < X0 + S && z < Z0 + S
   const gbAt = (x, z) => inPatch(x, z) ? [at(grass, x, z), at(bare, x, z)] : [1, 0]
-  scene.add(tile(THREE, ctx, X0, 400, S, Z0 + S - 400, 2, groundMat, gbAt))
+  const fine = tile(THREE, ctx, X0, 400, S, Z0 + S - 400, 2, groundMat, gbAt)
+  scene.add(fine)
   scene.add(tile(THREE, ctx, -760, 400, 1400, 1100, 10, groundMat, undefined, (x, z) => x > X0 + 2 && x < X0 + S - 2 && z < Z0 + S - 2 ? 1.5 : 0))
   ctx.ground.rects.push([-760, 640, 400, 1500]) // that tile's extent, for whoever places things on the ground (flora)
 
@@ -332,13 +334,14 @@ export async function createSettlements(ctx) {
     const tint = mx_noise_float(positionWorld.xz.mul(0.13)).mul(0.12).add(h.mul(0.35)).add(0.75)
     cobble.colorNode = mix(vec3(0.035, 0.03, 0.025), vec3(0.24, 0.215, 0.18).mul(tint), smoothstep(0.02, 0.11, edge))
   }
-  const onGround = lift => (x, z) => ctx.heightAt(x, z) + lift
+  // the cobbles lie on the DRAWN town tile (2 m triangles), not on ctx.heightAt: where the tile's chord rides above the analytic height it would poke through
+  const onGround = lift => (x, z) => { const y = gridY(fine.userData.ground, x, z); return (y > -1e9 ? y : ctx.heightAt(x, z)) + lift }
   const cobbles = [
     strip(THREE, LANE.filter(p => p.s < sB - 18.2), LW, onGround(0.06)), strip(THREE, LANE.filter(p => p.s > sB + 18.2), LW, onGround(0.06)),
     ...STREETS.map(sm => strip(THREE, sm, LW, onGround(0.06))),
     new THREE.RingGeometry(0, 15, 96, 15).rotateX(-Math.PI / 2).translate(TOWN.x, 0, TOWN.z),
   ]
-  { const p = cobbles[cobbles.length - 1].attributes.position; for (let i = 0; i < p.count; i++) p.setY(i, ctx.heightAt(p.getX(i), p.getZ(i)) + 0.06) }
+  { const p = cobbles[cobbles.length - 1].attributes.position; for (let i = 0; i < p.count; i++) p.setY(i, onGround(0.06)(p.getX(i), p.getZ(i))) }
   const paved = new THREE.Mesh(mergeGeometries(cobbles), cobble)
   paved.geometry.computeVertexNormals()
   paved.receiveShadow = true
@@ -459,6 +462,7 @@ export async function createSettlements(ctx) {
   // shortcut: one height per (x, z), so wading under the arches pops him onto the deck; give the hero a y-aware ground if the stream bed becomes a path
   const deck = (x, z) => { const dx = x - B.x, dz = z - B.z; return Math.abs(dx * B.tx + dz * B.tz) < 18 && Math.abs(dx * B.tz - dz * B.tx) < 2.2 ? R : -1e9 }
   ctx.heightAt = (x, z) => Math.max(landAt(x, z), crag(x, z), deck(x, z)) + hill(x, z)
+  fine.userData.ground.over = (x, z) => deck(x, z) > -1e8 // the deck is not in the town tile: whoever stands on the tile (hero.js) must stand on ctx.heightAt there
 
   {
     const x0 = KEEP.x - 112, z0 = KEEP.z - 108, w = 224, d = NECK.z + 8 - z0
