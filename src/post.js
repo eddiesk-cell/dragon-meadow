@@ -43,8 +43,8 @@ export async function createPost(ctx) {
   const toned = toneMapping(renderer.toneMapping, float(renderer.toneMappingExposure), color.add(glow).add(shafts))
   // Soft look (Eddie 2026-11-14: "the world is too crisp ... blend it a bit to make it soft"): a diffusion filter, as on a
   // film lens. A blurred copy of the finished frame is mixed in (takes the edge off blades, facets and silhouettes) and
-  // screened on top (a gentle glow round light things). ?soft=0 is the old crisp frame, 1 the default, 2 dreamy.
-  const soft = Math.max(0, +(ctx.params.get('soft') ?? 1))
+  // screened on top (a gentle glow round light things). ?soft=0 is the old crisp frame, 1.5 the default (Eddie: between middle and softest), 2 dreamy.
+  const soft = Math.max(0, +(ctx.params.get('soft') ?? 1.5))
   const haze = soft ? gaussianBlur(toned, null, 5, { resolutionScale: 0.5 }) : null
   const graded = Fn(() => {
     const c = toned.rgb.toVar()
