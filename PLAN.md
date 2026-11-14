@@ -1053,3 +1053,5 @@ roots: they hold their rest shape, trail the head's motion a little, and settle;
   with the rig's `crown.png` rest pose), in Walk and Hit (Front) the roots trail and settle (a probe reporting each
   chain's swing in degrees: Idle ≤ 3, Walk 3–15, never at the cap for more than a moment), never detached, mask rigid;
   the rest of the gallery and the Warden's anchor unchanged; a built copy runs.
+
+**Wave G — egg-dome PASSED r3** (cbe182a; `shots/review-waveG-egg.md`). Open lows: day veins read olive-grey close up and ~19% darker than the body; night veins brighter than the faint aurora band in the close view; body olive-khaki close up from the light.
