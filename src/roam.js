@@ -191,12 +191,13 @@ export async function createRoam(ctx) {
     if (best) { // the walk clip reaches lower than the idle pose (the Rime Warden's toes sank 0.27 m): its own ground line, a low quartile of the lowest vertex over the cycle
       const act = it.actions[best.name], D = act.getClip().duration, lows = []
       act.reset().play()
-      for (let i = 0; i < 8; i++) { act.time = D * i / 8; it.mixer.update(0); lows.push(extent(it.root)[0] - it.root.position.y) }
-      lows.sort((a, b) => a - b); it.footYW = lows[1]; it.mixer.stopAllAction()
+      for (let i = 0; i < 16; i++) { act.time = D * i / 16; it.mixer.update(0); lows.push(extent(it.root)[0] - it.root.position.y) }
+      it.lowW = lows; it.footYW = Math.min(...lows); it.mixer.stopAllAction() // the low point at 16 moments of the step: a single line left it in the air for a third of each step
     }
     if (best) { it.walkN = best.name; it.rate = best.rate; it.speed = best.speed; it.gait = { footY: +it.footY.toFixed(2), footYW: +it.footYW.toFixed(2), clip: best.name, footMs: +best.gs.toFixed(2), rate: +best.rate.toFixed(2), moveMs: +best.speed.toFixed(2) } }
     play(it, it.idleN); it.mixer.update(0.4)
   }
+  const lowAt = it => { const c = it.cur, u = (c.time / c.getClip().duration % 1) * 16, i = Math.floor(u) % 16; return it.lowW[i] + (it.lowW[(i + 1) % 16] - it.lowW[i]) * (u - Math.floor(u)) }
   const play = (it, n) => {
     const act = it.actions[n]
     if (!act || act === it.cur) return // the ribmites have no clips
@@ -205,7 +206,9 @@ export async function createRoam(ctx) {
   }
 
   // --- where a creature may stand
-  const blocked = (it, x, z) => it.obs.some(c => Math.hypot(x - c.x, z - c.z) < c.r + it.body + it.pad) || (ctx.pond?.inside(x, z) ?? 0) > -1.5
+  // no foot IK, so on a slope a foot sinks or floats by slope x its distance from the body's centre: they keep to ground gentler than 0.12 (review r4)
+  const steep = (x, z) => Math.hypot(ground(x + 1, z) - ground(x - 1, z), ground(x, z + 1) - ground(x, z - 1)) / 2 > 0.12
+  const blocked = (it, x, z) => it.obs.some(c => Math.hypot(x - c.x, z - c.z) < c.r + it.body + it.pad) || (ctx.pond?.inside(x, z) ?? 0) > -1.5 || steep(x, z)
   const okStep = (it, x0, z0, x1, z1) => {
     for (let k = 1; k <= 4; k++) {
       const x = x0 + (x1 - x0) * k / 4, z = z0 + (z1 - z0) * k / 4, g = ground(x, z)
@@ -299,10 +302,12 @@ export async function createRoam(ctx) {
         it.mixer.update(dt)
         it.root.position.x = it.x; it.root.position.z = it.z
         if (it.o.water) it.root.position.y = ctx.pond.level + 0.12 - it.lampDy // Old Glim floats, her lamp line just above the water
-        else { // on the mean ground under the body: on a slope the uphill foot sinks and the downhill one floats by the same few cm (shortcut: no foot IK; add it if a creature lives on ground steeper than 15 degrees)
+        else { // on the mean ground under the body: on a slope they keep to gentle ground (see steep), so feet are within a few cm (shortcut: no foot IK; add it before a creature lives on a slope)
           const g = ground(it.x, it.z), q = Math.min(it.body, 1.2) * 0.8, sx = Math.sin(it.yaw) * q, sz = Math.cos(it.yaw) * q
-          const gy = (g + ground(it.x + sx, it.z + sz) + ground(it.x - sx, it.z - sz) + ground(it.x + sz, it.z - sx) + ground(it.x - sz, it.z + sx)) / 5 - (it.cur === it.actions[it.walkN] ? it.footYW ?? it.footY : it.footY)
-          it.root.position.y += (gy - it.root.position.y) * Math.min(1, dt * 8)
+          const gy = (g + ground(it.x + sx, it.z + sz) + ground(it.x - sx, it.z - sz) + ground(it.x + sz, it.z - sx) + ground(it.x - sz, it.z + sx)) / 5
+          it.gy = it.gy === undefined ? gy : it.gy + (gy - it.gy) * Math.min(1, dt * 8) // the ground eases; the step's own rise and fall is followed closely
+          it.low = (it.low ?? it.footY) + ((it.cur === it.actions[it.walkN] && it.lowW ? lowAt(it) : it.footY) - (it.low ?? it.footY)) * Math.min(1, dt * 25)
+          it.root.position.y = it.gy - it.low
         }
         it.root.rotation.y = it.yaw
         it.springs?.update(dt, t)
