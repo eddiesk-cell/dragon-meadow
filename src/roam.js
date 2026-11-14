@@ -1,7 +1,7 @@
 // Lane roam — the bestiary's 13 creatures live in the world, each at one fixed home: they stand, look about, now and then
 // amble a few metres inside a small home radius and stop. They never attack, chase or react to the sword; near the hero
 // they turn to look and will not walk into him (and he cannot walk through them). Costs nothing with ?bestiary=1 or ?roam=off.
-// ?roam=<id> puts the hero 7-24 m south (and 1-5 m east) of that creature (the hero faces -z) so it can be photographed; the same spot works
+// ?roam=<id> puts the hero 5-24 m south (and 1-5 m east) of that creature (the hero faces -z) so it can be photographed; the same spot works
 // as ?at=<x>,<z> (probe roam: view.at). Gallery table, props and the ribmites' scuttle follow src/bestiary.js.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { createSprings } from './springs.js'
@@ -10,19 +10,19 @@ import { attribute, positionLocal, modelPosition, time, vec3, sin, cos, max, mod
 const RIG = 1.8, STRIDE = 1.6 // models are rigged at 1.80 m; the Walk clips are cut for a 1.6 m/s stride on that rig (tools/hero/motion.py)
 const LOAD = 200, SHOW = 300, LIVE = 150 // metres from the hero: start loading, hide beyond, animate within
 // id, name, nearest existing place, home x, z, height m, options {walk/idle clip, real (glb is true scale), swarm, water, prop [glb, bone], v m/s}
-// Homes are 40 m+ apart, off the pond, ring, town and flora's solids (the probe checks); the named lands do not exist yet.
+// clear: the little ones (under 2 m, lost in waist-high grass) get a cleared patch of that radius round the home. Homes are 40 m+ apart, off the pond, ring, town and flora's solids (the probe checks); the named lands do not exist yet.
 const ROAM = [
-  ['chalk-hob', 'Chalk Hob', 'spawn meadow, ahead-left of the start', -11, -15, 1.3, { walk: 'Crouch Walk' }],
-  ['old-glim', 'Old Glim', 'the pond (Mirrormere)', 10, -52, 16, { real: true, idle: 'Swim', water: true }],
+  ['chalk-hob', 'Chalk Hob', 'spawn meadow, ahead-left of the start', -11, -15, 1.3, { walk: 'Crouch Walk', clear: 5.5 }],
+  ['old-glim', 'Old Glim', 'the pond (Mirrormere)', 10, -52, 16, { real: true, idle: 'Swim', water: true, back: 16, side: -3 }],
   ['stiltstalker', 'Stiltstalker', 'pond east shore', 52, -32, 2.8, { prop: ['reed-spear', 'rightHand'] }],
   ['wreckback', 'Wreckback', 'foot of the rock island (Undercliff)', 100, -112, 2.2],
   ['driftwight', 'The Driftwight', 'foot of the crest cliff (Undercliff)', 10, -160, 3.2],
   ['gapshrike', 'The Gapshrike', 'crest, high rocky ground (Greyspine)', -30, -195, 2.4],
   ['scarhorn', 'Scarhorn', 'crest, high rocky ground (Greyspine)', 140, -190, 2.6],
   ['rime-warden', 'The Rime Warden', 'west crest, high bare ground (Wyrmcrown)', -220, -190, 4.5],
-  ['ribmite', 'Ribmites', 'open ground east of the pond (Redwaste)', 190, 50, 0.3, { real: true, swarm: 14, v: 0.5 }],
+  ['ribmite', 'Ribmites', 'open ground east of the pond (Redwaste)', 190, 50, 0.3, { real: true, swarm: 14, v: 0.5, clear: 5.5 }],
   ['marrowkeeper', 'The Marrowkeeper', 'open ground west (Redwaste)', -180, 40, 3.5],
-  ['lantern-cap', 'Lantern-cap', 'vine-tree grove south of the start (Lanternwood)', 22, 272, 1.6],
+  ['lantern-cap', 'Lantern-cap', 'vine-tree grove south of the start (Lanternwood)', 22, 272, 1.6, { clear: 5.5 }],
   ['rootbinder', 'The Rootbinder', 'vine-tree grove south-west (Lanternwood)', -272, 166, 4.0],
   ['tolling-warden', 'The Tolling Warden', 'north of Springwell, over the stream (Bellholm)', -20, 415, 3.4, { prop: ['anchor', 'rightHand'] }],
 ]
@@ -42,7 +42,7 @@ export async function createRoam(ctx) {
     root.traverse(o => {
       if (!o.isMesh) return
       o.skeleton?.update()
-      for (let i = 0, n = o.geometry.attributes.position.count; i < n; i++) {
+      for (let i = 0, n = o.geometry.attributes.position.count; i < n; i += 4) { // shortcut: every 4th vertex, 4x cheaper on the main thread; the foot may read a few cm high
         o.getVertexPosition(i, v).applyMatrix4(o.matrixWorld)
         if (v.y < lo) lo = v.y
         if (v.y > hi) hi = v.y
@@ -53,19 +53,20 @@ export async function createRoam(ctx) {
 
   const its = ROAM.map(([id, name, place, x, z, size, o = {}]) => {
     const s = o.real ? 1 : size / RIG
-    return { id, name, place, hx: x, hz: z, x, z, size, o, s, R: o.water ? 0 : Math.min(10, Math.max(4, size * 1.8)), // wander radius
+    return { id, name, place, hx: x, hz: z, x, z, size, o, s, R: o.water ? 0 : o.clear ? o.clear - 1.2 : Math.min(10, Math.max(4, size * 1.8)), // wander radius: the little ones stay in their cleared patch, where they show above the grass
       body: o.water ? 1.3 : o.swarm ? 1.1 : Math.min(1.2, Math.max(0.35, size * 0.2)), // hero cannot come closer than this + 0.3
       half: o.water ? size / 2 - 1.3 : 0, // Old Glim is a 16 m capsule, the others a circle
-      speed: o.v || STRIDE * s, yaw: Math.PI + rnd(-0.6, 0.6), look: 0, mode: 'idle', t: rnd(1, 4), tx: 0, tz: 0, back: Math.min(24, Math.max(7, size * 2)), side: Math.min(5, size * 0.5 + 1), // the hero stands south and a little east, so it is beside him in the view, not behind his back
+      speed: o.v || STRIDE * s, yaw: Math.PI + rnd(-0.6, 0.6), look: 0, mode: 'idle', t: id === mode ? 7 : rnd(1, 4), force: id === mode, // the ?roam=<id> one stands still for 7 s, then ambles, so a photo and one 8 s later show it move
+      tx: 0, tz: 0, back: o.back ?? Math.min(24, Math.max(5, size * 2.2)), side: o.side ?? Math.min(5, size * 0.5 + 1), // the hero stands south and a little east, so it is beside him in the view, not behind his back
      
       loaded: false, clip: '-', obs: [] }
   })
   const find = id => its.find(i => i.id === id)
   const target = find(mode)
-  if (target) heroPos.set(target.hx + target.side, ground(target.hx + target.side, target.hz + target.back), target.hz + target.back)
+  if (target && !params.get('at')) heroPos.set(target.hx + target.side, ground(target.hx + target.side, target.hz + target.back), target.hz + target.back)
 
   // --- loading: one at a time, nearest first, only within LOAD of the hero (or the ?roam=<id> one)
-  let loading = false
+  let loading = false, nextLoad = 0 // one load at a time, 1.5 s apart, so no frame takes two creatures' worth of parsing and first draws
   const load = async it => {
     const { id, o, s } = it
     const gltf = await loader.loadAsync(url(`models/bestiary/${id}.glb`)), model = gltf.scene, root = new THREE.Group()
@@ -78,7 +79,7 @@ export async function createRoam(ctx) {
     root.add(model); root.scale.setScalar(s)
     const gy = ground(it.hx, it.hz)
     root.position.set(it.hx, gy, it.hz); scene.add(root)
-    if (!o.water) ctx.keepClear.push({ x: it.hx, z: it.hz, r: it.body + 1.5, bare: it.body + 1.5, roam: true }) // field strips the grass at its home (16 such circles at most)
+    if (!o.water) ctx.keepClear.push({ x: it.hx, z: it.hz, r: it.o.clear || it.body + 1.5, bare: it.o.clear || it.body + 1.5, roam: true }) // field strips the grass at its home (16 such circles at most)
     if (o.swarm) { // ribmites: rigid beetles whose legs walk in a tripod gait in the shader (attributes _leg, _legt)
       model.traverse(m => {
         if (!m.isMesh) return
@@ -107,7 +108,8 @@ export async function createRoam(ctx) {
       if (below > 0) p.position.y += below / s
       pivot.updateMatrixWorld(true); bone.attach(pivot)
     }
-    it.footY = extent(root)[0] - gy // the idle pose's lowest vertex above/below the ground: undone every frame so the feet stand on it
+    const [lo, hi] = extent(root)
+    it.footY = lo - gy; it.h = hi - lo // the idle pose's lowest vertex above/below the ground: undone every frame so the feet stand on it
     it.springs = it.id === 'rootbinder' ? await createSprings(ctx, { model, prefix: 'spring_crown', kind: 'root', probe: 'crown' }) : null
     // what this creature must keep off: the no-go circles (water, ring, town, stones) and solid plants near its home
     const near = c => !c.roam && Math.hypot(c.x - it.hx, c.z - it.hz) < c.r + it.R + it.size + 4
@@ -147,7 +149,7 @@ export async function createRoam(ctx) {
       if (d < 14) turn(Math.atan2(hx - it.x, hz - it.z), 1.1) // it turns to look at him
       else turn(it.look, 0.8)
       if (it.t <= 0) {
-        if (it.o.swarm || Math.random() < 0.55) { if (amble(it)) { it.mode = 'turn'; it.t = 6 } else rest(it) }
+        if (it.o.swarm || it.force || Math.random() < 0.55) { it.force = false; if (amble(it)) { it.mode = 'turn'; it.t = 6 } else rest(it) }
         else { it.look = it.yaw + rnd(-1.4, 1.4); it.t = rnd(3, 7) }
       }
     } else if (it.mode === 'turn') { // faces its goal in place before walking, so it never skates sideways
@@ -176,7 +178,7 @@ export async function createRoam(ctx) {
         id: i.id, place: i.place, home: [i.hx, i.hz], at: [+x.toFixed(1), +z.toFixed(1)], dist: +Math.hypot(heroPos.x - x, heroPos.z - z).toFixed(1),
         state: !i.loaded || !i.root.visible ? 'hidden' : i.mode === 'turn' ? 'idle' : i.mode, clip: i.clip, loaded: i.loaded,
         inWater: (ctx.pond?.inside(i.hx, i.hz) ?? 0) > 0, inNoGo: ctx.keepClear.filter(c => !c.roam && Math.hypot(i.hx - c.x, i.hz - c.z) < c.r).length,
-        nearestHomeM: +nearest.toFixed(1), groundY: +ground(i.hx, i.hz).toFixed(2), footYcm: i.loaded ? +(i.footY * 100).toFixed(1) : null,
+        nearestHomeM: +nearest.toFixed(1), groundY: +ground(i.hx, i.hz).toFixed(2), footYcm: i.loaded ? +(i.footY * 100).toFixed(1) : null, heightM: i.loaded ? +i.h.toFixed(2) : null,
         view: { at: [i.hx + i.side, i.hz + i.back] },
       }
     }),
@@ -184,11 +186,12 @@ export async function createRoam(ctx) {
 
   return {
     update(dt, t) {
+      if (ctx.roamOff) { for (const it of its) if (it.loaded) it.root.visible = false; return } // runtime off switch (set ctx.roamOff = true): same as ?roam=off, for in-page fps A/B
       const hx = heroPos.x, hz = heroPos.z
-      if (!loading) {
+      if (!loading && ctx.time > nextLoad) {
         let best = null, bd = LOAD
         for (const it of its) if (!it.loaded && !it.failed) { const d = Math.hypot(it.hx - hx, it.hz - hz); if (d < bd || it === target) best = it, bd = it === target ? -1 : d }
-        if (best) { loading = true; load(best).catch(e => { best.failed = true; window.__errors.push(`roam: ${best.id}: ${e.message || e}`) }).finally(() => { loading = false }) }
+        if (best) { loading = true; load(best).catch(e => { best.failed = true; window.__errors.push(`roam: ${best.id}: ${e.message || e}`) }).finally(() => { loading = false; nextLoad = ctx.time + 1.5 }) }
       }
       for (const it of its) {
         if (!it.loaded) continue
@@ -200,7 +203,7 @@ export async function createRoam(ctx) {
         const castOn = d < 110
         if (castOn !== it.cast) { it.cast = castOn; it.model.traverse(m => { if (m.isMesh) m.castShadow = castOn }) }
         it.mixer.update(dt)
-        it.root.position.set(it.x, ground(it.x, it.z) - it.footY, it.z)
+        it.root.position.set(it.x, (it.o.water ? ctx.pond.level - 0.6 : ground(it.x, it.z)) - it.footY, it.z) // Old Glim floats: her belly 0.6 m under the surface
         it.root.rotation.y = it.yaw
         it.springs?.update(dt, t)
         for (const m of it.lamps) m.emissiveIntensity = 0.3 + 2.7 * ctx.night
