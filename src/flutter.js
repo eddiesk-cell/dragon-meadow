@@ -24,7 +24,7 @@ export async function createFlutter(ctx) {
   function spot(near) {
     for (let i = 0; i < 12; i++) {
       camera.getWorldDirection(fwd)
-      const a = Math.atan2(fwd.x, fwd.z) + (Math.random() < 0.75 ? rnd(-0.9, 0.9) : rnd(-3.1, 3.1)), d = near ?? 3 + (R - 3) * Math.pow(Math.random(), 1.4)
+      const a = Math.atan2(fwd.x, fwd.z) + (Math.random() < 0.85 ? rnd(-0.7, 0.7) : rnd(-3.1, 3.1)), d = near ?? 3 + (R - 3) * Math.pow(Math.random(), 2.2)
       const x = heroPos.x + Math.sin(a) * d, z = heroPos.z + Math.cos(a) * d
       if (!blocked(x, z)) return [x, z]
     }
@@ -75,7 +75,7 @@ export async function createFlutter(ctx) {
   })
 
   const B = Array.from({ length: NB }, (_, i) => ({
-    x: 0, y: 0, z: 0, vx: 0, vz: 0, yaw: 0, tx: 0, tz: 0, ty: 1, rest: 0, ph: rnd(0, 6.28), hz: rnd(7, 10), col: PAL[i % PAL.length], size: rnd(0.15, 0.21), alive: false, fade: 0,
+    x: 0, y: 0, z: 0, vx: 0, vz: 0, yaw: 0, tx: 0, tz: 0, ty: 1, rest: 0, ph: rnd(0, 6.28), hz: rnd(7, 10), col: PAL[i % PAL.length], size: rnd(0.24, 0.32), alive: false, fade: 0,
   }))
   function pick(b) {
     const demoC = demo ? camera.position : null
@@ -92,8 +92,8 @@ export async function createFlutter(ctx) {
     }
     const a = rnd(0, 6.28), d = rnd(2, 7)
     s = [b.x + Math.sin(a) * d, b.z + Math.cos(a) * d]
-    if (blocked(...s) || Math.hypot(s[0] - heroPos.x, s[1] - heroPos.z) > R) s = spot()
-    b.tx = s[0]; b.tz = s[1]; b.ty = Math.random() < 0.4 ? 0.35 : rnd(0.5, 1.9) // 0.35: a grass tip
+    if (blocked(...s) || Math.hypot(s[0] - heroPos.x, s[1] - heroPos.z) > R || Math.random() < 0.25) s = spot() // now and then drift toward where the camera looks
+    b.tx = s[0]; b.tz = s[1]; b.ty = Math.random() < 0.4 ? 1.0 : rnd(0.8, 2.0) // 1.0: a grass tip
   }
   function spawnB(b) {
     const s = spot(demo ? 3 : undefined)
@@ -138,7 +138,9 @@ export async function createFlutter(ctx) {
   let nb = 0, nf = 0
   const tc = new THREE.Color(), gold = new THREE.Color(1.0, 0.6, 0.06), green = new THREE.Color(0.85, 0.85, 0.1)
 
+  let ms = 0, nU = 0
   function update(dt, t) {
+    const t0 = performance.now()
     const n = night()
     camera.getWorldDirection(fwd)
     // ---- butterflies: all day, thinning through dusk ----
@@ -163,7 +165,9 @@ export async function createFlutter(ctx) {
         b.x += b.vx * dt; b.z += b.vz * dt
         b.y += (dy * 1.6 + Math.sin(t * b.hz * 0.45 + b.ph) * 0.5) * dt // bobbing: each wing beat lifts it a little
         if (d < 0.4 && !demo) { if (Math.random() < 0.5) b.rest = demo ? rnd(0.5, 1.2) : rnd(2, 5); else pick(b) }
-        if (Math.hypot(b.x - heroPos.x, b.z - heroPos.z) > R + 4 && !demo) spawnB(b)
+        const hx = b.x - heroPos.x, hz = b.z - heroPos.z
+        // out of range, or well behind the camera where nobody sees it: flutter back in ahead of it
+        if (!demo && (Math.hypot(hx, hz) > R + 4 || (hx * fwd.x + hz * fwd.z < -6 && b.rest <= 0))) spawnB(b)
       }
       const moving = b.rest > 0 ? 0 : 1
       if (moving && (b.vx || b.vz)) { const y = Math.atan2(b.vx, b.vz); let dy2 = y - b.yaw; dy2 = Math.atan2(Math.sin(dy2), Math.cos(dy2)); b.yaw += dy2 * Math.min(1, dt * 6) }
@@ -200,9 +204,10 @@ export async function createFlutter(ctx) {
     FATT.arrs.aP.needsUpdate = FATT.arrs.aC.needsUpdate = true
     if (!nf) FC[3] = 0
     FATT.geo.instanceCount = Math.max(1, nf)
+    ms += performance.now() - t0; nU++
   }
 
-  window.__probes.flutter = () => ({ butterflies: nb, fireflies: nf, night: +night().toFixed(2),
+  window.__probes.flutter = () => ({ cpuMsPerFrame: +(ms / Math.max(1, nU)).toFixed(3), butterflies: nb, fireflies: nf, night: +night().toFixed(2),
     nearest: +Math.min(...B.filter(b => b.alive).map(b => Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z)), 99).toFixed(1) })
   update(0, 0)
   return { update }
