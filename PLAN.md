@@ -857,3 +857,10 @@ build.sh), and add it as `Kimodo: ram_charge` to scarhorn.glb, keeping every exi
 - **CHECK:** the glb's clip list = the old list + `Kimodo: ram_charge`; `art/bestiary/scarhorn/charge.png` (6 frames,
   side view) shows the head lowering with horns forward, a fast forward charge and a skid stop; feet do not slide
   backwards or sink; ≤ 8 MB.
+
+**Phase 4 finish — status 2026-11-14:** all five lanes PASSED independent review r1; the gallery PASSED r4 (the Tolling
+Warden's anchor took four rounds; report `shots/review-phase4.md`). Open, not blocking: in Throw the anchor swings 1–1.5 m
+above the fist; its stock stands out of the warden's back while he lies fallen and leans on his shin when he stands; a
+fluke crosses his upper arm mid-throw; anchor `grip` empty hangs off the rig, not the last link; Old Glim 1.12 m wide
+(spec 1.3) and her head lands on neighbours in Coil; Rootbinder's hands stop at mid-shin in Idle; the Marrowkeeper and
+Rime Warden plinths nearly touch.
