@@ -50,7 +50,7 @@ export async function createField(ctx) {
   const uNight = uniform(0) // ctx.night, 0 day … 1 night: how much the tips give back the light they drank
   // ctx.aloft, 0 on foot … 1 from 70 m over the ground (the dragon's back): how much the ground wears its look from the air
   const uAloft = uniform(0), aloftAt = c => ss(20, 70, c.y - ctx.heightAt(c.x, c.z))
-  // Gallery plinths: grass and flowers skip keepClear circles flagged `bare: true` (bestiary loads after field, so the list is
+  // Gallery plinths: grass and flowers skip keepClear circles with a numeric `bare` (the radius in metres to bare) (bestiary loads after field, so the list is
   // re-read in update() whenever its length changes and shown to the blade shader through uClear). shortcut: 16 circles.
   const uClear = uniformArray(Array.from({ length: 16 }, () => new THREE.Vector4(1e6, 1e6, 0, 0)), 'vec4')
   let seenClear = -1
@@ -173,16 +173,17 @@ export async function createField(ctx) {
     const g = groundTSL(world), pt = patchAt(world), ground = g.x.add(pt.x)
     const dist = length(world.sub(uCam))
     const fadeA = fadeIn > 0 ? smoothstep(fadeIn * 0.72, fadeIn, dist) : float(1)
+    const clr = smoothstep(0, 0.3, clearD(world))
     const keep = fadeA.mul(float(1).sub(smoothstep(fadeOut * 0.75, fadeOut, dist)))
       .mul(smoothstep(-36, -30, ground)).mul(float(1).sub(smoothstep(0.02, 0.2, g.y))) // no grass in the sea or down the cliff
-      .mul(step(0, clearD(world))) // not through a gallery plinth
+      .mul(clr) // thins and shortens toward a gallery plinth's rim, none inside it
       .mul(uAloft.oneMinus()) // from the dragon's back a blade is under a pixel: the ground carries the meadow (meadowFar)
     const alive = step(r(3), keep)
     const patch = lowNoise(world, 0.11, 0.07), bloom = lowNoise(world.add(57), 0.045, 0.06)
     const under = head ? float(0) : step(r(4), 0.35) // short under-mat closes the gaps between tall crowns
     const fl = head ? step(r(6), bloom.mul(1.4).add(0.2).mul(flowers).mul(pt.y.mul(pt.y))) : float(0) // patchy wildflowers, few on trampled turf
     const H = mix(r(5).mul(0.45).add(0.6).mul(patch.mul(0.4).add(0.75)), r(5).mul(0.2).add(0.25), under)
-      .mul(mix(float(1), r(13).mul(0.3).add(0.75), fl)).mul(alive).mul(pt.y).mul(head ? fl : 1) // flower heads sit at mixed depths in the grass; pt.y tramples
+      .mul(mix(float(1), r(13).mul(0.3).add(0.75), fl)).mul(alive).mul(clr).mul(pt.y).mul(head ? fl : 1) // flower heads sit at mixed depths in the grass; pt.y tramples
 
     // --- wind: two travelling fronts (not a uniform wobble) + a light per-blade flutter; push away from the hero
     const along = dot(world, WIND), across = dot(world, vec2(-0.34, 0.94))
@@ -346,7 +347,8 @@ export async function createField(ctx) {
   const canopy = (n, w) => normalize(cameraViewMatrix.mul(vec4(normalize(n).add(vec3(uSun.x, 0, uSun.z).mul(w.mul(0.5))), 0)).xyz)
   ctx.groundNormal = n => canopy(n, uAloft) // world normal → normalNode, for the tiles that use ctx.groundColor (same light from the air)
   tm.normalNode = canopy(vec3(n0.x.div(n0.y).sub(dh.x), 1, n0.z.div(n0.y).sub(dh.y)), airW(positionWorld.xz))
-  tm.colorNode = groundColor(vertexColor().rgb, tp.y, tp.z, airW(positionWorld.xz)).mul(tp.w)
+  // Bared ground (a gallery plinth's foot) takes the meadow's own lit look, not the dark under-grass tone the blades normally cover.
+  tm.colorNode = groundColor(vertexColor().rgb, tp.y, tp.z, max(airW(positionWorld.xz), float(1).sub(smoothstep(0, 0.4, clearD(positionWorld.xz))))).mul(tp.w)
   const terrain = new THREE.Mesh(tg, tm)
   terrain.receiveShadow = true
   scene.add(terrain)
@@ -469,8 +471,8 @@ export async function createField(ctx) {
       if (!pin) ctx.aloft = uAloft.value = aloftAt(camera.position) // last frame's camera: hero and ride move it after this
       if (ctx.keepClear.length !== seenClear) {
         seenClear = ctx.keepClear.length
-        const bare = ctx.keepClear.filter(c => c.bare).slice(0, 16)
-        uClear.array.forEach((v, k) => bare[k] ? v.set(bare[k].x, bare[k].z, bare[k].r, 0) : v.set(1e6, 1e6, 0, 0))
+        const bare = ctx.keepClear.filter(c => c.bare > 0 && typeof c.bare === 'number').slice(0, 16)
+        uClear.array.forEach((v, k) => bare[k] ? v.set(bare[k].x, bare[k].z, bare[k].bare, 0) : v.set(1e6, 1e6, 0, 0))
       }
       uTime.value = t
       uNight.value = ctx.night
