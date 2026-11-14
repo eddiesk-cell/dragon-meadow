@@ -34,7 +34,7 @@ export async function createDrift(ctx) {
   const night = () => forced ?? ctx.night ?? 0
 
   const geos = {
-    petal: blade(THREE, 0.2, 0.075, s => Math.pow(Math.sin(Math.PI * Math.pow(s, 0.7)), 0.8) * 1, x => 0.35 * x * x),
+    petal: blade(THREE, 0.2, 0.075, s => Math.sqrt(s) * Math.sqrt(1 - Math.pow(s, 2.6)), x => 0.35 * x * x),
     leaf: blade(THREE, 0.26, 0.07, s => Math.sin(Math.PI * Math.pow(s, 0.75)), x => -0.25 * Math.abs(x)),
   }
   { // seed tuft: a pale stalk with a fan of thin spokes
@@ -72,7 +72,7 @@ export async function createDrift(ctx) {
     p.m.setColorAt(p.i, c); p.m.instanceColor.needsUpdate = true
     Object.assign(p, { on: true, x, y, z, vx: 0, vz: 0, vy: kind === 'seed' ? 1.4 : 0, age: 0, landed: 0,
       life: kind === 'seed' ? rnd(9, 15) : 60, f: rnd(1.3, 2.6), ph: rnd(0, 6.3), ph2: rnd(0, 6.3), yaw: rnd(0, 6.3), spin: rnd(-2.5, 2.5),
-      size: kind === 'seed' ? rnd(0.9, 1.4) : kind === 'leaf' ? rnd(0.8, 1.5) : rnd(0.8, 1.6) })
+      size: kind === 'seed' ? rnd(1.6, 2.4) : kind === 'leaf' ? rnd(0.8, 1.5) : rnd(0.7, 1.3) })
     const w = wind(x, z, t); p.vx = w.x * 0.3; p.vz = w.y * 0.3
   }
 
@@ -82,7 +82,7 @@ export async function createDrift(ctx) {
 
   function spawn(dt, t, g, n) {
     const mul = (demo ? 4 : 1 + 6 * g) * (1 - 0.8 * ss(0.1, 0.9, n)) // few at night, a flurry in a gust
-    acc.petal += dt * 1.3 * mul; acc.leaf += dt * 0.6 * mul; acc.seed += dt * (demo ? 5 : 7) * ss(0.25, 0.8, g) * (1 - n)
+    acc.petal += dt * 0.9 * mul; acc.leaf += dt * 0.6 * mul; acc.seed += dt * (demo ? 5 : 7) * ss(0.25, 0.8, g) * (1 - n)
     const f = ctx.flora
     const bells = f ? f.solids.slice(0, f.solids.length - f.trees.length) : []
     for (let tries = 0; acc.petal >= 1 && tries < 6; tries++) {
