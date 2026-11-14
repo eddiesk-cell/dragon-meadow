@@ -68,11 +68,14 @@ export async function createLandmarks(ctx) {
   const egg = new THREE.MeshStandardNodeMaterial({ roughness: 0.55, metalness: 0 }) // skystone: a pearl glow at night
   // veins run up the form (y squeezed), mottle is large and soft; base darkens toward the turf, a faint sky tint rides the rim by day
   const EP = positionLocal.mul(vec3(0.5, 0.28, 0.5)), eN = mx_noise_float(EP), eV = mx_noise_float(EP.mul(2.3).add(7))
-  const eVein = float(1).sub(smoothstep(0.03, 0.1, abs(eN.add(eV.mul(0.25))))).mul(smoothstep(-0.2, 0.3, mx_noise_float(EP.mul(0.6).add(3))))
+  const eVein = float(1).sub(smoothstep(0.012, 0.04, abs(eN.add(eV.mul(0.25))))).mul(smoothstep(-0.2, 0.3, mx_noise_float(EP.mul(0.6).add(3))))
   const eRim = pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 3)
-  egg.colorNode = mix(mix(vertexColor().rgb, vec3(1, 0.95, 0.9), 0.85).mul(eN.mul(0.2).add(1.25)).mul(smoothstep(0, 3.5, positionLocal.y).mul(0.3).add(0.7)),
-    vec3(0.62, 0.74, 0.9), eRim.mul(0.35)).add(vec3(-0.13, -0.1, -0.03).mul(eVein)) // pale blue-grey veins
-  egg.emissiveNode = mix(vec3(0.35, 0.6, 0.75).mul(eRim.mul(0.6).add(0.03)), vec3(0.5, 0.95, 1).mul(eVein.mul(0.5).add(eRim.mul(0.2))), 0.6).mul(uNight)
+  const eDay = float(1).sub(uNight.mul(2)).max(0), eGlow = uNight.mul(8).min(1) // day tint fades out as the glow fades in: never both at zero
+  egg.colorNode = mix(mix(vertexColor().rgb, vec3(1, 0.88, 0.82), 0.9).mul(eN.mul(0.3).add(1.25)).mul(smoothstep(0, 3.5, positionLocal.y).mul(0.3).add(0.7)),
+    vec3(0.6, 0.74, 0.95), eRim.mul(0.5))
+  egg.colorNode = mix(egg.colorNode, vec3(0.38, 0.52, 0.85), eVein.mul(eDay).mul(0.85)) // blue-grey veins by day
+  egg.emissiveNode = mix(vec3(0.35, 0.6, 0.75).mul(eRim.mul(0.6).add(0.03)), vec3(0.3, 0.85, 0.85).mul(eVein.mul(0.6).add(eRim.mul(0.2))), 0.6).mul(uNight)
+    .add(vec3(0.3, 0.85, 0.85).mul(eVein.mul(0.4).mul(eGlow)))
 
   const nodes = Object.fromEntries(isle.scene.children.map(o => [o.name, o]))
   const ground = (x, z) => ctx.heightAt(x, z)
