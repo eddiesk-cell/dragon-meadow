@@ -1009,3 +1009,5 @@ The Rootbinder's root crown is rigid and its hands stop at mid-shin in Idle. Spr
 `src/springs.js`) and let the hands reach the ground.
 - **CHECK:** `bestiary=1&focus=rootbinder`: two shots 300 ms apart show the crown's roots trailing the head's motion;
   Idle: fingertips at the plinth; no stretch tears; the rest of the gallery unchanged.
+
+**Wave G — clip-fades PASSED r1** (09efaf1; `shots/review-waveG-clip.md`). Open lows in `tools/audio/capture.mjs`: last frame near-black not pure black (`fadeOut = dur - fo - 1/FPS`); fade lengths duplicated in `fileCheck`; loudness reported before fading and the json does not record fades on/off; a freeze running to the end of the checked stretch is not measured.
