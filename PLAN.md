@@ -1035,3 +1035,5 @@ paid mesh `hunyuan.glb` is on disk; never regenerate it.
   below the plinth top by more than 2 cm (a probe or a measurement per clip); `bestiary=1&focus=rootbinder`: two shots
   300 ms apart in Walk show the crown's roots trailing the head, settling in Idle, never detached from the head; the
   rest of the gallery and the Warden's anchor unchanged.
+
+**Wave G — status 2026-11-15:** pet-day polish PASSED (bc15d51; open lows: ears line up edge-on mid-turn, coat tan-taupe from behind). egg-dome r2 FAILED on day (veins read as dark cracks), builder turn 3 out. dragon-breath r1 FAILED on the roar plume (a flat fog band), builder turn 2 out; frame rate measured: no cost. rootbinder-rerig built (f68f5e5), review running.
