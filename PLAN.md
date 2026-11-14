@@ -864,3 +864,34 @@ above the fist; its stock stands out of the warden's back while he lies fallen a
 fluke crosses his upper arm mid-throw; anchor `grip` empty hangs off the rig, not the last link; Old Glim 1.12 m wide
 (spec 1.3) and her head lands on neighbours in Coil; Rootbinder's hands stop at mid-shin in Idle; the Marrowkeeper and
 Rime Warden plinths nearly touch.
+
+## Wave E (2026-11-14) — backlog polish (Eddie: "keep orchestrating without asking me")
+
+Three lanes, one owner per file, no credits. Each commits only its own file (`git commit --only <file>`), first working
+step first. Independent review after each; three failed reviews and the orchestrator takes it.
+Use Ponytail: shortest working code, reuse before writing, mark corners `shortcut:` (Ponytail 5). Before reading
+code, read graphify-out/GRAPH_REPORT.md; if missing run `graphify update .`.
+
+### Lane field-keepclear — `src/field.js` (Sonnet)
+Grass grows through the gallery plinths: field.js ignores `ctx.keepClear` (a list of `{x, z, r}` pushed by
+`src/bestiary.js` before/while the field exists). Blades and flowers inside any keepClear circle must not draw.
+- **CHECK:** `node tools/shot.mjs shots/e-keepclear.png "bestiary=1&still=1" 8000` and
+  `shots/e-keepclear-warden.png "bestiary=1&focus=tolling-warden&clip=Idle" 8000`: no blade or flower stands on or
+  pokes through any plinth top; `shots/e-keepclear-walk.png "auto=walk" 5000` looks the same as before (no bare
+  circles without the gallery); fps within 5% of before.
+
+### Lane bestiary-polish — `src/bestiary.js` (Sonnet)
+From `shots/review-phase4.md` rounds 1 and 4: (a) in `Throw` the anchor swings 1–1.5 m above a fist held at the hip;
+(b) Old Glim's head lands on the creatures in front of her in `Coil` — lay her further back or lower so she never
+overlaps them in the whole-gallery view; (c) the Marrowkeeper and Rime Warden plinths nearly touch — space the arc so
+every pair of plinths shows clear grass between them.
+- **CHECK:** `bestiary=1&focus=tolling-warden&clip=Throw` at 5000, 10500, 11000, 12000 ms: the anchor is never above
+  the fist unless the chain is taut below a fist raised above the shoulder; `bestiary=1&still=1` at 15000 ms: clear
+  grass between every two plinths, Old Glim touches no creature in Swim or Coil (`&focus=old-glim&clip=Coil`); the
+  Idle and Death behaviour that passed round 4 is unchanged (same shots as round 4, Idle 4000/15000, cycle 26300/27000).
+
+### Lane sky-rim — `src/sky.js` (Sonnet)
+A 1-px bright rim line shows under the left cloud bank (the `clouds()` rim term).
+- **CHECK:** `shots/e-sky-before.png` and `shots/e-sky-after.png` from `node tools/shot.mjs <out> "auto=walk" 5000`,
+  plus 4x crops of the left cloud bank's underside: the line is in the before crop and gone in the after crop; the
+  clouds are otherwise unchanged.
