@@ -43,7 +43,7 @@ export async function createLandmarks(ctx) {
   const { THREE, scene } = ctx
   if (ctx.params.get('landmarks') === '0') return null // A/B for fps and look
   const loader = new GLTFLoader()
-  const [isle, kit, crest] = await Promise.all(['rockisle', 'town-kit', 'stoneface'].map(n => loader.loadAsync(`/models/world/${n}.glb`)))
+  const [isle, kit, crest] = await Promise.all(['rockisle', 'town-kit', 'stoneface'].map(n => loader.loadAsync(import.meta.env.BASE_URL + `models/world/${n}.glb`)))
   const uNight = uniform(0), uT = uniform(0)
 
   // Stone with night veins: thin noise level-set lines (ring.js recipe), only where COLOR_0 alpha allows (bare rock),

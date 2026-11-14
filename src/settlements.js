@@ -129,7 +129,7 @@ export async function createSettlements(ctx) {
   if (ctx.params.get('settlements') === '0') return null // A/B for fps and look
   const t0 = performance.now()
   const loader = new GLTFLoader()
-  const [townKit, castleKit] = (await Promise.all(['town-kit', 'castle-kit'].map(n => loader.loadAsync(`/models/world/${n}.glb`)))).map(g => g.scene)
+  const [townKit, castleKit] = (await Promise.all(['town-kit', 'castle-kit'].map(n => loader.loadAsync(import.meta.env.BASE_URL + `models/world/${n}.glb`)))).map(g => g.scene)
   const uNight = uniform(0), uT = uniform(0), uSky = uniform(new THREE.Color().copy(ctx.fogColor))
   const bases = [] // every building's foot { x, y, z } for the probe: it must sit on ctx.heightAt
   const clear = (x, z, r) => ctx.keepClear.push({ x, z, r })

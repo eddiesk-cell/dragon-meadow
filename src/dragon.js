@@ -9,7 +9,7 @@ export async function createDragon(ctx) {
   const { THREE, scene, params } = ctx
   const { clamp, smoothstep } = THREE.MathUtils
   const near = params.get('dragon') === 'near'
-  const gltf = await new GLTFLoader().loadAsync('/models/dragon.glb')
+  const gltf = await new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'models/dragon.glb')
   const model = gltf.scene
   const holder = new THREE.Group() // holder carries the flight pose; model carries scale (its root bone lifts it 4 m in flight)
   model.scale.setScalar(3) // ~7 m shipped span -> ~20 m
