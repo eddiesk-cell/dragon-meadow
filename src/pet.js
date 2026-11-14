@@ -33,7 +33,7 @@ export async function createPet(ctx) {
   const fill = smoothstep(0.35, 1.2, length(fwidth(q))) // strands thinner than a pixel → fatten them into a soft volume instead of sparkling
   fur.opacityNode = max(step(length(ft), float(0.56).mul(float(1).sub(pow(kv.div(len), 1.6))).add(fill.mul(0.2).mul(max(float(1).sub(kv.div(len)), 0)))), step(kv, 0.001)) // full strands that taper late; shell 0 is solid skin
   fur.alphaTest = 0.5
-  const coat = mix(mix(color(0xfbf2e4), color(0xeab27c), uDay.mul(0.75)), color(0xf9a48c), varying(attribute('aTint', 'float'))) // cream (honey by day, so it parts from grass and stone), peach blush
+  const coat = mix(mix(color(0xfbf2e4), color(0xf6cfa0), uDay.mul(0.7)), color(0xf9a48c), varying(attribute('aTint', 'float'))) // cream (honey by day, so it parts from grass and stone), peach blush
   fur.colorNode = mix(coat.mul(color(0xc4ab92)), coat, max(smoothstep(0, 0.7, kv), float(1).sub(varying(L).mul(25)))).mul(h.mul(0.12).add(0.94)) // warm shaded roots → light tips (short fur stays light)
   fur.emissiveNode = coat.mul(pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 3).mul(kv).mul(0.3)) // soft halo where light skims the tips
 
