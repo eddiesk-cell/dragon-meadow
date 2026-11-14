@@ -1,7 +1,7 @@
 // Fight effects: sword trails, slash arcs, sparks, hit flash, camera shake, dust, the roar's mist ring, hitstop.
 // Contract: PLAN.md Phase 3 → ctx.vfx. Pooled: every mesh, buffer and material is built here once; a hit only writes
 // numbers. Hot parts are HDR (> 1) so post.js's bloom makes them glow. `?vfx=demo` loops every effect.
-import { Fn, attribute, uv, vec3, vec4, float, cameraPosition, normalize, cross, dot, length, cos, sin, pow, mix, saturate, smoothstep, texture, time, floor, fract, vec2 } from 'three/tsl'
+import { Fn, attribute, uv, vec3, vec4, float, cameraPosition, normalize, cross, dot, length, cos, sin, pow, mix, saturate, smoothstep, texture, time, floor, fract, vec2, uniform } from 'three/tsl'
 
 export async function createVfx(ctx) {
   const { THREE, scene, camera, params } = ctx
@@ -303,16 +303,27 @@ export async function createVfx(ctx) {
 
   // ── Baked smoke: a 64-frame 8x8 flipbook simulated in Blender (art/smoke/bake.py, OpenVDB cache) on one billboard.
   // Built on first use, so it costs nothing until something smokes. Neighbouring frames are blended, so 20 fps reads smooth.
+  // A sprite may carry userData.smoke = { alpha, phase, rot } (read per draw, so every puff shares one material).
   let smokeMat = null
   function smoke(pos, size = 6) {
     if (!smokeMat) {
       const map = new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'fx/smoke.webp')
       map.colorSpace = THREE.SRGBColorSpace
-      const f = time.mul(20).mod(64), at = i => { const k = i.mod(64); return texture(map, uv().add(vec2(k.mod(8), float(7).sub(floor(k.div(8))))).div(8)) }
+      const per = (k, d) => uniform(d).onObjectUpdate(({ object }) => object.userData.smoke?.[k] ?? d)
+      const f = time.mul(20).add(per('phase', 0)).mod(64), at = i => { const k = i.mod(64); return texture(map, uv().add(vec2(k.mod(8), float(7).sub(floor(k.div(8))))).div(8)) }
+      // Lit by the sky's own lights (hemisphere + half the key), so it is pale by day and dim at night, never glowing.
+      const hemi = scene.getObjectsByProperty('isHemisphereLight', true)[0], key = scene.getObjectsByProperty('isDirectionalLight', true)[0]
+      const c = new THREE.Color(), lit = uniform(new THREE.Color(1, 1, 1)).onRenderUpdate((_, u) => {
+        if (hemi) u.value.copy(hemi.color).lerp(c.copy(hemi.groundColor), 0.5).multiplyScalar(hemi.intensity)
+        if (key) u.value.add(c.copy(key.color).multiplyScalar(key.intensity * 0.5))
+        const m = Math.max(u.value.r, u.value.g, u.value.b); if (m > 1) u.value.multiplyScalar(1 / m) // ≤ 1: bloom never catches it
+      })
       smokeMat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false })
+      smokeMat.rotationNode = per('rot', 0)
       // the atlas gives the shape (alpha); Blender's headless volume lighting came out black, so the colour is set here:
-      // grey at the foot, pale where it thins out at the top
-      smokeMat.colorNode = vec4(mix(vec3(0.42, 0.42, 0.46), vec3(0.9, 0.9, 0.93), uv().y), mix(at(floor(f)), at(floor(f).add(1)), fract(f)).a)
+      // grey at the foot, pale where it thins out at the top; the foot fades in so the tile's cut edge never shows
+      smokeMat.colorNode = vec4(mix(vec3(0.42, 0.42, 0.46), vec3(0.9, 0.9, 0.93), uv().y).mul(lit),
+        mix(at(floor(f)), at(floor(f).add(1)), fract(f)).a.mul(smoothstep(0, 0.12, uv().y)).mul(per('alpha', 1)))
     }
     const sp = new THREE.Sprite(smokeMat)
     sp.scale.setScalar(size); sp.position.copy(pos).y += size / 2 // pos is the foot of the column
