@@ -41,7 +41,7 @@ export async function createCritters(ctx) {
     part(S(0.04, 0.8, 0.8, 1.7), 0.07, 0.04, 0.06, COAT),   // feet
     part(S(0.04, 0.8, 0.8, 1.7), -0.07, 0.04, 0.06, COAT),
   ])
-  const earGeo = mergeGeometries([1, -1].map(sd => part(S(0.03, 1, 2.8, 0.55), 0.04 * sd, 0.085, 0, (g, i) => COAT.clone().lerp(TIP, 0.8 * ss(0.12, 0.16, g.attributes.position.getY(i))))))
+  const earGeo = mergeGeometries([1, -1].map(sd => part(S(0.03, 1, 2.8, 0.55), 0.04 * sd, 0.085, 0, (g, i) => COAT.clone().lerp(TIP, 0.6 * ss(0.14, 0.17, g.attributes.position.getY(i))))))
   const mat = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 1, metalness: 0 }), uNight = uniform(0)
   mat.emissiveNode = vertexColor().mul(uNight.mul(0.2)).mul(vec3(0.55, 1, 0.9)) // by night they take a little of the grass's teal glow instead of going black
 
@@ -88,7 +88,7 @@ export async function createCritters(ctx) {
     const n = night(), want = demo ? 4 : Math.ceil(N * (1 - 0.5 * ss(0.3, 0.9, n)))
     uNight.value = n; live = standing = bolting = 0
     let near = -1, nd = SEE // the nearest within sight stands and watches him
-    C.forEach((c, i) => { if (c.st === 'graze' || c.st === 'stand' || c.st === 'watch') { const d = Math.hypot(heroPos.x - c.x, heroPos.z - c.z); if (d < nd) { nd = d; near = i } } })
+    C.forEach((c, i) => { if (!c.pin && (c.st === 'graze' || c.st === 'stand' || c.st === 'watch')) { const d = Math.hypot(heroPos.x - c.x, heroPos.z - c.z); if (d < nd) { nd = d; near = i } } })
     C.forEach(c => { if (c.st === 'stand' || c.st === 'watch') standing++ })
     for (let i = 0; i < N; i++) {
       const c = C[i], dh = Math.hypot(heroPos.x - c.x, heroPos.z - c.z)
@@ -149,7 +149,7 @@ export async function createCritters(ctx) {
     mesh.instanceMatrix.needsUpdate = ears.instanceMatrix.needsUpdate = true
   }
 
-  window.__probes.critters = () => ({ live, standing, bolting, states: C.map(c => c.st + (c.st === 'away' ? ':' + Math.round(c.t) : '')).join(' '),
+  window.__probes.critters = () => ({ hopS: C.map(c => c.hop ? +(c.hop.t / c.hop.dur).toFixed(2) : -1).join(' '), live, standing, bolting, states: C.map(c => c.st + (c.st === 'away' ? ':' + Math.round(c.t) : '')).join(' '),
     screen: C.filter(c => c.st !== 'away').map(c => { P.set(c.x, gy(c.x, c.z) + 0.4, c.z).project(camera); return [Math.round((P.x + 1) * 640), Math.round((1 - P.y) * 360), +Math.hypot(c.x - heroPos.x, c.z - heroPos.z).toFixed(1)] }) })
   update(0, 0)
   return { update }
