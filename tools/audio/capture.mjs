@@ -2,6 +2,7 @@
 // load), the master bus (after src/audio.js's limiter, as PCM) held to the same clock, muxed into one mp4. Then check the sound against what moved:
 // steps vs the feet's contacts, wingbeats vs the wing's downstrokes, roars vs the ride's call and landing, wind vs speed,
 // and the loudness (ffmpeg ebur128). Lane sound, PLAN.md.
+//   node tools/audio/capture.mjs shots/g-clip-day-night.mp4 "auto=walk&tod=cycle" 40   (the day→night clip; --no-fades for a hard cut)
 //   node tools/audio/capture.mjs shots/sound-walk.mp4 "auto=walk" 20      (auto=run 10, auto=ride 40, "auto=walk&tod=night" 20)
 // audio=log and film=<secs + 1> (src/main.js: offline sound) are added to the query. Writes <out>.mp4 and <out>.json (the analysis + the raw timeline); prints the analysis.
 import { createServer } from 'vite'
@@ -14,7 +15,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const [out, query = '', secs = '20'] = process.argv.slice(2)
+const args = process.argv.slice(2), FADES = !args.includes('--no-fades') // fade in from black over 1 s and out over 1.5 s, picture and sound
+const [out, query = '', secs = '20'] = args.filter(a => a !== '--no-fades')
 if (!out) { console.error('usage: node tools/audio/capture.mjs <out.mp4> [query] [secs]'); process.exit(2) }
 if (out.endsWith('.json')) { // re-check a take already recorded: node tools/audio/capture.mjs shots/sound-run.json
   const j = JSON.parse(readFileSync(resolve(ROOT, out), 'utf8'))
@@ -51,9 +53,10 @@ try {
   // renders to that frame's end and suspends, then the frame is grabbed. Picture and sound share one timeline, every frame
   // is drawn and no sound is dropped, however busy the desk. (A real-time screencast gave ~14 frames a second and drifted
   // 3 s behind its sound; an in-page MediaRecorder cost the game 20 fps; a real-time audio tap lost 128-sample blocks.)
-  const FPS = 60, N = Math.round(+secs * FPS), cdp = await page.createCDPSession()
+  const FPS = 60, N = Math.round(+secs * FPS), cdp = await page.createCDPSession(), dur = N / FPS
+  const fi = 1, fo = 1.5, fadeOut = dur - fo // the fades are applied where the frames are encoded and the sound is muxed
   const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-',
-    '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', webm], { stdio: ['pipe', 'inherit', 'inherit'] })
+    ...(FADES ? ['-vf', `fade=t=in:st=0:d=${fi},fade=t=out:st=${fadeOut}:d=${fo}`] : []), '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', webm], { stdio: ['pipe', 'inherit', 'inherit'] })
   await page.evaluate(() => { window.__film(); window.__ctx.timeScale = 1 })
   rec = ff
   report.t0 = +(await page.evaluate(() => window.__ctx.time)).toFixed(3) // game time at the video's start: log time − t0 = video time
@@ -86,8 +89,8 @@ try {
   head.write('data', 36); head.writeUInt32LE(body.length, 40)
   writeFileSync(wav, Buffer.concat([head, body]))
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', webm, '-i', wav, '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
-    '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', abs])
-  report.file = fileCheck(abs, N / FPS)
+    ...(FADES ? ['-af', `afade=t=in:st=0:d=${fi},afade=t=out:st=${fadeOut}:d=${fo}`] : []), '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', abs])
+  report.file = fileCheck(abs, N / FPS, FADES)
   if (!report.file.ok) report.errors.push('capture: the file ' + JSON.stringify(report.file))
   report = { ...report, ...analyse(data.audio, data.ride, ffmpegLoudness(wav)), audioSecs: +(body.length / 4 / rate).toFixed(1) }
   writeFileSync(abs.replace(/\.mp4$/, '') + '.json', JSON.stringify({ ...report, log: data.audio.log, ride: data.ride?.log, feet: data.audio.feet, wingTrace: data.audio.wings }))
@@ -105,14 +108,16 @@ process.exit(report.errors.length ? 1 : 0)
 
 // What the FILE shows, not what the game rendered: distinct frames a second (a frame within 0.3/255 of the one before, at
 // 160x90 grey, is a repeat), the longest freeze, and each stream's length against the take's (a picture that runs long
-// or short has drifted from the sound).
-function fileCheck(file, want) {
+// or short has drifted from the sound). With fades the first 1 s and last 1.5 s are not compared: a dark picture fading
+// to black moves under 0.3/255 a frame, which would read as a freeze (the fades are the recorder's own, checked below).
+function fileCheck(file, want, fades) {
   const len = s => +execFileSync('ffprobe', ['-v', 'error', '-select_streams', s, '-show_entries', 'stream=duration:format=duration', '-of', 'csv=p=0', file], { encoding: 'utf8' }).split(/[\s,]+/).map(parseFloat).find(x => x > 0) // stream length, else the file's (N/A for a copied stream)
   const g = execFileSync('ffmpeg', ['-loglevel', 'error', '-i', file, '-vf', 'scale=160:90,format=gray', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 30 })
   const ts = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'packet=pts_time', '-of', 'csv=p=0', file], { encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter(Boolean).map(parseFloat).sort((p, q) => p - q) // packets: no decode
   const W = 160 * 90, n = Math.floor(g.length / W)
-  let distinct = 1, freeze = 0, last = ts[0] ?? 0
-  for (let i = 1; i < n; i++) {
+  const lo = fades ? Math.round(1 * 60) : 1, hi = fades ? n - Math.round(1.5 * 60) : n, v = len('v')
+  let distinct = 1, freeze = 0, last = ts[lo - 1] ?? 0
+  for (let i = lo; i < hi; i++) {
     let d = 0; for (let k = 0; k < W; k += 4) d += Math.abs(g[i * W + k] - g[(i - 1) * W + k])
     if (d / (W / 4) >= 0.3) { distinct++; freeze = Math.max(freeze, (ts[i] ?? last) - last); last = ts[i] ?? last }
   }
@@ -126,7 +131,7 @@ function fileCheck(file, want) {
     if (near > 100 && rms[i] < near / 10) run++
     else { if (run >= 2 && run <= 12) holes.push(+((i - run) * 32 / sr).toFixed(3)); run = 0 }
   }
-  const v = len('v'), a = len('a'), r = { frames: n, distinctFps: +(distinct / v).toFixed(1), freezeS: +freeze.toFixed(2), videoS: v, audioS: a, wantS: want, dropouts: holes }
+  const a = len('a'), r = { frames: n, distinctFps: +(distinct / (v * (hi - lo + 1) / n)).toFixed(1), freezeS: +freeze.toFixed(2), videoS: v, audioS: a, wantS: want, dropouts: holes }
   r.ok = r.distinctFps >= 45 && r.freezeS <= 0.15 && Math.abs(v - want) <= 0.1 && Math.abs(a - v) <= 0.15 && !holes.length
   return r
 }
