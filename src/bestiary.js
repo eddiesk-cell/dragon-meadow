@@ -72,7 +72,7 @@ export async function createBestiary(ctx) {
         plinth.castShadow = plinth.receiveShadow = true
         scene.add(plinth)
       }
-      ctx.keepClear.push({ x, z, r: rad + 1, bare: !o.lie }) // bare: the field strips grass here; Old Glim has no plinth, she lies on grass
+      ctx.keepClear.push({ x, z, r: rad + 1, bare: o.lie ? 0 : rad + 0.1 }) // bare: radius (m) the field strips of grass; Old Glim has no plinth, she lies on grass
 
       const model = gltf.scene, root = new THREE.Group(), s = o.real ? 1 : size / RIG
       model.traverse(m => {
