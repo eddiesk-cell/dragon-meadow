@@ -68,10 +68,10 @@ export function createRide(ctx, d) {
     } else if (s === 'free' || s === 'rejoin') { if (callDown()) note('called'); else say('no room to land here') }
     else if (s === 'landed' && bodyGap() > 20) { // landed far off: up again and called here, but only if that lands it nearer (else it would loop)
       const f = camera.getWorldDirection(v).setY(0).normalize(), n = d.site(...callAt(f), { x: heroPos.x, z: heroPos.z, fx: f.x, fz: f.z })
-      if (n && n.r < bodyGap() - 3) { d.takeoff(); pending = true; note('recall') } else say('no room near you — walk to the dragon')
+      if (n && n.r < bodyGap() - 3) { d.takeoff(); pending = true; note('recall') } else say('no room near you — walk to the dragon' + where())
     }
     else if (s === 'takeoff') pending = true
-    else say(s === 'landed' ? 'walk to the dragon and press E' : 'the dragon is coming')
+    else say(s === 'landed' ? 'walk to the dragon' + where() + ' and press E' : 'the dragon is coming')
   }
 
   // ?auto=ride: the same E and walking keys a player presses (dispatched to the page), and a pilot on the dragon's input.
