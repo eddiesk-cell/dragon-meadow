@@ -157,6 +157,15 @@ export async function createBestiary(ctx) {
     const g = 9.8 * Math.min(dt, 1 / 30) ** 2
     // damping: the anchor (k > 6) settles instead of swinging like a pendulum
     r.pts.forEach((p, k) => { const v = p.clone().sub(r.old[k]).multiplyScalar(k > 6 ? 0.9 : 0.96); r.old[k].copy(p); p.add(v).y -= g })
+    { // an anchor propped up with a slack chain is leaning on the body column or balanced on its crown, not held:
+      // slide its ring round the body and outward so it lies down (it stood up after Death, and leaned after rising)
+      const ring = r.pts.at(-2), crown = r.pts.at(-1), ox = ring.x - r.x, oz = ring.z - r.z, rr = Math.hypot(ox, oz) || 1e-6
+      const slack = fist.distanceTo(ring) < 0.95 * 8 * r.lens[0]
+      if (slack && crown.y < r.top + 0.2 * r.s && ring.y > r.top + 0.3 * r.s) {
+        const sg = (-oz * (ring.x - crown.x) + ox * (ring.z - crown.z)) < 0 ? -1 : 1, st = 0.02 * r.s / rr
+        ring.x += (-oz * sg + ox * 0.5) * st; ring.z += (ox * sg + oz * 0.5) * st
+      }
+    }
     for (let n = 0; n < 12; n++) {
       r.pts.forEach((p, k) => {
         const a = k ? r.pts[k - 1] : fist, d = p.distanceTo(a) || 1e-6, e = (d - r.lens[k]) / d
@@ -173,7 +182,7 @@ export async function createBestiary(ctx) {
         if (rr <= r.rad) p.y = Math.max(p.y, r.top + (p === r.pts.at(-1) ? 0.14 * r.s : p === r.pts.at(-2) ? 0.1 * r.s : 0.04)) // crown, ring, links
       }
     }
-    r.pts.forEach((p, k) => { if (p.y < r.top + 0.15 * r.s) r.old[k].x += (p.x - r.old[k].x) * 0.6, r.old[k].z += (p.z - r.old[k].z) * 0.6 }) // friction on the stone
+    r.pts.forEach((p, k) => { if (p.y < r.top + 0.15 * r.s && (k < 8 || r.pts[7].y < r.top + 0.3 * r.s)) r.old[k].x += (p.x - r.old[k].x) * 0.6, r.old[k].z += (p.z - r.old[k].z) * 0.6 }) // friction on the stone
     for (let k = r.bones.length - 1; k >= 0; k--) { // anchor (chain_1, the root) first, up to the fist; +Y to the next link up
       const b = r.bones[k], toward = k ? r.pts[k - 1] : fist
       b.parent.updateMatrixWorld(true)

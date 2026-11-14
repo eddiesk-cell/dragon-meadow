@@ -1,12 +1,12 @@
 // Fight effects: sword trails, slash arcs, sparks, hit flash, camera shake, dust, the roar's mist ring, hitstop.
 // Contract: PLAN.md Phase 3 → ctx.vfx. Pooled: every mesh, buffer and material is built here once; a hit only writes
 // numbers. Hot parts are HDR (> 1) so post.js's bloom makes them glow. `?vfx=demo` loops every effect.
-import { Fn, attribute, uv, vec3, vec4, float, cameraPosition, normalize, cross, dot, length, cos, sin, pow, mix, saturate, smoothstep } from 'three/tsl'
+import { Fn, attribute, uv, vec3, vec4, float, cameraPosition, normalize, cross, dot, length, cos, sin, pow, mix, saturate, smoothstep, texture, time, floor, fract, vec2 } from 'three/tsl'
 
 export async function createVfx(ctx) {
   const { THREE, scene, camera, params } = ctx
   const V = () => new THREE.Vector3(), T = V(), UP = new THREE.Vector3(0, 1, 0)
-  const fired = { trail: 0, slash: 0, sparks: 0, flash: 0, shake: 0, dust: 0, blast: 0, hitstop: 0 }
+  const fired = { trail: 0, slash: 0, sparks: 0, flash: 0, shake: 0, dust: 0, blast: 0, hitstop: 0, smoke: 0 }
   const rnd = (a, b) => a + Math.random() * (b - a)
   let clock = 0 // effect time on the scaled dt: hitstop freezes trails and sparks with everything else
 
@@ -301,14 +301,34 @@ export async function createVfx(ctx) {
     stopUntil = 0; ctx.timeScale = 1
   }
 
+  // ── Baked smoke: a 64-frame 8x8 flipbook simulated in Blender (art/smoke/bake.py, OpenVDB cache) on one billboard.
+  // Built on first use, so it costs nothing until something smokes. Neighbouring frames are blended, so 20 fps reads smooth.
+  let smokeMat = null
+  function smoke(pos, size = 6) {
+    if (!smokeMat) {
+      const map = new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'fx/smoke.webp')
+      map.colorSpace = THREE.SRGBColorSpace
+      const f = time.mul(20).mod(64), at = i => { const k = i.mod(64); return texture(map, uv().add(vec2(k.mod(8), float(7).sub(floor(k.div(8))))).div(8)) }
+      smokeMat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false })
+      // the atlas gives the shape (alpha); Blender's headless volume lighting came out black, so the colour is set here:
+      // grey at the foot, pale where it thins out at the top
+      smokeMat.colorNode = vec4(mix(vec3(0.42, 0.42, 0.46), vec3(0.9, 0.9, 0.93), uv().y), mix(at(floor(f)), at(floor(f).add(1)), fract(f)).a)
+    }
+    const sp = new THREE.Sprite(smokeMat)
+    sp.scale.setScalar(size); sp.position.copy(pos).y += size / 2 // pos is the foot of the column
+    scene.add(sp); fired.smoke++
+    return sp
+  }
+
   let frames = 0, worstMs = 0
-  ctx.vfx = { trail, slash, sparks, flash, shake, dust, blast, hitstop }
+  ctx.vfx = { trail, slash, sparks, flash, shake, dust, blast, hitstop, smoke }
   window.__probes.vfx = () => ({
     glow: glow.n, soft: soft.n, dropped: glow.dropped + soft.dropped, trails: trails.filter(t => t.obj).length,
     slashes: [...aS.array].filter(p => p < 1).length, flashing: flashing.size, timeScale: ctx.timeScale, fired, worstMs: Math.round(worstMs), maxFrameMs: Math.round(cutMs), firstCutMs: Math.round(cutMs),
   })
 
   const demo = params.get('vfx') === 'demo' && makeDemo()
+  if (params.get('vfx') === 'smoke') smoke(T.set(2.5, ctx.heightAt(2.5, -5), -5).clone()) // ?vfx=smoke: one column ahead of the hero
   return {
     update(dt) {
       const now = performance.now(), rdt = Math.min((now - lastNow) / 1000, 0.1)
