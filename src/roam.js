@@ -17,15 +17,15 @@ const ROAM = [
   ['chalk-hob', 'Chalk Hob', 'spawn meadow, ahead-left of the start', 4, -20, 1.3, { walk: 'Crouch Walk', short: [0.5, 5] }],
   ['old-glim', 'Old Glim', 'the pond (Mirrormere)', 22, -56, 16, { real: true, idle: 'Swim', water: true, back: 18, side: 0 }],
   ['stiltstalker', 'Stiltstalker', 'pond east shore', 60, -26, 2.8, { prop: ['reed-spear', 'rightHand'] }],
-  ['wreckback', 'Wreckback', 'foot of the rock island (Undercliff)', 100, -112, 2.2],
-  ['driftwight', 'The Driftwight', 'foot of the crest cliff (Undercliff)', 10, -160, 3.2],
-  ['gapshrike', 'The Gapshrike', 'crest, high rocky ground (Greyspine)', -30, -195, 2.4],
+  ['wreckback', 'Wreckback', 'open meadow north of the rock island (Undercliff)', 111.6, -68.5, 2.2],
+  ['driftwight', 'The Driftwight', 'foot of the crest cliff (Undercliff)', 10, -182.5, 3.2],
+  ['gapshrike', 'The Gapshrike', 'crest, high rocky ground (Greyspine)', -35.3, -196.4, 2.4],
   ['scarhorn', 'Scarhorn', 'crest, high rocky ground (Greyspine)', 140, -190, 2.6],
   ['rime-warden', 'The Rime Warden', 'west crest, high bare ground (Wyrmcrown)', -220, -190, 4.5],
   ['ribmite', 'Ribmites', 'open ground east of the pond (Redwaste)', 190, 50, 0.3, { scale: 3.5, swarm: 24, v: 0.4, short: [0.3, 5] }],
   ['marrowkeeper', 'The Marrowkeeper', 'open ground west (Redwaste)', -180, 40, 3.5],
   ['lantern-cap', 'Lantern-cap', 'vine-tree grove south of the start (Lanternwood)', 22, 272, 1.6],
-  ['rootbinder', 'The Rootbinder', 'vine-tree grove south-west (Lanternwood)', -272, 166, 4.0],
+  ['rootbinder', 'The Rootbinder', 'vine-tree grove south-west (Lanternwood)', -266.7, 171.8, 4.0],
   ['tolling-warden', 'The Tolling Warden', 'north of Springwell, over the stream (Bellholm)', -20, 415, 3.4, { prop: ['anchor', 'rightHand', 'rope'] }],
 ]
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a))
@@ -197,7 +197,7 @@ export async function createRoam(ctx) {
     if (best) { it.walkN = best.name; it.rate = best.rate; it.speed = best.speed; it.gait = { footY: +it.footY.toFixed(2), footYW: +it.footYW.toFixed(2), clip: best.name, footMs: +best.gs.toFixed(2), rate: +best.rate.toFixed(2), moveMs: +best.speed.toFixed(2) } }
     play(it, it.idleN); it.mixer.update(0.4)
   }
-  const lowAt = it => { const c = it.cur, u = (c.time / c.getClip().duration % 1) * 16, i = Math.floor(u) % 16; return it.lowW[i] + (it.lowW[(i + 1) % 16] - it.lowW[i]) * (u - Math.floor(u)) }
+  const lowAt = it => { const c = it.actions[it.walkN], u = (c.time / c.getClip().duration % 1) * 16, i = Math.floor(u) % 16; return it.lowW[i] + (it.lowW[(i + 1) % 16] - it.lowW[i]) * (u - Math.floor(u)) }
   const play = (it, n) => {
     const act = it.actions[n]
     if (!act || act === it.cur) return // the ribmites have no clips
@@ -207,8 +207,8 @@ export async function createRoam(ctx) {
 
   // --- where a creature may stand
   // no foot IK, so on a slope a foot sinks or floats by slope x its distance from the body's centre: they keep to ground gentler than 0.12 (review r4)
-  const steep = (x, z) => Math.hypot(ground(x + 1, z) - ground(x - 1, z), ground(x, z + 1) - ground(x, z - 1)) / 2 > 0.12
-  const blocked = (it, x, z) => it.obs.some(c => Math.hypot(x - c.x, z - c.z) < c.r + it.body + it.pad) || (ctx.pond?.inside(x, z) ?? 0) > -1.5 || steep(x, z)
+  const steep = (it, x, z) => Math.hypot(ground(x + 1, z) - ground(x - 1, z), ground(x, z + 1) - ground(x, z - 1)) / 2 > Math.min(0.12, 0.12 / (it.body || 1)) // a wide body needs flatter ground (the Rime Warden sank 0.19 m on a 0.117 slope)
+  const blocked = (it, x, z) => it.obs.some(c => Math.hypot(x - c.x, z - c.z) < c.r + it.body + it.pad) || (ctx.pond?.inside(x, z) ?? 0) > -1.5 || steep(it, x, z)
   const okStep = (it, x0, z0, x1, z1) => {
     for (let k = 1; k <= 4; k++) {
       const x = x0 + (x1 - x0) * k / 4, z = z0 + (z1 - z0) * k / 4, g = ground(x, z)
@@ -306,7 +306,7 @@ export async function createRoam(ctx) {
           const g = ground(it.x, it.z), q = Math.min(it.body, 1.2) * 0.8, sx = Math.sin(it.yaw) * q, sz = Math.cos(it.yaw) * q
           const gy = (g + ground(it.x + sx, it.z + sz) + ground(it.x - sx, it.z - sz) + ground(it.x + sz, it.z - sx) + ground(it.x - sz, it.z + sx)) / 5
           it.gy = it.gy === undefined ? gy : it.gy + (gy - it.gy) * Math.min(1, dt * 8) // the ground eases; the step's own rise and fall is followed closely
-          it.low = (it.low ?? it.footY) + ((it.cur === it.actions[it.walkN] && it.lowW ? lowAt(it) : it.footY) - (it.low ?? it.footY)) * Math.min(1, dt * 25)
+          it.low = (it.low ?? it.footY) + ((it.lowW ? (w => w * lowAt(it) + (1 - w) * it.footY)(it.actions[it.walkN].getEffectiveWeight()) : it.footY) - (it.low ?? it.footY)) * Math.min(1, dt * 25)
           it.root.position.y = it.gy - it.low
         }
         it.root.rotation.y = it.yaw
