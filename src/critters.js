@@ -139,7 +139,7 @@ export async function createCritters(ctx) {
       } else { y = gy(x, z); tilt = 0.1 + 0.05 * Math.sin(t * 4 + c.ph); twitch = Math.sin(Math.PI * (1 - c.tw)) * (c.tw > 0 ? 1 : 0) * (1 - c.up) } // 0..1: an ear flick
       c.tilt += (tilt - c.tilt) * Math.min(1, dt * (c.hop ? 20 : 7))
       // A flick is a short half-rear (head and ears are one mesh: lifting them alone pulled the head off the body), so the neck stays closed.
-      const u = Math.max(c.up, 0.4 * twitch), th = c.tilt * (1 - u) - 1.15 * u, phi = c.hop ? -0.2 : 0.05 + (-th - 0.05) * u // ears stay upright as the body rears
+      const u = Math.max(c.up, 0.4 * twitch), th = c.tilt * (1 - u) - 0.9 * u /* 0.9, not 1.15: reared further, the chest bulged in front of the nose */, phi = c.hop ? -0.2 : 0.05 + (-th - 0.05) * u // ears stay upright as the body rears
       const k = Math.max(0.001, c.sc * (c.st === 'away' ? 0 : 1)), sink = c.hide * 0.5 * k, yaw = c.yaw + (c.st === 'stand' && !c.still ? 0.6 * Math.sin(t * 1.6 + c.ph) * c.up : 0)
       if (c.st === 'away') { M.makeScale(0, 0, 0); mesh.setMatrixAt(i, M); ears.setMatrixAt(i, M); continue }
       // T(pos) Ry(yaw) T(0,0,-.12k) Rx(th) S(k) T(0,0,.12): pitch about the hind feet, so rearing rises on the haunches
