@@ -16,7 +16,7 @@ export async function createPet(ctx) {
   const ground = (x, z) => ctx.heightAt(x, z)
 
   // --- fur material
-  const uTime = uniform(0), uComb = uniform(new THREE.Vector3()) // comb: lean of the tips, fraction of hair length, body space
+  const uTime = uniform(0), uDay = uniform(1),  uComb = uniform(new THREE.Vector3()) // comb: lean of the tips, fraction of hair length, body space
   const k = attribute('aK', 'float'), L = attribute('aLen', 'float'), pg = positionGeometry, ng = normalGeometry
   const sway = vec3(sin(uTime.mul(3.1).add(pg.y.mul(45))), sin(uTime.mul(2.3).add(pg.z.mul(40))).mul(0.4), sin(uTime.mul(2.7).add(pg.x.mul(42)))).mul(0.12)
   const fur = new THREE.MeshStandardNodeMaterial({ roughness: 1, metalness: 0 })
@@ -33,7 +33,7 @@ export async function createPet(ctx) {
   const fill = smoothstep(0.35, 1.2, length(fwidth(q))) // strands thinner than a pixel → fatten them into a soft volume instead of sparkling
   fur.opacityNode = max(step(length(ft), float(0.56).mul(float(1).sub(pow(kv.div(len), 1.6))).add(fill.mul(0.2).mul(max(float(1).sub(kv.div(len)), 0)))), step(kv, 0.001)) // full strands that taper late; shell 0 is solid skin
   fur.alphaTest = 0.5
-  const coat = mix(color(0xfbf2e4), color(0xf9b49c), varying(attribute('aTint', 'float'))) // cream, peach blush
+  const coat = mix(mix(color(0xfbf2e4), color(0xeab27c), uDay.mul(0.75)), color(0xf9a48c), varying(attribute('aTint', 'float'))) // cream (honey by day, so it parts from grass and stone), peach blush
   fur.colorNode = mix(coat.mul(color(0xc4ab92)), coat, max(smoothstep(0, 0.7, kv), float(1).sub(varying(L).mul(25)))).mul(h.mul(0.12).add(0.94)) // warm shaded roots → light tips (short fur stays light)
   fur.emissiveNode = coat.mul(pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 3).mul(kv).mul(0.3)) // soft halo where light skims the tips
 
@@ -122,7 +122,7 @@ export async function createPet(ctx) {
   p.set(heroPos.x + 1.3, ground(heroPos.x + 1.3, heroPos.z) + HOVER, heroPos.z)
   root.position.copy(p)
   let yaw = Math.PI, mode = 'follow', modeT = 0, nextSniff = 10 + Math.random() * 5, twL = 0, twR = 0, nextTwitch = 3, nextBlink = 2, blink = 0
-  let wasMoving = false, heroAir = false, flap = 0, acc = 0, sniffDip = 0
+  let glance = 0, nextGlance = 3, wasMoving = false, heroAir = false, flap = 0, acc = 0, sniffDip = 0
 
   window.__probes.pet = () => ({
     dist: +Math.hypot(p.x - heroPos.x, p.z - heroPos.z).toFixed(2), hover: +(p.y - ground(p.x, p.z)).toFixed(2), speed: +v.length().toFixed(2), mode,
@@ -131,6 +131,7 @@ export async function createPet(ctx) {
   return {
     update(dt, t) {
       uTime.value = t
+      uDay.value = 1 - Math.min(1, ctx.night ?? 0)
       // the hero, as the pet sees him: smoothed velocity, heading, stop and jump moments
       raw.subVectors(heroPos, lastHero).divideScalar(Math.max(dt, 1e-3))
       lastHero.copy(heroPos)
@@ -171,9 +172,12 @@ export async function createPet(ctx) {
 
       // face where it goes; when slow, look at him (or at the flower)
       const sp = Math.hypot(v.x, v.z), look = mode === 'sniff' ? sniffAt : heroPos
-      const want = sp > 0.35 ? Math.atan2(v.x, v.z) : Math.atan2(look.x - p.x, look.z - p.z)
+      const want = glance > 0 ? Math.atan2(camera.position.x - p.x, camera.position.z - p.z) : sp > 0.35 ? Math.atan2(v.x, v.z) : Math.atan2(look.x - p.x, look.z - p.z)
       const dy = wrap(want - yaw) * Math.min(1, dt * 5)
       yaw += dy
+      // every few seconds turn and look back at the camera, so the eyes and face show from behind
+      glance = Math.max(0, glance - dt)
+      if ((nextGlance -= dt) < 0) { if (mode === 'follow') glance = 1.4; nextGlance = 4 + Math.random() * 3 }
       root.position.copy(p)
       root.rotation.y = yaw
 
@@ -193,7 +197,7 @@ export async function createPet(ctx) {
       twL = Math.max(0, twL - dt * 2.5); twR = Math.max(0, twR - dt * 2.5)
       ears.forEach((e, i) => {
         const tw = i ? twR : twL, side = i ? 1 : -1
-        e.rotation.z = side * (1.3 + Math.sin(flap + i * 0.3) * (0.16 + Math.min(sp, 3) * 0.05) + Math.sin(t * 30) * 0.3 * tw * tw - sniffDip * 0.3)
+        e.rotation.z = side * (2.3 - 0.5 * glance + Math.sin(flap + i * 0.3) * (0.16 + Math.min(sp, 3) * 0.05) + Math.sin(t * 30) * 0.3 * tw * tw - sniffDip * 0.3)
         e.rotation.x = Math.min(sp * 0.12, 0.5)
       })
       tail.rotation.y = Math.sin(t * 7) * (0.25 + Math.min(sp, 2) * 0.15)
