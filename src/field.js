@@ -50,6 +50,15 @@ export async function createField(ctx) {
   const uNight = uniform(0) // ctx.night, 0 day … 1 night: how much the tips give back the light they drank
   // ctx.aloft, 0 on foot … 1 from 70 m over the ground (the dragon's back): how much the ground wears its look from the air
   const uAloft = uniform(0), aloftAt = c => ss(20, 70, c.y - ctx.heightAt(c.x, c.z))
+  // Gallery plinths: grass and flowers skip the keepClear circles bestiary pushes (it loads after field, so they are caught
+  // at push time and shown to the blade shader through uClear). shortcut: 16 circles, bestiary only; ring/water/settlement
+  // circles keep their own ground patches.
+  const uClear = uniformArray(Array.from({ length: 16 }, () => new THREE.Vector4(1e6, 1e6, 0, 0)), 'vec4'), push0 = ctx.keepClear.push
+  let nClear = 0
+  ctx.keepClear.push = function (...cs) {
+    if (new Error().stack.split('\n')[2]?.includes('/bestiary.js')) for (const c of cs) if (nClear < 16) uClear.array[nClear++].set(c.x, c.z, c.r, 0)
+    return push0.apply(this, cs)
+  }
   ctx.aloft = 0
 
   // Footstep light rings (Phase 6 world rule: pressure wakes the grass). A pool of RINGS slots (x, z, start time, strength);
@@ -137,6 +146,7 @@ export async function createField(ctx) {
     return new THREE.Vector2(0.94 * v, 0.34 * v)
   }
 
+  const clearD = w => { let d = float(1e6); for (let i = 0; i < 16; i++) { const c = uClear.element(i); d = min(d, length(w.sub(c.xy)).sub(c.z)) } return d }
   // One grass layer: `side`² blades on a `cell` lattice round the camera, alive between fadeIn and fadeOut metres.
   // With `head` it is a flower layer instead: a sparser lattice where a cell holds a thin stem + star head with chance
   // `flowers`, so the 312k plain blades never pay for head vertices.
@@ -170,6 +180,7 @@ export async function createField(ctx) {
     const fadeA = fadeIn > 0 ? smoothstep(fadeIn * 0.72, fadeIn, dist) : float(1)
     const keep = fadeA.mul(float(1).sub(smoothstep(fadeOut * 0.75, fadeOut, dist)))
       .mul(smoothstep(-36, -30, ground)).mul(float(1).sub(smoothstep(0.02, 0.2, g.y))) // no grass in the sea or down the cliff
+      .mul(step(0, clearD(world))) // not through a gallery plinth
       .mul(uAloft.oneMinus()) // from the dragon's back a blade is under a pixel: the ground carries the meadow (meadowFar)
     const alive = step(r(3), keep)
     const patch = lowNoise(world, 0.11, 0.07), bloom = lowNoise(world.add(57), 0.045, 0.06)
