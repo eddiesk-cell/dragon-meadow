@@ -38,9 +38,12 @@ const ctx = {
 window.__ctx = ctx
 
 const systems = []
+// A glob, not import(`./${name}.js`): vite cannot bundle a templated import of its own folder, so a production build
+// shipped none of the world (found 2026-11-14; dev was unaffected).
+const mods = import.meta.glob('./*.js')
 async function load(name, fn) {
   try {
-    const sys = await (await import(`./${name}.js`))[fn](ctx)
+    const sys = await (await mods[`./${name}.js`]())[fn](ctx)
     if (sys) systems.push(sys)
   } catch (e) { fail(name, e) }
 }
