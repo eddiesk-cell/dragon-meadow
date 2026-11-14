@@ -145,7 +145,15 @@ export async function createDragon(ctx) {
     }
     return true
   }
-  const site = (px, pz) => {
+  const site = (px, pz, hero) => {
+    if (hero) { // called to the hero: the nearest clear ground in a ring round HIM (14 m out and on), preferring the side (px, pz) points to
+      const pa = Math.atan2(pz - hero.z, px - hero.x)
+      for (let r = 14; r <= 110; r += 6) for (let i = 0, n = Math.ceil(6.28 * r / 5); i < n; i++) {
+        const a = pa + (i & 1 ? 1 : -1) * Math.ceil(i / 2) * 6.28 / n, sx = hero.x + r * Math.cos(a), sz = hero.z + r * Math.sin(a)
+        if (clear(sx, sz)) return { x: sx, z: sz }
+      }
+      return null
+    }
     for (let r = 0; r <= 96; r += 8) for (let a = 0; a < 6.28; a += r ? 4 / r : 7) {
       const sx = px + r * Math.cos(a), sz = pz + r * Math.sin(a)
       if (clear(sx, sz)) return { x: sx, z: sz }
@@ -168,11 +176,12 @@ export async function createDragon(ctx) {
     yawRate: () => yawRate,
     input: { turn: 0, speed: 14, climb: 0 }, // written by ride.js while ridden
     // Land near (px, pz) on the nearest clear meadow; final heading psiL, or straight in when omitted.
-    land(px, pz, psiL) {
-      if (!['free', 'rejoin', 'ridden'].includes(state)) return false
+    land(px, pz, psiL, hero) { // hero: search round him instead (ride.js's call); false when nothing is clear
+      const s = ['free', 'rejoin', 'ridden'].includes(state) && site(px, pz, hero)
+      if (!s) return false
       if (state === 'rejoin') { P.copy(holder.position); w = 0 } // from where it is drawn, not the integrator under the blend
       leaveFree()
-      L = { ...site(px, pz), final: false }
+      L = { ...s, final: false }
       L.psi = psiL ?? Math.atan2(L.x - P.x, L.z - P.z)
       go('land')
       return true

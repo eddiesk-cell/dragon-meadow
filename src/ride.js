@@ -39,20 +39,29 @@ export function createRide(ctx, d) {
     return out.copy(v).applyQuaternion(d.holder.quaternion).negate().add(seatW)
   }
 
+  let msg = '', msgT = 0, pending = false // msg: a one-off line over the hint; pending: call again once it is back in the air
+  const say = t => { msg = t; msgT = 3 }
+  const callDown = () => { // ahead-right of his view; the dragon picks the nearest clear ground round him
+    const f = camera.getWorldDirection(v).setY(0).normalize()
+    return d.land(heroPos.x + f.x * 18 - f.z * 10, heroPos.z + f.z * 18 + f.x * 10, undefined, heroPos)
+  }
+
   function pressE() {
     if (!can) return
-    if (mode === 'ride' && d.state === 'ridden') { // land ahead, along the heading
+    const s = d.state
+    if (mode === 'ride' && s === 'ridden') { // land ahead, along the heading
       const h = d.heading(), p = d.holder.position
-      if (d.land(p.x + Math.sin(h) * 45, p.z + Math.cos(h) * 45, h)) note('land')
-    } else if (mode === 'foot' && d.state === 'landed' && reach() < 7) {
+      if (d.land(p.x + Math.sin(h) * 45, p.z + Math.cos(h) * 45, h)) note('land'); else say('no room to land here')
+    } else if (mode !== 'foot') return
+    else if (s === 'landed' && reach() < 7) {
       mode = 'mount'; mt = 0; note('mount')
       from.copy(root.position); fromQ.copy(root.quaternion); camWas.copy(camera.position); qWas.copy(camera.quaternion); away.subVectors(camera.position, heroPos)
       seat(); ctx.heroAct.face(seatW.x - from.x, seatW.z - from.z)
       ctx.heroAct.play('Mount', { lockMove: true })
-    } else if (mode === 'foot' && (d.state === 'free' || d.state === 'rejoin')) { // call it down ahead-right of his view
-      const f = camera.getWorldDirection(v).setY(0).normalize()
-      if (d.land(heroPos.x + f.x * 18 - f.z * 10, heroPos.z + f.z * 18 + f.x * 10)) note('called')
-    }
+    } else if (s === 'free' || s === 'rejoin') { if (callDown()) note('called'); else say('no room to land here') }
+    else if (s === 'landed' && reach() > 30) { d.takeoff(); pending = true; note('recall') } // it landed somewhere far off: up again, then called here
+    else if (s === 'takeoff') pending = true
+    else say(s === 'landed' ? 'walk to the dragon and press E' : 'the dragon is coming')
   }
 
   // ?auto=ride: the same E and walking keys a player presses (dispatched to the page), and a pilot on the dragon's input.
@@ -103,7 +112,10 @@ export function createRide(ctx, d) {
         i.speed = k('w') || k('arrowup') ? 24 : k('s') || k('arrowdown') ? 6 : 14
         i.climb = k(' ') ? 8 : k('shift') ? -8 : 0
       }
-      const text = mode === 'ride' ? 'W fly · A D turn · Space up · Shift down · E land' : mode === 'foot' && d.state === 'landed' && reach() < 12 ? 'E — climb on the dragon' : ''
+      if ((msgT -= dt) < 0) msg = ''
+      if (pending && (d.state === 'free' || d.state === 'rejoin')) { pending = false; if (!callDown()) say('no room to land here') }
+      const text = mode === 'ride' ? 'W fly · A D turn · Space up · Shift down · E land' : mode !== 'foot' ? '' : msg
+        || (pending || d.state === 'land' || d.state === 'touch' ? 'the dragon is coming' : d.state === 'landed' ? (reach() < 12 ? 'E — climb on the dragon' : 'walk to the dragon and press E') : '')
       if (text !== lastHint) hint.textContent = lastHint = text
       if (mode === 'foot') return
 
