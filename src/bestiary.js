@@ -12,7 +12,7 @@ const ROSTER = [
   ['chalk-hob', 'Chalk Hob', 'Dragon Meadow', 1.3],
   ['wreckback', 'Wreckback', 'The Undercliff', 2.2],
   ['lantern-cap', 'Lantern-cap', 'Lanternwood', 1.6],
-  ['rootbinder', 'The Rootbinder', 'Lanternwood', 4.0, { arms: 1.2, lag: true }],
+  ['rootbinder', 'The Rootbinder', 'Lanternwood', 4.0],
   ['driftwight', 'The Driftwight', 'The Undercliff', 3.2],
   ['stiltstalker', 'Stiltstalker', 'Mirrormere', 2.8, { prop: ['reed-spear', 'rightHand', 'slide'] }],
   ['old-glim', 'Old Glim', 'Mirrormere', 16, { real: true, idle: 'Swim', lie: true }],
@@ -23,9 +23,6 @@ const ROSTER = [
   ['marrowkeeper', 'The Marrowkeeper', 'The Redwaste', 3.5],
   ['rime-warden', 'The Rime Warden', 'Wyrmcrown', 4.5],
 ]
-// arms: stretch the arms k times along their length on top of the clip (the paid mesh's fingertips stop at mid-shin; the
-// glb is not re-exported); lag: the head and its root crown trail the body as a damped spring (the crown has no bones of its own).
-const LAG = { k: 14, c: 2.25, gain: 3 } // spring (1/s²), damping (1/s), how far the lag is exaggerated so it reads
 const RIG = 1.8, R = 20.4, SPAN = 1.0, PLINTH = 0.75 // arc radius (m), half-angle (rad), plinth height (m)
 
 export async function createBestiary(ctx) {
@@ -56,28 +53,6 @@ export async function createBestiary(ctx) {
   label.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;font-family:Georgia,serif;color:#fff;text-shadow:0 1px 4px #000,0 0 2px #000'
   document.body.append(label)
 
-  // per-creature pose fixes applied after the mixer each frame (see ROSTER: arms, lag)
-  const poseFx = (model, o) => {
-    const arms = o.arms && ['left', 'right'].map(sd => [model.getObjectByName(sd + 'UpperArm'), model.getObjectByName(sd + 'Hand')])
-    const head = o.lag && model.getObjectByName('head')
-    let L = null, w = new THREE.Vector3(), T = new THREE.Quaternion(), E = new THREE.Quaternion(), F = new THREE.Quaternion(), P = new THREE.Quaternion()
-    const tips = arms && arms.map(([, h]) => h.getObjectByName(h.name.replace('Hand', 'MiddleTip')))
-    const fx = { lagDeg: 0, tip: () => Math.min(...tips.map(t => t.getWorldPosition(w.clone()).y)), update(dt) {
-      for (const [u, h] of arms || []) { u.scale.y = o.arms; h.scale.y = 1 / o.arms } // the hand keeps its own length
-      if (!head) return
-      head.parent.updateWorldMatrix(true, false); head.updateWorldMatrix(false, false)
-      head.getWorldQuaternion(T)
-      if (!L) L = T.clone()
-      dt = Math.min(dt, 1 / 30)
-      E.copy(T).multiply(F.copy(L).invert()); if (E.w < 0) E.set(-E.x, -E.y, -E.z, -E.w)
-      const a = 2 * Math.acos(Math.min(1, E.w)), sn = Math.sqrt(1 - E.w * E.w) || 1 // E as a rotation vector
-      w.x += (E.x / sn * a * LAG.k - w.x * LAG.c) * dt; w.y += (E.y / sn * a * LAG.k - w.y * LAG.c) * dt; w.z += (E.z / sn * a * LAG.k - w.z * LAG.c) * dt
-      const wl = w.length(); if (wl > 1e-6) L.premultiply(F.setFromAxisAngle(w.clone().divideScalar(wl), wl * dt)).normalize()
-      F.copy(T).slerp(L, LAG.gain); fx.lagDeg = 2 * Math.acos(Math.min(1, Math.abs(F.dot(T)))) * 57.3
-      head.parent.getWorldQuaternion(P); head.quaternion.copy(P.invert().multiply(F)); head.updateWorldMatrix(false, true)
-    } }
-    return fx
-  }
   const items = [], lamps = []
   const arc = ROSTER.filter(r => !r[4]?.lie)
   const radOf = ([, , , size, o = {}]) => o.lie ? size / 2 : o.rad || Math.max(1.1, size * 0.45)
@@ -168,7 +143,7 @@ export async function createBestiary(ctx) {
       el.style.cssText = 'position:absolute;transform:translate(-50%,-100%);text-align:center;white-space:nowrap'
       el.innerHTML = `<div style="font-size:20px;font-weight:bold">${name}</div><div style="font-size:13px;opacity:.85;font-style:italic">${land}</div>`
       label.append(el)
-      items.push({ id, size, root, mixer, seq, len, total, play, el, pos: new THREE.Vector3(x, top, z), yaw: 0, lie: !!o.lie, rope, fx: (o.arms || o.lag) && poseFx(model, o), clipName: idle, phase: i * 3.1, height: hi - lo, footY: lo - top })
+      items.push({ id, size, root, mixer, seq, len, total, play, el, pos: new THREE.Vector3(x, top, z), yaw: 0, lie: !!o.lie, rope, clipName: idle, phase: i * 3.1, height: hi - lo, footY: lo - top })
     } catch (e) { window.__errors.push(`bestiary: ${id}: ${e.message || e}`) }
   }
 
@@ -240,7 +215,6 @@ export async function createBestiary(ctx) {
         ? Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + Math.sin(t * 0.4) * 0.25 // faces the camera, a gentle sway
         : Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + (params.get('still') ? 0 : t * 0.3)
       it.root.rotation.y = it.yaw
-      if (it.fx && params.get('fx') !== 'off') { it.root.updateMatrixWorld(true); it.fx.update(dt) }
       if (it.rope) chain(it.rope, dt)
     }
     if (target) {
@@ -248,8 +222,6 @@ export async function createBestiary(ctx) {
       cp.set(A.x - p.x, 0, A.z - p.z).normalize().multiplyScalar(d).add(p)
       cp.y = ctx.heightAt(cp.x, cp.z) + fs * 0.6 + PLINTH
       tp.set(p.x, p.y + Math.min(fs, target.height) * 0.5, p.z)
-      const lk = { hands: ['rightHand', 1.8], shoulders: ['upperChest', 2.6] }[params.get('look')] // &look=hands|shoulders: a close review shot
-      if (lk) { target.root.getObjectByName(lk[0]).getWorldPosition(tp); cp.set(A.x - p.x, 0, A.z - p.z).normalize().multiplyScalar(lk[1]).add(tp); cp.y = tp.y + 0.2 }
     } else {
       const ph = params.get("pan") ? +params.get("pan") : Math.sin(t * 0.12), phi = SPAN * 0.7 * ph
       cp.set(A.x + 4 * ph, 0, A.z + 4)
@@ -267,7 +239,7 @@ export async function createBestiary(ctx) {
 
   window.__probes.bestiary = () => ({
     loaded: items.length, ids: items.map(it => it.id),
-    entries: items.map(it => ({ id: it.id, heightM: +it.height.toFixed(2), targetM: it.size, clip: it.clipName, lagDeg: it.fx && +it.fx.lagDeg.toFixed(2), reachCm: it.fx && it.fx.tip && +((it.fx.tip() - it.pos.y) * 100).toFixed(1), footYcm: +(it.footY * 100).toFixed(1) })),
+    entries: items.map(it => ({ id: it.id, heightM: +it.height.toFixed(2), targetM: it.size, clip: it.clipName, footYcm: +(it.footY * 100).toFixed(1) })),
   })
   return { update: apply }
 }
