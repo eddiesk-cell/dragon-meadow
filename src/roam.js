@@ -306,7 +306,7 @@ export async function createRoam(ctx) {
           const g = ground(it.x, it.z), q = Math.min(it.body, 1.2) * 0.8, sx = Math.sin(it.yaw) * q, sz = Math.cos(it.yaw) * q
           const gy = (g + ground(it.x + sx, it.z + sz) + ground(it.x - sx, it.z - sz) + ground(it.x + sz, it.z - sx) + ground(it.x - sz, it.z + sx)) / 5
           it.gy = it.gy === undefined ? gy : it.gy + (gy - it.gy) * Math.min(1, dt * 8) // the ground eases; the step's own rise and fall is followed closely
-          it.low = (it.low ?? it.footY) + ((it.lowW ? (w => w * lowAt(it) + (1 - w) * it.footY)(it.actions[it.walkN].getEffectiveWeight()) : it.footY) - (it.low ?? it.footY)) * Math.min(1, dt * 25)
+          it.low = (it.low ?? it.footY) + ((it.lowW ? (w => w * lowAt(it) + (1 - w) * it.footY)((a => a.isRunning() ? a.getEffectiveWeight() : 0)(it.actions[it.walkN])) : it.footY) - (it.low ?? it.footY)) * Math.min(1, dt * 25)
           it.root.position.y = it.gy - it.low
         }
         it.root.rotation.y = it.yaw
