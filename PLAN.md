@@ -1015,3 +1015,23 @@ The Rootbinder's root crown is rigid and its hands stop at mid-shin in Idle. Spr
 **Wave G — pet-day PASSED r1** (e92c59f; `shots/review-waveG-pet.md`). A polish turn is with the builder for the two mediums (ears read as horns from behind; shaded brown face in the glance) and four lows.
 
 **Soft look approved by Eddie 2026-11-14** ("Middle is right"): `src/post.js` diffusion default now `soft=1.5` (Eddie later: "can we go between Middle to Softest?"); `?soft=0` is the old crisp frame. If the trees and rocks still read hard-edged, the next step is smoothing their faceted shading.
+
+**Wave G — rootbinder-crown FAILED r1 and was reverted** (`shots/review-waveG-root.md`): the gallery-only fix (upper
+arm scaled 1.2x on top of the clips, head lagging on a spring) worked in Idle and broke every other clip (arms sheared
+into planks, head thrown up to 174 degrees off the neck, hands 11 cm into the plinth in Walk). The right place for both
+is the rig, so it becomes:
+
+### Lane rootbinder-rerig — `art/bestiary/rootbinder/` (not concept.png, hunyuan.glb), `public/models/bestiary/rootbinder.glb`, and the Rootbinder's spring hookup in `src/bestiary.js` (Opus)
+Through the existing pipeline (`art/bestiary/rootbinder/build.sh`, which runs on the Mac Studio; `long_arms.py` already
+lengthens each arm by 0.5 m): (a) lengthen the arms so the Idle fingertips rest at the ground (they hang about 40 cm
+above it now), keeping Eddie's rules: T-pose span about 1.5x the height or more, arms clear of the body in Idle,
+shoulder markers where the arm meets the torso, the skeleton drawn over the front view before clips; (b) give the root
+crown its own bones as spring chains named the way `src/springs.js` reads them (`spring_<chain>_<n>` with an `_end`
+tip), weighted so each main root sways on its own, and run them in the gallery with `src/springs.js`. No credits: the
+paid mesh `hunyuan.glb` is on disk; never regenerate it.
+- **CHECK:** the Phase 4 rig CHECK again (skeleton.png every joint on a bend with shoulders marked; idle.png arms clear
+  at full length, head ahead, feet flat; the glb lists exactly the 9 clips; ≤ 8 MB; clips.png with no torn or spiked
+  bark; stretch.py no worse than before); Idle fingertips within 3 cm of the plinth and in every other clip no hand
+  below the plinth top by more than 2 cm (a probe or a measurement per clip); `bestiary=1&focus=rootbinder`: two shots
+  300 ms apart in Walk show the crown's roots trailing the head, settling in Idle, never detached from the head; the
+  rest of the gallery and the Warden's anchor unchanged.
