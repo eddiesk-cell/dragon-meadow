@@ -33,9 +33,9 @@ export async function createPet(ctx) {
   const fill = smoothstep(0.35, 1.2, length(fwidth(q))) // strands thinner than a pixel → fatten them into a soft volume instead of sparkling
   fur.opacityNode = max(step(length(ft), float(0.56).mul(float(1).sub(pow(kv.div(len), 1.6))).add(fill.mul(0.2).mul(max(float(1).sub(kv.div(len)), 0)))), step(kv, 0.001)) // full strands that taper late; shell 0 is solid skin
   fur.alphaTest = 0.5
-  const coat = mix(mix(color(0xfbf2e4), color(0xf6cfa0), uDay.mul(0.7)), color(0xf9a48c), varying(attribute('aTint', 'float'))) // cream (honey by day, so it parts from grass and stone), peach blush
+  const coat = mix(mix(color(0xfbf2e4), color(0xf6cfa0), smoothstep(0.55, 1, uDay).mul(0.7)), color(0xf9b49c), varying(attribute('aTint', 'float'))) // cream (honey by day, so it parts from grass and stone), peach blush
   fur.colorNode = mix(coat.mul(color(0xc4ab92)), coat, max(smoothstep(0, 0.7, kv), float(1).sub(varying(L).mul(25)))).mul(h.mul(0.12).add(0.94)) // warm shaded roots → light tips (short fur stays light)
-  fur.emissiveNode = coat.mul(pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 3).mul(kv).mul(0.3)) // soft halo where light skims the tips
+  fur.emissiveNode = coat.mul(pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 3).mul(kv).mul(0.3).add(smoothstep(0.2, 0.9, nb.z).mul(smoothstep(0, 0.6, uDay)).mul(0.22))) // + day fill on the face side // soft halo where light skims the tips
 
   const aK = new THREE.InstancedBufferAttribute(Float32Array.from({ length: SHELLS }, (_, i) => i / (SHELLS - 1)), 1)
   const tv = new THREE.Vector3(), tn = new THREE.Vector3()
@@ -84,7 +84,7 @@ export async function createPet(ctx) {
     const g = new THREE.SphereGeometry(1, 20, 24), P = g.attributes.position
     for (let i = 0; i < P.count; i++) {
       const x = P.getX(i), y = P.getY(i), z = P.getZ(i), t = (1 - y) / 2, r = Math.hypot(x, z) || 1, sn = Math.sin(Math.PI * t)
-      const px = (x / r) * 0.055 * Math.pow(sn, 0.75) * (1 - 0.3 * t), py = -0.27 * t, pz = (z / r) * 0.011 * Math.pow(sn, 0.6), b = -s * 0.7 * t * t
+      const px = (x / r) * 0.055 * Math.pow(sn, 0.75) * (1 - 0.3 * t), py = -0.27 * t, pz = (z / r) * 0.011 * Math.pow(sn, 0.6), b = -s * 0.12 * t * t
       P.setXYZ(i, px * Math.cos(b) - py * Math.sin(b), px * Math.sin(b) + py * Math.cos(b), pz)
     }
     g.computeVertexNormals()
@@ -122,7 +122,7 @@ export async function createPet(ctx) {
   p.set(heroPos.x + 1.3, ground(heroPos.x + 1.3, heroPos.z) + HOVER, heroPos.z)
   root.position.copy(p)
   let yaw = Math.PI, mode = 'follow', modeT = 0, nextSniff = 10 + Math.random() * 5, twL = 0, twR = 0, nextTwitch = 3, nextBlink = 2, blink = 0
-  let glance = 0, nextGlance = 3, wasMoving = false, heroAir = false, flap = 0, acc = 0, sniffDip = 0
+  let nextHop = 3, glance = 0, nextGlance = 3, wasMoving = false, heroAir = false, flap = 0, acc = 0, sniffDip = 0
 
   window.__probes.pet = () => ({
     dist: +Math.hypot(p.x - heroPos.x, p.z - heroPos.z).toFixed(2), hover: +(p.y - ground(p.x, p.z)).toFixed(2), speed: +v.length().toFixed(2), mode,
@@ -143,6 +143,7 @@ export async function createPet(ctx) {
       heroAir = air
       if (wasMoving && !moving) twL = twR = 1 // he stops → ears twitch
       wasMoving = moving
+      if (moving && (nextHop -= dt) < 0) { v.y += 1.3; nextHop = 3 + Math.random() * 3 } // a small hop now and then while walking
       if ((nextTwitch -= dt) < 0) { Math.random() < 0.5 ? (twL = 1) : (twR = 1); nextTwitch = 2.5 + Math.random() * 4 }
 
       // now and then, while he stands still, drift off to sniff a flower and come back
@@ -182,7 +183,7 @@ export async function createPet(ctx) {
       root.rotation.y = yaw
 
       // squash & stretch (volume kept): stretch up when rising, along the path when speeding up
-      const c = Math.cos(yaw), s = Math.sin(yaw), fwdV = v.x * s + v.z * c
+      const c = Math.cos(yaw), s = Math.sin(yaw), fwdV = (v.x * s + v.z * c) * (1 - Math.min(1, glance * 4)) // no forward lean while turned back to look
       acc += (Math.min(0.16, tn.subVectors(v, vPrev).length() / Math.max(dt, 1e-3) * 0.03) - acc) * Math.min(1, dt * 8)
       const sy = 1 + Math.max(-0.14, Math.min(0.18, v.y * 0.1)), sz = 1 + acc
       body.scale.set(1 / Math.sqrt(sy * sz), sy / Math.sqrt(sz), sz / Math.sqrt(sy))
@@ -197,7 +198,7 @@ export async function createPet(ctx) {
       twL = Math.max(0, twL - dt * 2.5); twR = Math.max(0, twR - dt * 2.5)
       ears.forEach((e, i) => {
         const tw = i ? twR : twL, side = i ? 1 : -1
-        e.rotation.z = side * (2.3 - 0.5 * glance + Math.sin(flap + i * 0.3) * (0.16 + Math.min(sp, 3) * 0.05) + Math.sin(t * 30) * 0.3 * tw * tw - sniffDip * 0.3)
+        e.rotation.z = side * (2.4 + Math.sin(flap + i * 0.3) * (0.16 + Math.min(sp, 3) * 0.05) + Math.sin(t * 30) * 0.3 * tw * tw - sniffDip * 0.3)
         e.rotation.x = Math.min(sp * 0.12, 0.5)
       })
       tail.rotation.y = Math.sin(t * 7) * (0.25 + Math.min(sp, 2) * 0.15)
