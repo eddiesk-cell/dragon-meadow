@@ -33,8 +33,8 @@ export async function createCritters(ctx) {
   }
   const S = (r, sx, sy, sz) => new THREE.SphereGeometry(r, 16, 12).scale(sx, sy, sz)
   const geo = mergeGeometries([
-    part(S(0.105, 1, 0.95, 1.75), 0, 0.135, 0.02, COAT, 1),  // slim body: its long axis becomes the spine when it rears
-    part(S(0.045, 1, 1, 1), 0, 0.16, -0.2, TAIL),            // white scut
+    part(S(0.105, 1, 0.95, 1.75), 0, 0.16, 0.05, COAT, 1),  // slim body: its long axis becomes the spine when it rears
+    part(S(0.045, 1, 1, 1), 0, 0.17, -0.145, TAIL),            // white scut
     part(S(0.035, 0.8, 0.8, 1.9), 0.065, 0.04, 0.06, COAT),  // feet
     part(S(0.035, 0.8, 0.8, 1.9), -0.065, 0.04, 0.06, COAT),
   ])
@@ -83,7 +83,10 @@ export async function createCritters(ctx) {
     const stage = [[-3.5, -10, 'stand'], [3.5, -12, 'leap'], [-6, -14, 'ears'], [2, -22, null]]
     stage.forEach(([x, z, pin], i) => { const c = C[i]; c.x = x; c.z = z; c.yaw = Math.PI; c.st = 'graze'; c.hide = 0; c.t = 1e9; c.sc = +params.get('cs') || 2.6; c.pin = pin; c.look = 1e9
       if (pin === 'stand') { c.st = 'stand'; c.up = 1 } else if (pin === 'leap') { c.hop = { t: 0.35, dur: 0.7, x0: x, z0: z, x1: x + 1, z1: z - 4.5, h: 1.1 }; c.yaw = Math.atan2(1, -4.5) } else if (pin === 'ears') c.tw = 0.5 })
-    for (let i = 4; i < N; i++) C[i].t = 1e9
+    const side = params.get('critside') // ?critside=stand|graze|leap: a fifth hare pinned side-on to the camera at ~9 m, for judging head and body
+    if (side) { const c = C[4], [x, z] = [+params.get('critx') || -1.8, -9]; Object.assign(c, { x, z, yaw: -Math.PI / 2, st: side === 'stand' ? 'stand' : 'graze', hide: 0, t: 1e9, sc: +params.get('cs') || 2.6, pin: side, still: true, look: 1e9, nextTw: 1e9, up: side === 'stand' ? 1 : 0 })
+      if (side === 'leap') c.hop = { t: 0.35, dur: 0.7, x0: x, z0: z, x1: x - 4.5, z1: z, h: 1.1 } }
+    for (let i = side ? 5 : 4; i < N; i++) C[i].t = 1e9
   }
 
   const M = new THREE.Matrix4(), A = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), P = new THREE.Vector3()
@@ -136,7 +139,7 @@ export async function createCritters(ctx) {
       } else { y = gy(x, z); tilt = 0.1 + 0.05 * Math.sin(t * 4 + c.ph); twitch = Math.sin(Math.PI * (1 - c.tw)) * 0.16 * c.sc * (c.tw > 0 ? 1 : 0) * (1 - c.up) }
       c.tilt += (tilt - c.tilt) * Math.min(1, dt * (c.hop ? 20 : 7))
       const th = c.tilt * (1 - c.up) - 1.15 * c.up, phi = c.hop ? -0.2 : 0.05 + (-th - 0.05) * c.up // ears stay upright as the body rears
-      const k = Math.max(0.001, c.sc * (c.st === 'away' ? 0 : 1)), sink = c.hide * 0.5 * k, yaw = c.yaw + (c.st === 'stand' ? 0.6 * Math.sin(t * 1.6 + c.ph) * c.up : 0)
+      const k = Math.max(0.001, c.sc * (c.st === 'away' ? 0 : 1)), sink = c.hide * 0.5 * k, yaw = c.yaw + (c.st === 'stand' && !c.still ? 0.6 * Math.sin(t * 1.6 + c.ph) * c.up : 0)
       if (c.st === 'away') { M.makeScale(0, 0, 0); mesh.setMatrixAt(i, M); ears.setMatrixAt(i, M); continue }
       // T(pos) Ry(yaw) T(0,0,-.12k) Rx(th) S(k) T(0,0,.12): pitch about the hind feet, so rearing rises on the haunches
       M.makeTranslation(x, y + lift - sink, z)
