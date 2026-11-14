@@ -62,14 +62,14 @@ export async function createFlutter(ctx) {
   bmat.colorNode = Fn(() => {
     const c = attribute('aC', 'vec4'), q = uv()
     // Pointed forewing and a smaller hindwing with a notch between them; a dark band across the forewing, an eye spot on the hindwing.
-    const ux = q.x.sub(0.52), vsc = q.x.sub(0.4).max(0).mul(2.4).add(3.4) // forewing narrows toward its tip
+    const ux = q.x.sub(0.52), vsc = q.x.sub(0.4).max(0).mul(4).add(3.4) // forewing narrows toward its tip
     const e1 = length(vec2(ux.mul(2.1), q.y.sub(0.64).sub(q.x.sub(0.5).mul(0.15)).mul(vsc))), e2 = length(vec2(q.x.sub(0.34).mul(3.0), q.y.sub(0.25).mul(4.2)))
     const inside = max(float(1).sub(e1), float(1).sub(e2))
     const rim = float(1).sub(tsmooth(0.15, 0.6, inside)).max(tsmooth(0.6, 0.9, q.x).mul(0.85)) // dark margin and tip
     const band = float(1).sub(tsmooth(0.0, 0.05, abs(q.x.sub(0.66)).sub(0.05))).mul(tsmooth(0.4, 0.5, q.y)) // across the forewing
     const tipSpot = float(1).sub(tsmooth(0.0, 0.05, length(vec2(q.x.sub(0.8), q.y.sub(0.72)).mul(vec2(1, 1.4))).sub(0.05)))
     const eyeD = length(vec2(q.x.sub(0.27), q.y.sub(0.26)).mul(vec2(1, 1.1)))
-    const eye = float(1).sub(tsmooth(0.05, 0.09, eyeD)), eyeDot = float(1).sub(tsmooth(0.02, 0.04, eyeD))
+    const eye = float(1).sub(tsmooth(0.03, 0.05, eyeD)), eyeDot = float(1).sub(tsmooth(0.01, 0.022, eyeD)) // a small spot, not a cartoon eye
     const dark = rim.max(band.mul(0.9)).max(eye)
     const wing = mix(c.rgb.mul(c.rgb).mul(1.15), vec3(0.07, 0.05, 0.06), dark.mul(0.97)).add(tipSpot.max(eyeDot).mul(vec3(0.7, 0.68, 0.62)))
     const isBody = tsmooth(1.0, 1.5, q.x)
@@ -118,9 +118,9 @@ export async function createFlutter(ctx) {
   })()
   fmat.colorNode = Fn(() => {
     const c = attribute('aC', 'vec4'), s = saturate(float(1).sub(length(uv().sub(0.5).mul(2))))
-    // a hard small disk with a paler heart
+    // an amber core bright enough to bloom (post.js) inside a soft amber halo: a light in the dark, not a coin
     const near = tsmooth(1.2, 3.0, length(cameraPosition.sub(attribute('aP', 'vec4').xyz))) // fade at the lens, as motes do
-    return vec4(mix(c.rgb, c.rgb.mul(vec3(1, 1.6, 4)), tsmooth(0.55, 0.9, s)), tsmooth(0.25, 0.45, s).mul(c.a).mul(near))
+    return vec4(c.rgb.mul(tsmooth(0.6, 0.9, s).mul(1.8).add(1)), tsmooth(0.62, 0.8, s).max(s.mul(s).mul(0.45)).mul(c.a).mul(near))
   })()
   const FATT = quad(fmat, NF, {
     geo: { position: new THREE.Float32BufferAttribute(fgeo, 3), uv: new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2) },
@@ -131,22 +131,22 @@ export async function createFlutter(ctx) {
     let x, z, i = 0
     do {
       const r = Math.random()
-      if (r < 0.5 && ctx.flora?.trees.length) { // under a tree
+      if (r < 0.3 && ctx.flora?.trees.length) { // under a tree
         const near = ctx.flora.trees.filter(t => Math.hypot(t.x - heroPos.x, t.z - heroPos.z) < R + 25)
         const t = near[Math.floor(Math.random() * near.length)]
         if (t) { const a = rnd(0, 6.28), d = rnd(5, 16); x = t.x + Math.sin(a) * d; z = t.z + Math.cos(a) * d }
-      } else if (r < 0.75 && ctx.pond && Math.hypot(ctx.pond.x - heroPos.x, ctx.pond.z - heroPos.z) < R + 40) { // over the pond
+      } else if (r < 0.5 && ctx.pond && Math.hypot(ctx.pond.x - heroPos.x, ctx.pond.z - heroPos.z) < R + 40) { // over the pond
         const a = rnd(0, 6.28), d = rnd(0, 22); x = ctx.pond.x + Math.sin(a) * d; z = ctx.pond.z + Math.cos(a) * d
       }
       if (x === undefined || Math.hypot(x - heroPos.x, z - heroPos.z) > R) [x, z] = spot()
     } while (ctx.keepClear.some(c => Math.hypot(x - c.x, z - c.z) < c.r) && i++ < 6)
     if (Math.hypot(x - heroPos.x, z - heroPos.z) < 2.5) { x += 4; z += 4 }
-    f.x = x; f.z = z; f.y = Math.max(gy(x, z), ctx.pond?.level ?? -1e9) + rnd(0.45, 1.1)
-    f.ang = rnd(0, 6.28); f.sp = rnd(0.25, 0.6); f.h = f.y - gy(x, z); f.ph = rnd(0, 6.28); f.w = rnd(1.3, 2.6); f.sz = rnd(0.2, 0.28); f.alive = true
+    f.x = x; f.z = z; f.y = Math.max(gy(x, z), ctx.pond?.level ?? -1e9) + rnd(1.2, 1.9) // above the 1.3 m grass, or the blades hide and slice them
+    f.ang = rnd(0, 6.28); f.sp = rnd(0.25, 0.6); f.h = f.y - gy(x, z); f.ph = rnd(0, 6.28); f.w = rnd(1.3, 2.6); f.sz = rnd(0.45, 0.55); f.alive = true
   }
 
   let nb = 0, nf = 0
-  const gold = new THREE.Color(1.0, 0.4, 0.0)
+  const gold = new THREE.Color(1.0, 0.45, 0.03)
 
   let ms = 0, nU = 0
   function update(dt, t) {
@@ -191,7 +191,7 @@ export async function createFlutter(ctx) {
       const k = i * 4
       BP[k] = b.x; BP[k + 1] = Math.max(b.y, gnd + 0.15); BP[k + 2] = b.z; BP[k + 3] = b.size
       BA[k] = b.yaw; BA[k + 1] = flap; BA[k + 2] = 0; BA[k + 3] = 0
-      BC[k] = b.col[0]; BC[k + 1] = b.col[1]; BC[k + 2] = b.col[2]; BC[k + 3] = b.fade * ss(1.0, 2.5, Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z)) // gone before it can fill the lens
+      BC[k] = b.col[0]; BC[k + 1] = b.col[1]; BC[k + 2] = b.col[2]; BC[k + 3] = b.fade * ss(1.5, 3.5, Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z)) // gone before it can fill the lens
     }
     BATT.arrs.aP.needsUpdate = BATT.arrs.aA.needsUpdate = BATT.arrs.aC.needsUpdate = true
     for (let i = top; i < NB; i++) if (B[i].alive) top = i + 1
@@ -212,7 +212,7 @@ export async function createFlutter(ctx) {
       f.y += ((Math.max(gnd, ctx.pond?.level ?? -1e9) + f.h + Math.sin(t * 0.6 + f.ph) * 0.1) - f.y) * Math.min(1, dt)
       const fd = Math.hypot(f.x - heroPos.x, f.z - heroPos.z)
       if (fd > R + 4 || fd < 2.5) spawnF(f)
-      const b = Math.pow(0.5 + 0.5 * Math.sin(t * f.w + f.ph), 2.5) // brief glow, long dark: a blink, unlike the steady motes
+      const b = Math.max(0.22, Math.pow(0.5 + 0.5 * Math.sin(t * f.w + f.ph), 1.3)) // a slow pulse over a faint ember, unlike the steady motes
       const k = i * 4, gain = 1.0
       FP[k] = f.x; FP[k + 1] = f.y; FP[k + 2] = f.z; FP[k + 3] = f.sz
       FC[k] = gold.r * gain; FC[k + 1] = gold.g * gain; FC[k + 2] = gold.b * gain; FC[k + 3] = b
