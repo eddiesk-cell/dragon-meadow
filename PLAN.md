@@ -899,3 +899,50 @@ A 1-px bright rim line shows under the left cloud bank (the `clouds()` rim term)
 **Lane sky-rim — parked 2026-11-14:** the rim line could not be reproduced (views tried: `auto=walk`, default,
 `auto=walk&tod=0.5`; crops in `shots/e-sky-*.png`); nothing changed. Not tried: dusk/sunset, where the rim term is
 strongest. The only thin bright lines seen are seams on the top-left sky island (skyisles geometry, not `clouds()`).
+
+## Wave F (2026-11-14) — ambient life (Eddie: "ambients and little creatures and minor things that adds to the overall visual aesthetic"; "for now lets keep it as an \"experience\"")
+
+**Decision (Eddie 2026-11-14): Dragon Meadow is an EXPERIENCE for now, not a game.** No goals, scores or fail states;
+new work serves the walk, the ride and the look. Combat and the bestiary stay as they are.
+Four lanes, each owns ONE new file (stubs exist, `src/main.js` already loads them; lanes never edit main.js). No
+credits: everything from code (TSL, instanced quads or tiny meshes), like `src/motes.js` and `src/birds.js`. Master
+look: `refs/world/mix-day.png` by day, `refs/world/night.png` by night; world facts in `WORLD.md`. Each lane must
+cost < 3% fps (measured with its `?<name>=off` switch against on, alternated three times), respect `ctx.keepClear`,
+`ctx.heightAt`, `ctx.night`, `ctx.windAt`, and stay quiet enough that the meadow still reads calm: life you notice on
+the second look. Two lanes run at a time (the desk is loaded); independent review after each.
+Use Ponytail: shortest working code, reuse before writing, mark corners `shortcut:` (Ponytail 5). Before reading
+code, read graphify-out/GRAPH_REPORT.md; if missing run `graphify update .`.
+
+### Lane flutter — `src/flutter.js` (Sonnet)
+Butterflies by day: 20–40 within ~30 m of the hero, in the reference's flower colours (lilac, peach, pale gold),
+wandering between flowers with a real flutter (two wings flapping, a bobbing path, brief rests on bellflowers and
+grass tips), thinning out at dusk. Fireflies from dusk: firefly gold, slow drifting blinks low over the grass,
+densest near trees and water; they must not look like the motes (which rise and are pale): fireflies blink and wander.
+- **CHECK:** `shots/f-flutter-day.png` (`auto=walk`, 6000 ms) shows several butterflies readable as butterflies at
+  hero distance; `shots/f-flutter-close.png` (a view that puts one within 3 m) shows two wings and colour;
+  `shots/f-flutter-night.png` (`auto=walk&tod=night`) shows gold fireflies distinct from the motes; two shots 300 ms
+  apart show wings in different poses; `?flutter=off` removes them; fps cost < 3%.
+
+### Lane pondlife — `src/pondlife.js` (Sonnet)
+At the water (`src/water.js` publishes where it is): dragonflies darting and hovering over the surface by day (thin
+body, four glassy wings that catch the sun), expanding ripple rings where fish rise (and now and then a small fish
+jumps), frogs on the bank that hop into the water with a ring when the hero comes within ~5 m. At night the
+dragonflies are gone and the rings keep on, faintly lit.
+- **CHECK:** `shots/f-pond-day.png` from the bank shows dragonflies and at least one ripple ring; a shot pair shows a
+  frog on the bank then gone with a ring after the hero walks up (use the game's existing auto/camera params or a
+  `?pondlife=demo` that stages it); `shots/f-pond-night.png` shows rings only; `?pondlife=off` removes them; fps
+  cost < 3%.
+
+### Lane critters — `src/critters.js` (Sonnet, after flutter or pondlife frees a slot)
+Small meadow animals from code, 6–10 near the hero: a round long-eared hopper in the pet's family of shapes (see
+`src/pet.js`; not a copy of the pet) that grazes, sits up to look, and bolts in hops into the long grass when the
+hero comes within ~6 m, reappearing elsewhere later. Never on plinths, water, paths or inside settlements.
+- **CHECK:** `shots/f-critters.png` shows two or three grazing at 8–20 m; a shot pair shows one bolting as the hero
+  nears; none floats or sinks (feet on `ctx.heightAt`); `?critters=off` removes them; fps cost < 3%.
+
+### Lane drift — `src/drift.js` (Sonnet, after flutter or pondlife frees a slot)
+Things on the wind, driven by `ctx.windAt`: petals shed from bellflowers (their own lilac and peach), a few leaves
+under the trees, dandelion-like seed tufts lifting from the grass in gusts. Sparse by default, a visible flurry when a
+gust passes. Not the motes (those glow and rise); these tumble, catch the light and land.
+- **CHECK:** `shots/f-drift-day.png` shows petals near bellflowers and leaves near trees, tumbling (two shots 300 ms
+  apart differ in rotation); they follow the grass's wind direction; `?drift=off` removes them; fps cost < 3%.
