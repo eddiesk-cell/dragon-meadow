@@ -43,6 +43,11 @@ export function createRide(ctx, d) {
   let msg = '', msgT = 0, pending = false // msg: a one-off line over the hint; pending: call again once it is back in the air
   const say = t => { msg = t; msgT = 3 }
   const callAt = f => [heroPos.x + f.x * 18 - f.z * 10, heroPos.z + f.z * 18 + f.x * 10]
+  const where = () => { // which way it is when it landed out of his view (steep ground ahead can force it behind him)
+    const f = camera.getWorldDirection(v).setY(0).normalize(), p = d.holder.position, x = p.x - heroPos.x, z = p.z - heroPos.z, l = Math.hypot(x, z) || 1
+    const fwd = (f.x * x + f.z * z) / l, right = (-f.z * x + f.x * z) / l
+    return fwd > 0.8 ? '' : fwd < -0.3 ? ' behind you' : right > 0 ? ' on your right' : ' on your left'
+  }
   const callDown = () => { // ahead-right of his view; the dragon picks the nearest clear ground round him
     const f = camera.getWorldDirection(v).setY(0).normalize()
     return d.land(...callAt(f), undefined, { x: heroPos.x, z: heroPos.z, fx: f.x, fz: f.z })
@@ -121,7 +126,7 @@ export function createRide(ctx, d) {
       if ((msgT -= dt) < 0 || (d.state === 'landed' && reach() < 7)) msg = ''
       if (pending && (d.state === 'free' || d.state === 'rejoin')) { pending = false; if (!callDown()) say('no room to land here') }
       const text = mode === 'ride' ? 'W fly · A D turn · Space up · Shift down · E land' : mode !== 'foot' ? '' : msg
-        || (pending || d.state === 'land' || d.state === 'touch' ? 'the dragon is coming' : d.state === 'landed' ? (reach() < 7 ? 'E — climb on the dragon' : 'walk to the dragon and press E') : '')
+        || (pending || d.state === 'land' || d.state === 'touch' ? 'the dragon is coming' : d.state === 'landed' ? (reach() < 7 ? 'E — climb on the dragon' : 'walk to the dragon' + where() + ' and press E') : '')
       if (text !== lastHint) hint.textContent = lastHint = text
       if (mode === 'foot') return
 
