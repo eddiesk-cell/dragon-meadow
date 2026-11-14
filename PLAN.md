@@ -952,3 +952,5 @@ gust passes. Not the motes (those glow and rise); these tumble, catch the light 
 **Wave F — status 2026-11-14:** pondlife PASSED r2 (543bfa9; report `shots/review-waveF-pondlife.md`). Open: the demo cannot show frog-then-gone in one run (fixed frog site + held walk wanted); frog eyes read as two yellow balls; distant dragonfly wings are flat white. Push waits for the other three lanes (their commits are interleaved on main).
 
 **Wave F — flutter PASSED r4** (after orchestrator takeover; report `shots/review-waveF-flutter.md`). The r4 medium (lens fade) applied as the reviewer specified. Open lows: fireflies near eye height line up along the far shore; flat-open butterflies read as two ovals; no steering round the pet.
+
+**Wave F — drift PASSED r3** (7b9becf; report `shots/review-waveF-drift.md`). Open lows: the peach petal reads beige on grass; no shot shows a flurry in a real gust during the ordinary walk.
