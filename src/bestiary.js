@@ -69,7 +69,7 @@ export const chain = (r, dt) => {
       ring.x += (-oz * sg + ox * 0.5) * st; ring.z += (ox * sg + oz * 0.5) * st
     }
   }
-  for (let n = 0; n < 12; n++) {
+  for (let n = 0; n < (r.iter || 12); n++) { // r.iter: more passes when the fist moves (roam)
     r.pts.forEach((p, k) => {
       const a = k ? r.pts[k - 1] : fist, d = p.distanceTo(a) || 1e-6, e = (d - r.lens[k]) / d
       // the anchor (ring and crown) is 12x a link's weight, so the fist drags it instead of whipping it into the air
