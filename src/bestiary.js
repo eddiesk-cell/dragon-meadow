@@ -23,7 +23,7 @@ const ROSTER = [
   ['marrowkeeper', 'The Marrowkeeper', 'The Redwaste', 3.5],
   ['rime-warden', 'The Rime Warden', 'Wyrmcrown', 4.5],
 ]
-const RIG = 1.8, R = 18, SPAN = 1.0, PLINTH = 0.75 // arc radius (m), half-angle (rad), plinth height (m)
+const RIG = 1.8, R = 18, SPAN = 1.22, PLINTH = 0.75 // arc radius (m), half-angle (rad), plinth height (m)
 
 export async function createBestiary(ctx) {
   const { THREE, scene, camera, params } = ctx
@@ -55,20 +55,24 @@ export async function createBestiary(ctx) {
 
   const items = [], lamps = []
   const arc = ROSTER.filter(r => !r[4]?.lie)
+  const radOf = ([, , , size, o = {}]) => o.lie ? size / 2 : o.rad || Math.max(1.1, size * 0.45)
+  // plinths are spaced by their own widths (rim to rim 0.8 m of grass, the base flares 12%), so none ever touch
+  const ang = j => -SPAN + (2 * SPAN * cum[j]) / cum.at(-1)
+  const cum = arc.reduce((c, r, k) => [...c, k ? c[k - 1] + 1.12 * (radOf(arc[k - 1]) + radOf(r)) + 0.8 : 0], [])
   for (const [i, [id, name, land, size, o = {}]] of ROSTER.entries()) {
     try {
       const gltf = await loader.loadAsync(import.meta.env.BASE_URL + `models/bestiary/${id}.glb`)
-      const j = arc.indexOf(ROSTER[i]), a = -SPAN + (2 * SPAN * j) / (arc.length - 1)
-      const x = o.lie ? A.x : A.x + R * Math.sin(a), z = o.lie ? A.z - R - 12 : A.z - R * Math.cos(a)
+      const j = arc.indexOf(ROSTER[i]), a = o.lie ? ang(0) - 0.12 : ang(j), d = o.lie ? R + 14 : R
+      const x = A.x + d * Math.sin(a), z = A.z - d * Math.cos(a)
       const top = ctx.heightAt(x, z) + (o.lie ? 0 : PLINTH)
-      const rad = o.lie ? size / 2 : o.rad || Math.max(1.1, size * 0.45)
+      const rad = radOf(ROSTER[i])
       if (!o.lie) {
         const plinth = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.12, PLINTH + 0.6, 24), stone)
         plinth.position.set(x, top - (PLINTH + 0.6) / 2, z)
         plinth.castShadow = plinth.receiveShadow = true
         scene.add(plinth)
       }
-      ctx.keepClear.push({ x, z, r: rad + 1 })
+      ctx.keepClear.push({ x, z, r: rad + 1, bare: !o.lie }) // bare: the field strips grass here; Old Glim has no plinth, she lies on grass
 
       const model = gltf.scene, root = new THREE.Group(), s = o.real ? 1 : size / RIG
       model.traverse(m => {
@@ -176,6 +180,7 @@ export async function createBestiary(ctx) {
       for (const p of r.pts) { // on the plinth: above its top, inside its rim, outside the body (a 0.4 m-rig column)
         // the rim and the body column must leave a chord longer than the shank (2.04 m on the warden), or the anchor is forced upright
         const ox = p.x - r.x, oz = p.z - r.z, rr = Math.hypot(ox, oz) || 1e-6, lim = r.rad - 0.08, body = 0.4 * r.s
+        if (p.y > fist.y) { p.y = fist.y; r.old[r.pts.indexOf(p)].y = fist.y } // nothing hangs above the hand that holds it: no overshoot
         if (p.y > r.top + 0.3 * r.s) continue // only what lies on the stone is fenced in: a raised fist carries the chain out past the rim
         if (rr > lim) p.x = r.x + ox * lim / rr, p.z = r.z + oz * lim / rr
         else if (rr < body && p.y < r.top + 1.6 * r.s) p.x = r.x + ox * body / rr, p.z = r.z + oz * body / rr
@@ -199,7 +204,7 @@ export async function createBestiary(ctx) {
     for (const m of lamps) m.emissiveIntensity = 0.3 + 2.7 * ctx.night
     for (const it of items) {
       it.clipName = cur(it, t); it.play(it.clipName); it.mixer.update(dt)
-      it.yaw = it.lie ? Math.PI / 2 // lies across the view, head to the east
+      it.yaw = it.lie ? Math.PI // lies away from the view just past the west end of the arc (Chalk Hob is the lowest creature: her reared head clears it), head away
         : target === it
         ? Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + Math.sin(t * 0.4) * 0.25 // faces the camera, a gentle sway
         : Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + (params.get('still') ? 0 : t * 0.3)
