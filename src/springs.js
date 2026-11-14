@@ -17,9 +17,12 @@ export const PART = {
   bandana: { k: 380, air: 1.5, wind: 2.6, grav: 0.35, lift: 0.3, damp: 12, max: [1.1, 1.75, 1.75], flutter: 1.6, inertia: 0.6, stream: [0.7, 0.71], taut: 2, lee: 0.6 },
   // leg: how far a hem panel's resting place follows its thigh (0 at the belt → leg at the hem), so it swings with the stride
   hem: { k: 230, air: 0, wind: 1.0, grav: 1, damp: 9, max: 0.8, flutter: 0.4, inertia: 0.3, leg: 0.55 },
-  // root: a stiff appendage (the Rootbinder's crown roots): held hard to its sculpt, near critically damped (settles in
-  // ~0.3 s), a trace of gravity, no wind, a small cap; it lags only the head's jolts and turns
-  root: { k: 400, air: 0, wind: 0, grav: 0.05, damp: 36, max: 0.35, flutter: 0, inertia: 1 },
+  // root: a stiff appendage (the Rootbinder's crown roots): held to its sculpt, near critically damped (settles in ~0.4 s),
+  // a trace of gravity, no wind, a small cap. follow: damping pulls each joint toward its own rest-pose velocity, not the
+  // chain root's, so a turning head carries the roots round instead of dragging them; they lag only its jolts
+  // len: rig length (m) at which a segment's pull is k; shorter segments pull harder so every root bends the same angle
+  // under the same jolt. hard: the pull grows with the bend (×1 + hard at the cap), so a flinch is caught short of the cap
+  root: { k: 250, air: 0, wind: 0, grav: 0.05, damp: 30, max: 0.35, flutter: 0, inertia: 1, follow: true, len: 0.07, hard: 14 },
 }
 const STEP = 1 / 120, G = -9.8
 
@@ -170,11 +173,17 @@ export async function createSprings(ctx, opts) {
             // its moved position the body's own speed would read as a bend and cancel the drag of running
             acc.copy(pOld).add(off).sub(x).multiplyScalar(j === 1 ? kKnot : kAir)
             pOld.copy(x)
+            let fj = fade
+            if (c.p.hard) { // a stiffer pull keeps its damping near critical (∝ √k)
+              const e = acc.length() / kAir / c.len[j - 1] / c.p.max, m = (1 + c.p.hard * e * e) * c.p.len * gs / c.len[j - 1]
+              acc.multiplyScalar(m); fj = Math.exp(-damp * Math.sqrt(m) * h)
+            }
             wj.copy(wc).addScaledVector(rel, 0.3 * flutter * Math.sin(ts * 9 + j * 1.9 + c.phase))
             wj.y += rel.length() * 0.35 * flutter * Math.sin(ts * 13.7 + j * 2.3 + c.phase) // cloth flutters, it does not just lean
             acc.addScaledVector(tmp.subVectors(wj, v).sub(carry), cw)                  // air drag: wind, and running through still air
             acc.y += G * grav * gs
-            v.addScaledVector(acc, h).sub(vlag).multiplyScalar(fade).add(vlag)
+            if (c.p.follow) vlag.subVectors(c.rest[j], c.prev[j]).divideScalar(dt)
+            v.addScaledVector(acc, h).sub(vlag).multiplyScalar(fj).add(vlag)
             cur.copy(x).addScaledVector(v, h)
             nrm.set(0, 0, 0)
             for (let pass = 0; pass < 2; pass++) {
