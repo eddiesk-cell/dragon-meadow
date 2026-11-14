@@ -23,7 +23,7 @@ const ROSTER = [
   ['marrowkeeper', 'The Marrowkeeper', 'The Redwaste', 3.5],
   ['rime-warden', 'The Rime Warden', 'Wyrmcrown', 4.5],
 ]
-const RIG = 1.8, R = 18, SPAN = 1.22, PLINTH = 0.75 // arc radius (m), half-angle (rad), plinth height (m)
+const RIG = 1.8, R = 20.4, SPAN = 1.0, PLINTH = 0.75 // arc radius (m), half-angle (rad), plinth height (m)
 
 export async function createBestiary(ctx) {
   const { THREE, scene, camera, params } = ctx
@@ -56,13 +56,13 @@ export async function createBestiary(ctx) {
   const items = [], lamps = []
   const arc = ROSTER.filter(r => !r[4]?.lie)
   const radOf = ([, , , size, o = {}]) => o.lie ? size / 2 : o.rad || Math.max(1.1, size * 0.45)
-  // plinths are spaced by their own widths (rim to rim 0.8 m of grass, the base flares 12%), so none ever touch
+  // plinths are spaced by their own widths (rim to rim 0.6 m of grass, the base flares 12%), so none ever touch
   const ang = j => -SPAN + (2 * SPAN * cum[j]) / cum.at(-1)
-  const cum = arc.reduce((c, r, k) => [...c, k ? c[k - 1] + 1.12 * (radOf(arc[k - 1]) + radOf(r)) + 0.8 : 0], [])
+  const cum = arc.reduce((c, r, k) => [...c, k ? c[k - 1] + 1.12 * (radOf(arc[k - 1]) + radOf(r)) + 0.6 : 0], [])
   for (const [i, [id, name, land, size, o = {}]] of ROSTER.entries()) {
     try {
       const gltf = await loader.loadAsync(import.meta.env.BASE_URL + `models/bestiary/${id}.glb`)
-      const j = arc.indexOf(ROSTER[i]), a = o.lie ? ang(0) - 0.12 : ang(j), d = o.lie ? R + 14 : R
+      const j = arc.indexOf(ROSTER[i]), a = o.lie ? ang(arc.findIndex(r => r[0] === 'ribmite')) - 0.09 : ang(j), d = o.lie ? R + 16 : R
       const x = A.x + d * Math.sin(a), z = A.z - d * Math.cos(a)
       const top = ctx.heightAt(x, z) + (o.lie ? 0 : PLINTH)
       const rad = radOf(ROSTER[i])
@@ -160,7 +160,7 @@ export async function createBestiary(ctx) {
     r.root.updateMatrixWorld(true); r.bone.getWorldPosition(fist)
     const g = 9.8 * Math.min(dt, 1 / 30) ** 2
     // damping: the anchor (k > 6) settles instead of swinging like a pendulum
-    r.pts.forEach((p, k) => { const v = p.clone().sub(r.old[k]).multiplyScalar(k > 6 ? 0.9 : 0.96); r.old[k].copy(p); p.add(v).y -= g })
+    r.pts.forEach((p, k) => { const v = p.clone().sub(r.old[k]).multiplyScalar(k > 6 ? 0.9 : 0.96); r.old[k].copy(p); if (k > 6) v.y = Math.min(v.y, 0); p.add(v).y -= g }) // the heavy anchor never flies up on its own momentum: no overshoot above the fist
     { // an anchor propped up with a slack chain is leaning on the body column or balanced on its crown, not held:
       // slide its ring round the body and outward so it lies down (it stood up after Death, and leaned after rising)
       const ring = r.pts.at(-2), crown = r.pts.at(-1), ox = ring.x - r.x, oz = ring.z - r.z, rr = Math.hypot(ox, oz) || 1e-6
@@ -180,7 +180,6 @@ export async function createBestiary(ctx) {
       for (const p of r.pts) { // on the plinth: above its top, inside its rim, outside the body (a 0.4 m-rig column)
         // the rim and the body column must leave a chord longer than the shank (2.04 m on the warden), or the anchor is forced upright
         const ox = p.x - r.x, oz = p.z - r.z, rr = Math.hypot(ox, oz) || 1e-6, lim = r.rad - 0.08, body = 0.4 * r.s
-        if (p.y > fist.y) { p.y = fist.y; r.old[r.pts.indexOf(p)].y = fist.y } // nothing hangs above the hand that holds it: no overshoot
         if (p.y > r.top + 0.3 * r.s) continue // only what lies on the stone is fenced in: a raised fist carries the chain out past the rim
         if (rr > lim) p.x = r.x + ox * lim / rr, p.z = r.z + oz * lim / rr
         else if (rr < body && p.y < r.top + 1.6 * r.s) p.x = r.x + ox * body / rr, p.z = r.z + oz * body / rr
@@ -195,6 +194,10 @@ export async function createBestiary(ctx) {
       if (k === r.bones.length - 1) dir.subVectors(r.pts[k], r.pts[k + 1]).normalize() // the ring: its shank runs to the crown (−Y)
       else dir.subVectors(toward, r.pts[k]).normalize()
       q.setFromUnitVectors(up, dir); b.parent.getWorldQuaternion(pq)
+      if (k === r.bones.length - 1) { // roll the anchor about its shank so the stock (local z) lies level: a stock standing up from a lying anchor reads as a stake
+        const a = new THREE.Vector3(0, 0, 1).applyQuaternion(q), h = dir.clone().cross(up)
+        if (h.lengthSq() > 1e-4) q.premultiply(new THREE.Quaternion().setFromUnitVectors(a, h.normalize().multiplyScalar(a.dot(h) < 0 ? -1 : 1)))
+      }
       b.quaternion.copy(pq.invert().multiply(q)); b.updateMatrixWorld(true)
     }
   }
@@ -204,7 +207,7 @@ export async function createBestiary(ctx) {
     for (const m of lamps) m.emissiveIntensity = 0.3 + 2.7 * ctx.night
     for (const it of items) {
       it.clipName = cur(it, t); it.play(it.clipName); it.mixer.update(dt)
-      it.yaw = it.lie ? Math.PI // lies away from the view just past the west end of the arc (Chalk Hob is the lowest creature: her reared head clears it), head away
+      it.yaw = it.lie ? Math.PI // lies away from the view behind the Ribmites, the gallery's smallest creature, so her reared head clears the plinths in front
         : target === it
         ? Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + Math.sin(t * 0.4) * 0.25 // faces the camera, a gentle sway
         : Math.atan2(A.x - it.pos.x, A.z - it.pos.z) + (params.get('still') ? 0 : t * 0.3)
