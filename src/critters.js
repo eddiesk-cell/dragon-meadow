@@ -2,6 +2,7 @@
 // One merged geometry, one InstancedMesh, hops steered on the CPU. They graze, sit up when the hero is within ~12 m,
 // bolt in long hops when he is within ~6 m and sink into the grass, then reappear out of view 20-40 s later.
 // ?critters=off removes them; ?critters=demo stages three grazers at 8-15 m ahead and one that bolts as auto=walk nears.
+import { uniform, vertexColor, vec3 } from 'three/tsl'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 const N = 8, SEE = 12, BOLT = 6, FAR = 36
@@ -28,20 +29,22 @@ export async function createCritters(ctx) {
     return g.toNonIndexed()
   }
   const S = (r, sx, sy, sz) => new THREE.SphereGeometry(r, 16, 12).scale(sx, sy, sz)
-  const ear = s => part(S(0.034, 1, 4.3, 0.55), 0.04 * s, 0.4, 0.15, -0.3, (g, i) => COAT.clone().lerp(TIP, 0.8 * ss(0.0, 0.07, g.attributes.position.getY(i) - 0.5))) // tall leaf ears, tipped dark
+  const ear = s => part(S(0.034, 1, 4.3, 0.55), 0.04 * s, 0.4, 0.15, 0.05, (g, i) => COAT.clone().lerp(TIP, 0.8 * ss(0.0, 0.07, g.attributes.position.getY(i) - 0.5))) // tall leaf ears, tipped dark
   const geo = mergeGeometries([
     part(S(0.15, 1, 0.92, 1.28), 0, 0.14, 0, 0, COAT, 1),         // round body
     part(S(0.085, 1, 0.95, 1), 0, 0.235, 0.2, 0, COAT, 0.35),    // head
-    part(S(0.04, 1.2, 0.8, 1), 0, 0.2, 0.275, 0, BELLY),         // pale muzzle
-    part(S(0.012, 1.2, 1, 0.7), 0, 0.215, 0.312, 0, DARK),        // nose
-    part(S(0.015, 1, 1.2, 0.8), 0.05, 0.255, 0.235, 0, DARK),     // eyes
-    part(S(0.015, 1, 1.2, 0.8), -0.05, 0.255, 0.235, 0, DARK),
+    part(S(0.032, 1.2, 0.8, 0.9), 0, 0.205, 0.262, 0, BELLY),         // pale muzzle
+    part(S(0.011, 1.2, 1, 0.7), 0, 0.213, 0.296, 0, DARK),        // nose
+    part(S(0.021, 1, 1.2, 0.8), 0.052, 0.255, 0.225, 0, DARK),     // eyes
+    part(S(0.021, 1, 1.2, 0.8), -0.052, 0.255, 0.225, 0, DARK),
     ear(1), ear(-1),
     part(S(0.05, 1, 1, 1), 0, 0.16, -0.2, 0, TAIL),               // white scut
     part(S(0.045, 0.8, 0.8, 1.7), 0.08, 0.04, 0.06, 0, COAT),     // feet
     part(S(0.045, 0.8, 0.8, 1.7), -0.08, 0.04, 0.06, 0, COAT),
   ])
-  const mat = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 1, metalness: 0 })
+  const mat = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 1, metalness: 0 }), uNight = uniform(0)
+  mat.emissiveNode = vertexColor().mul(uNight.mul(0.35)).mul(vec3(0.55, 1, 0.9)) // by night they take a little of the grass's teal glow instead of going black
+
   const mesh = new THREE.InstancedMesh(geo, mat, N)
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   mesh.frustumCulled = false; mesh.castShadow = true; mesh.name = 'critters'
@@ -53,15 +56,15 @@ export async function createCritters(ctx) {
     camera.getWorldDirection(fwd)
     const a0 = Math.atan2(fwd.x, fwd.z)
     for (let i = 0; i < 30; i++) {
-      const a = seen ? a0 + rnd(-0.7, 0.7) : a0 + (Math.random() < 0.5 ? 1 : -1) * rnd(1.4, 3.1), d = seen ? rnd(8, 20) : rnd(14, 26)
+      const a = seen ? a0 + rnd(-0.7, 0.7) : a0 + (Math.random() < 0.5 ? 1 : -1) * rnd(1.4, 3.1), d = seen ? rnd(10, 35) : rnd(14, 35)
       const x = heroPos.x + Math.sin(a) * d, z = heroPos.z + Math.cos(a) * d
-      if (!blocked(x, z)) return [x, z]
+      if (!blocked(x, z) && C.filter(c => c.st !== 'away' && Math.hypot(c.x - x, c.z - z) < 10).length < 2) return [x, z] // never a third in one cluster
     }
     return null
   }
 
   const C = Array.from({ length: N }, (_, i) => ({
-    st: 'away', t: rnd(0.2, 2 + i * 0.6), x: 0, z: 0, yaw: 0, sc: rnd(3.9, 4.5), vis: 0, hide: 0, th: 0.5, // hide 0 = standing in the grass, 1 = sunk out of it
+    st: 'away', t: rnd(0.2, 2 + i * 0.6), x: 0, z: 0, yaw: 0, sc: rnd(0.65, 0.8), vis: 0, hide: 0, th: 0.5, // hide 0 = standing in the grass, 1 = sunk out of it
     hop: null, hops: 0, dir: 0, nextShuffle: rnd(1, 4), ph: rnd(0, 6), tilt: 0.5,
   }))
   const place = (c, seen) => { const s = spot(seen); if (!s) return false; [c.x, c.z] = s; c.yaw = rnd(0, 6.28); c.st = 'graze'; c.hide = 1; c.hop = null; c.nextShuffle = rnd(1, 4); return true }
@@ -73,7 +76,7 @@ export async function createCritters(ctx) {
     return false
   }
   if (demo) { // staged: three grazers 8-15 m ahead of the start, one 20 m ahead on the line the hero walks
-    [[-8, -9], [8, -12], [-7, -15], [0.5, -20]].forEach(([x, z], i) => { const c = C[i]; c.x = x; c.z = z; c.yaw = Math.PI + rnd(-1, 1); c.st = 'graze'; c.hide = 0; c.vis = 1; c.t = 1e9; c.sc = +params.get('cs') || 4.2 })
+    [[-8, -9], [8, -12], [-7, -15], [0.5, -20]].forEach(([x, z], i) => { const c = C[i]; c.x = x; c.z = z; c.yaw = Math.PI + rnd(-1, 1); c.st = 'graze'; c.hide = 0; c.vis = 1; c.t = 1e9; c.sc = +params.get('cs') || 0.7 })
     for (let i = 4; i < N; i++) C[i].t = 1e9
   }
 
@@ -82,7 +85,7 @@ export async function createCritters(ctx) {
 
   function update(dt, t) {
     const want = demo ? 4 : Math.ceil(N * (1 - 0.5 * ss(0.3, 0.9, night())))
-    live = sitting = bolting = 0
+    live = sitting = bolting = 0; uNight.value = night()
     for (let i = 0; i < N; i++) {
       const c = C[i], dh = Math.hypot(heroPos.x - c.x, heroPos.z - c.z)
       if (c.st === 'away') {
@@ -94,9 +97,9 @@ export async function createCritters(ctx) {
         if (c.st === 'sunk') { if (c.hide > 0.97) { c.st = 'away'; c.t = demo ? 1e9 : rnd(20, 40) } }
         else if (c.hop) {
           const h = c.hop; h.t += dt
-          if (h.t >= h.dur) { c.x = h.x1; c.z = h.z1; c.hop = null; if (c.st === 'bolt') { if (--c.hops <= 0) c.st = 'sunk'; else startHop(c, c.x - heroPos.x, c.z - heroPos.z, rnd(3, 4.2), 0.55, 0.5) || (c.st = 'sunk') } }
+          if (h.t >= h.dur) { c.x = h.x1; c.z = h.z1; c.hop = null; if (c.st === 'bolt') { if (--c.hops <= 0) c.st = 'sunk'; else startHop(c, c.x - heroPos.x, c.z - heroPos.z, rnd(3, 4.2), 0.32, 0.5) || (c.st = 'sunk') } }
         } else if (c.st !== 'bolt') {
-          if (dh < BOLT) { c.st = 'bolt'; c.hops = 2 + (Math.random() < 0.5 ? 1 : 0); if (!startHop(c, c.x - heroPos.x, c.z - heroPos.z, rnd(3, 4.2), 0.55, 0.5)) c.st = 'sunk' }
+          if (dh < BOLT) { c.st = 'bolt'; c.hops = 2 + (Math.random() < 0.5 ? 1 : 0); if (!startHop(c, c.x - heroPos.x, c.z - heroPos.z, rnd(3, 4.2), 0.32, 0.5)) c.st = 'sunk' }
           else if (dh > FAR && !demo) c.st = 'sunk' // fell behind: fade out, come back near him
           else if (dh < SEE) c.st = 'sit'
           else if (c.st === 'sit' && dh > SEE + 2) c.st = 'graze'
@@ -117,7 +120,7 @@ export async function createCritters(ctx) {
         lift = 4 * h.h * s * (1 - s); tilt = -0.45 + 0.9 * s // nose up on take-off, down as it lands
       } else {
         y = gy(x, z)
-        tilt = c.st === 'sit' ? -0.85 : c.st === 'graze' ? 0.05 + 0.08 * Math.sin(t * 5 + c.ph) * (Math.sin(t * 0.7 + c.ph) > 0.2 ? 1 : 0.2) : 0 // head down, chewing
+        tilt = c.st === 'sit' ? -0.6 + 0.5 * ss(0.3, 0.9, night()) : c.st === 'graze' ? 0.05 + 0.08 * Math.sin(t * 5 + c.ph) * (Math.sin(t * 0.7 + c.ph) > 0.2 ? 1 : 0.2) : 0 // head down, chewing
       }
       c.tilt += (tilt - c.tilt) * Math.min(1, dt * (c.hop ? 20 : 7))
       const k = Math.max(0.001, c.sc * (c.st === 'away' ? 0 : 1)), sink = c.hide * 0.5 * k
