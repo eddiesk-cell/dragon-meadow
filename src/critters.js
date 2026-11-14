@@ -136,9 +136,10 @@ export async function createCritters(ctx) {
         x = h.x0 + (h.x1 - h.x0) * s; z = h.z0 + (h.z1 - h.z0) * s
         y = gy(h.x0, h.z0) + (gy(h.x1, h.z1) - gy(h.x0, h.z0)) * s
         lift = 4 * h.h * s * (1 - s); tilt = -0.45 + 0.9 * s // nose up on take-off, down as it lands
-      } else { y = gy(x, z); tilt = 0.1 + 0.05 * Math.sin(t * 4 + c.ph); twitch = Math.sin(Math.PI * (1 - c.tw)) * 0.16 * c.sc * (c.tw > 0 ? 1 : 0) * (1 - c.up) }
+      } else { y = gy(x, z); tilt = 0.1 + 0.05 * Math.sin(t * 4 + c.ph); twitch = Math.sin(Math.PI * (1 - c.tw)) * (c.tw > 0 ? 1 : 0) * (1 - c.up) } // 0..1: an ear flick
       c.tilt += (tilt - c.tilt) * Math.min(1, dt * (c.hop ? 20 : 7))
-      const th = c.tilt * (1 - c.up) - 1.15 * c.up, phi = c.hop ? -0.2 : 0.05 + (-th - 0.05) * c.up // ears stay upright as the body rears
+      // A flick is a short half-rear (head and ears are one mesh: lifting them alone pulled the head off the body), so the neck stays closed.
+      const u = Math.max(c.up, 0.4 * twitch), th = c.tilt * (1 - u) - 1.15 * u, phi = c.hop ? -0.2 : 0.05 + (-th - 0.05) * u // ears stay upright as the body rears
       const k = Math.max(0.001, c.sc * (c.st === 'away' ? 0 : 1)), sink = c.hide * 0.5 * k, yaw = c.yaw + (c.st === 'stand' && !c.still ? 0.6 * Math.sin(t * 1.6 + c.ph) * c.up : 0)
       if (c.st === 'away') { M.makeScale(0, 0, 0); mesh.setMatrixAt(i, M); ears.setMatrixAt(i, M); continue }
       // T(pos) Ry(yaw) T(0,0,-.12k) Rx(th) S(k) T(0,0,.12): pitch about the hind feet, so rearing rises on the haunches
@@ -151,7 +152,6 @@ export async function createCritters(ctx) {
       mesh.setMatrixAt(i, M)
       A.makeTranslation(0, 0.3, 0.24); M.multiply(A)            // to the ear base on the head
       q.setFromEuler(e.set(phi, 0, 0)); A.makeRotationFromQuaternion(q); M.multiply(A)
-      M.elements[13] += twitch                                   // ear tips flick up above the grass
       ears.setMatrixAt(i, M)
     }
     mesh.instanceMatrix.needsUpdate = ears.instanceMatrix.needsUpdate = true
