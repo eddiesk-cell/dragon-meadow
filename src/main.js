@@ -70,6 +70,7 @@ await load('flutter', 'createFlutter')   // Wave F ambient life: butterflies by 
 await load('pondlife', 'createPondlife') // dragonflies, fish rings and frogs at the water
 await load('critters', 'createCritters') // small meadow animals that bolt from the hero
 await load('drift', 'createDrift')       // petals, leaves and seeds on the wind
+await load('roam', 'createRoam')         // the bestiary's creatures at their homes, wandering; ?roam=off disables
 await load('bestiary', 'createBestiary') // ?bestiary=1 gallery; last, so its camera wins over the hero's
 await load('audio', 'createAudio')       // listens to everything above
 let post = null
