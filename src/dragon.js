@@ -294,9 +294,9 @@ export async function createDragon(ctx) {
     if (warm > 0) warm--
     plumes.forEach((s, i) => {
       if (!(s.visible = plume > 0.3 || warm > 0)) return
-      head.localToWorld(bf.copy(JAWS)).addScaledVector(bh, i ? 1.5 + 0.9 * age : 0.2 + 0.5 * age).addScaledVector(ctx.camera.up, 0.15 * age)
+      head.localToWorld(bf.copy(JAWS)).addScaledVector(bh, (i ? 1.5 + 0.9 * age : 0.2 + 0.5 * age) * fp).addScaledVector(ctx.camera.up, 0.15 * age)
       place(s, bf, up2, s.userData.size * (1 + (i ? 0.35 : 0.25) * age), fp) // head-on it comes at the lens from the jaws, not up over the head
-      s.userData.smoke.alpha = plume > 0.3 ? (i ? 0.55 * clamp((age - 0.2) * 5, 0, 1) : 0.8 * Math.min(1, age * 6)) * out * (0.1 + 0.9 * fp) : 0
+      s.userData.smoke.alpha = plume > 0.3 ? (i ? 0.55 * clamp((age - 0.2) * 5, 0, 1) : 0.8 * Math.min(1, age * 6)) * out * (0.04 + 0.96 * fp) : 0
     })
   }
   window.__probes.breath = () => ({ mode: bmode, w: +bw.toFixed(2), plume: +plume.toFixed(2), t: +t.toFixed(1), clip, state, curls: curls.filter(s => s.visible).length, plumes: plumes.filter(s => s.visible).length, headOn: +headOn.toFixed(2) })
