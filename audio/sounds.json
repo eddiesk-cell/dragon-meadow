@@ -1,0 +1,149 @@
+{
+ "bed-day": {
+  "files": [
+   "bed-day.m4a"
+  ],
+  "loop": true
+ },
+ "bed-night": {
+  "files": [
+   "bed-night.m4a"
+  ],
+  "loop": true
+ },
+ "bell": {
+  "files": [
+   "bell.m4a"
+  ],
+  "loop": false
+ },
+ "chimes": {
+  "files": [
+   "chimes.m4a"
+  ],
+  "loop": true
+ },
+ "hit": {
+  "files": [
+   "hit-0.m4a",
+   "hit-1.m4a"
+  ],
+  "loop": false
+ },
+ "jump": {
+  "files": [
+   "jump.m4a"
+  ],
+  "loop": false
+ },
+ "land": {
+  "files": [
+   "land.m4a"
+  ],
+  "loop": false
+ },
+ "roar": {
+  "files": [
+   "roar.m4a"
+  ],
+  "loop": false
+ },
+ "step-grass": {
+  "files": [
+   "step-grass-0.m4a",
+   "step-grass-1.m4a",
+   "step-grass-2.m4a",
+   "step-grass-3.m4a",
+   "step-grass-4.m4a",
+   "step-grass-5.m4a"
+  ],
+  "loop": false
+ },
+ "step-stone": {
+  "files": [
+   "step-stone-0.m4a",
+   "step-stone-1.m4a",
+   "step-stone-2.m4a",
+   "step-stone-3.m4a"
+  ],
+  "loop": false
+ },
+ "step-water": {
+  "files": [
+   "step-water-0.m4a",
+   "step-water-1.m4a",
+   "step-water-2.m4a",
+   "step-water-3.m4a",
+   "step-water-4.m4a",
+   "step-water-5.m4a"
+  ],
+  "loop": false
+ },
+ "swing": {
+  "files": [
+   "swing-0.m4a",
+   "swing-1.m4a",
+   "swing-2.m4a",
+   "swing-3.m4a"
+  ],
+  "loop": false
+ },
+ "theme-day": {
+  "files": [
+   "theme-day.m4a"
+  ],
+  "loop": true
+ },
+ "theme-night": {
+  "files": [
+   "theme-night.m4a"
+  ],
+  "loop": true
+ },
+ "town": {
+  "files": [
+   "town.m4a"
+  ],
+  "loop": true
+ },
+ "troll-grunt": {
+  "files": [
+   "troll-grunt-0.m4a",
+   "troll-grunt-1.m4a",
+   "troll-grunt-2.m4a",
+   "troll-grunt-3.m4a",
+   "troll-grunt-4.m4a",
+   "troll-grunt-5.m4a"
+  ],
+  "loop": false
+ },
+ "troll-impact": {
+  "files": [
+   "troll-impact.m4a"
+  ],
+  "loop": false
+ },
+ "water": {
+  "files": [
+   "water.m4a"
+  ],
+  "loop": true
+ },
+ "wind": {
+  "files": [
+   "wind.m4a"
+  ],
+  "loop": true
+ },
+ "wingbeat": {
+  "files": [
+   "wingbeat-0.m4a",
+   "wingbeat-1.m4a",
+   "wingbeat-2.m4a",
+   "wingbeat-3.m4a",
+   "wingbeat-4.m4a",
+   "wingbeat-5.m4a"
+  ],
+  "loop": false
+ }
+}

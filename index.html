@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dragon Meadow</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #c9ccd0; font-family: system-ui, sans-serif; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    #hint { position: fixed; left: 16px; bottom: 14px; color: #fff; font-size: 13px; opacity: .8;
+            text-shadow: 0 1px 3px #0006; pointer-events: none; transition: opacity 2s; }
+    #load { position: fixed; inset: 0; display: grid; place-items: center; color: #555; font-size: 15px;
+            letter-spacing: .08em; background: #d6d8da; transition: opacity 1.2s; pointer-events: none; }
+  </style>
+  <script type="module" crossorigin src="./assets/index-DzvE1T4y.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/three.core-DKfdcrLr.js">
+  <link rel="modulepreload" crossorigin href="./assets/three.webgpu-Bbvz-A_N.js">
+</head>
+<body>
+  <div id="load">walking out into the meadow…</div>
+  <div id="hint">W A S D to walk · Shift to run · Space to jump · drag to look · E calls the dragon</div>
+  <script>addEventListener('keydown', e => { if (e.key.toLowerCase() === 'e') window.__earlyE = true })</script>
+</body>
+</html>
