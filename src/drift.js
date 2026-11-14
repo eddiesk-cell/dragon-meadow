@@ -4,11 +4,12 @@
 // ?drift=off removes them; ?drift=demo forces a steady gust and a dense fall in front of the camera (for shots);
 // ?drift=grove (with &yaw=34) does the same and stands the hero 17 m from the start's grove, leaves falling in front of its trunk.
 import { MeshStandardNodeMaterial } from 'three/webgpu'
+import { uniform, instancedBufferAttribute } from 'three/tsl'
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
 const POOL = { petal: 70, leaf: 30, seed: 40 }
 // Bellflower colours of refs/world/mix-day.png: lilac-violet and blush pink.
-const PETAL = [[0.7, 0.58, 0.92], [0.78, 0.6, 0.95], [0.95, 0.68, 0.86], [0.98, 0.74, 0.8]]
+const PETAL = [[0.72, 0.4, 0.95], [0.85, 0.38, 0.95], [1.0, 0.4, 0.68], [1.0, 0.58, 0.5]]
 const LEAF = [[0.55, 0.7, 0.18], [0.7, 0.72, 0.2], [0.85, 0.7, 0.2], [0.45, 0.62, 0.2]]
 const R = 34 // spawn radius round the hero (m)
 
@@ -50,22 +51,23 @@ export async function createDrift(ctx) {
     geos.seed = new THREE.BufferGeometry()
     geos.seed.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geos.seed.setIndex(idx); geos.seed.computeVertexNormals()
   }
-  const meshes = {}, pieces = []
+  const meshes = {}, pieces = [], lift = {}
   for (const k of Object.keys(POOL)) {
     const mat = new MeshStandardNodeMaterial({ roughness: 0.55, metalness: 0, side: THREE.DoubleSide })
-    mat.emissive = new THREE.Color(...(k === 'petal' ? [0.2, 0.15, 0.22] : k === 'leaf' ? [0.1, 0.12, 0.02] : [0.15, 0.15, 0.14])) // light through the thin piece lifts its shaded side; dimmed at night
     const m = new THREE.InstancedMesh(geos[k], mat, POOL[k])
     m.frustumCulled = false; m.castShadow = true
+    lift[k] = uniform(0.3)
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     const M0 = new THREE.Matrix4().makeScale(0, 0, 0), c = new THREE.Color(1, 1, 1)
     for (let i = 0; i < POOL[k]; i++) { m.setMatrixAt(i, M0); m.setColorAt(i, c); pieces.push({ k, i, m, on: false }) }
+    mat.emissiveNode = instancedBufferAttribute(m.instanceColor).mul(lift[k]) // light through the thin piece, in its own colour, lifts the shaded side
     scene.add(m); meshes[k] = m
   }
 
   const dir = new THREE.Vector3()
   const gy = (x, z) => ctx.heightAt(x, z)
   // ctx.windAt allocates per call: sample it once per 8 m cell per frame (a gust front is ~30 m long).
-  let wc = new Map()
+  const wc = new Map()
   const wind = (x, z, t) => {
     const k = Math.floor(x / 8) * 4096 + Math.floor(z / 8)
     let w = wc.get(k)
@@ -107,7 +109,8 @@ export async function createDrift(ctx) {
     // Petals come off the flower heads (2-3.3 m up at scale 1) of bellflowers ahead of the camera within ~22 m, so the fall is long and in view.
     for (let tries = 0; acc.petal >= 1 && tries < 6; tries++) {
       const b = nearBells[Math.floor(Math.random() * nearBells.length)]; if (!b) break
-      if (Math.hypot(b.x - camera.position.x, b.z - camera.position.z) > 22 || !seen(b.x, b.z, true)) continue
+      const dc = Math.hypot(b.x - camera.position.x, b.z - camera.position.z)
+      if (dc > 22 || dc < 8 || !seen(b.x, b.z, true)) continue // not at the lens: nearer than 8 m is skipped
       const p = free('petal'); if (!p) break
       const s = b.r / 1.6, a = rnd(0, 6.3), d = rnd(0.3, 1.0) * s
       launch(p, b.x + Math.cos(a) * d, gy(b.x, b.z) + rnd(1.8, 3.3) * s, b.z + Math.sin(a) * d, 'petal', t); acc.petal--
@@ -138,8 +141,8 @@ export async function createDrift(ctx) {
   }
 
   function update(dt, t) {
-    wc = new Map()
-    for (const m of MESHES) m.material.emissiveIntensity = 1 - night()
+    wc.clear()
+    for (const k in lift) lift[k].value = 0.3 * (1 - night())
     if (!staged && ctx.flora?.trees.length) { // ?drift=grove: stand 17 m from the tree nearest the start, facing its trunk
       staged = true
       const T = ctx.flora.trees[0], d = Math.hypot(T.x, T.z), hx = T.x - T.x / d * 17, hz = T.z - T.z / d * 17
@@ -174,6 +177,7 @@ export async function createDrift(ctx) {
         sc *= 1 - ss(k, k + 2, p.landed)
         if (p.landed > k + 2) { p.on = false; p.m.setMatrixAt(p.i, M.makeScale(0, 0, 0)); continue }
       }
+      sc *= ss(4, 8, Math.hypot(p.x - camera.position.x, p.y - camera.position.y, p.z - camera.position.z)) // never large on the lens
       const a = p.landed ? 0 : 1
       // Euler 'YXZ': x is the first value. Flat on average (the geometry's normal is +z, so -90 deg about x), rocking and yawing while it falls.
       const rock = a * Math.min(1, p.age * 3) * (p.k === 'seed' ? 0.5 : 1.15)
