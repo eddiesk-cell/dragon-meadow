@@ -138,7 +138,10 @@ export async function createDragon(ctx) {
     const h = ctx.heightAt(sx, sz)
     if (h < -3) return false
     for (const c of ctx.keepClear) if (Math.hypot(sx - c.x, sz - c.z) < c.r + (loose ? 3 : 9)) return false
-    for (const o of solids) if (Math.hypot(sx - o.x, sz - o.z) < o.r + SIDE + CLEAR + 4) return false
+    if (loose) { // shortcut: under a canopy's edge is fine; keep off trunks and bellflowers (8 m) and everything not a tree
+      for (const o of solids) if (!trees.includes(o) && Math.hypot(sx - o.x, sz - o.z) < o.r + SIDE + CLEAR + 4) return false
+      for (const o of ctx.flora?.solids ?? []) if (Math.hypot(sx - o.x, sz - o.z) < o.r + 8) return false
+    } else for (const o of solids) if (Math.hypot(sx - o.x, sz - o.z) < o.r + SIDE + CLEAR + 4) return false
     for (let a = 0; a < 6.28; a += 0.785) {
       const ax = sx + (loose ? 6 : 9) * Math.cos(a), az = sz + (loose ? 6 : 9) * Math.sin(a)
       if ((ctx.pond?.inside(ax, az) ?? -1) > 0 || Math.abs(ctx.heightAt(ax, az) - h) > (loose ? 5 : 2.5)) return false
@@ -146,14 +149,15 @@ export async function createDragon(ctx) {
     return true
   }
   const site = (px, pz, hero) => {
-    if (hero) { // called to the hero: the nearest clear ground in a ring round HIM, preferring the side (px, pz) points to
+    if (hero) { // called to the hero {x, z, fx, fz = his view}: the nearest clear ground in a ring round HIM, 10 m dearer behind his view
       const pa = Math.atan2(pz - hero.z, px - hero.x)
-      const ring = (r0, r1, loose) => { for (let r = r0; r <= r1; r += 3) for (let i = 0, n = Math.ceil(6.28 * r / 5); i < n; i++) {
+      const ring = (r0, r1, loose) => { let best; for (let r = r0; r <= r1 && !(best && r > best.score); r += 3) for (let i = 0, n = Math.ceil(6.28 * r / 5); i < n; i++) {
         const a = pa + (i & 1 ? 1 : -1) * Math.ceil(i / 2) * 6.28 / n, sx = hero.x + r * Math.cos(a), sz = hero.z + r * Math.sin(a)
-        if (clear(sx, sz, loose)) return { x: sx, z: sz, r }
-      } }
-      const s = ring(12, 110), s2 = (!s || s.r > 18) && ring(12, 18, true) // shortcut: a loose landing only when the strict one is far, tune if it ever clips
-      return s2 || s || null
+        const score = r + ((sx - hero.x) * hero.fx + (sz - hero.z) * hero.fz < 0 ? 10 : 0)
+        if ((!best || score < best.score) && clear(sx, sz, loose)) best = { x: sx, z: sz, r, score }
+      } return best }
+      const s = ring(12, 110), s2 = (!s || s.score > 18) && ring(12, 20, true) // shortcut: a loose landing only when the strict one is far, tune if it ever clips
+      return !s2 ? s || null : !s || s2.score <= s.score ? s2 : s
     }
     for (let r = 0; r <= 96; r += 8) for (let a = 0; a < 6.28; a += r ? 4 / r : 7) {
       const sx = px + r * Math.cos(a), sz = pz + r * Math.sin(a)
@@ -177,6 +181,7 @@ export async function createDragon(ctx) {
     yawRate: () => yawRate,
     input: { turn: 0, speed: 14, climb: 0 }, // written by ride.js while ridden
     // Land near (px, pz) on the nearest clear meadow; final heading psiL, or straight in when omitted.
+    site, // (px, pz, hero) without committing: ride.js asks whether a recall would land nearer
     land(px, pz, psiL, hero) { // hero: search round him instead (ride.js's call); false when nothing is clear
       const s = ['free', 'rejoin', 'ridden'].includes(state) && site(px, pz, hero)
       if (!s) return false
@@ -199,7 +204,7 @@ export async function createDragon(ctx) {
       setClip('fly')
       if (!ride.busy() && (landT -= dt) < 0) { // lands on its own beside the hero, ahead and to the right of his view
         const f = ctx.camera.getWorldDirection(cv).setY(0).normalize()
-        dragon.land(ctx.heroPos.x + f.x * 20 - f.z * 12, ctx.heroPos.z + f.z * 20 + f.x * 12, undefined, ctx.heroPos)
+        dragon.land(ctx.heroPos.x + f.x * 20 - f.z * 12, ctx.heroPos.z + f.z * 20 + f.x * 12, undefined, { x: ctx.heroPos.x, z: ctx.heroPos.z, fx: f.x, fz: f.z })
         landT = 90
       }
     } else if (state === 'land') {

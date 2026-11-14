@@ -17,14 +17,15 @@ try {
   const page = await browser.newPage()
   page.on('pageerror', e => r.errors.push(String(e).slice(0, 200))); page.on('console', m => m.type() === 'error' && !m.text().startsWith('Failed to load') && r.errors.push(m.text().slice(0, 200)))
   await page.goto(`${server.resolvedUrls.local[0]}?${query}`, { waitUntil: 'domcontentloaded' })
+  if (at === 'early') { await sleep(1000); await page.keyboard.press('e'); r.earlyAt = await page.evaluate(() => !!window.__ready) } // E before the world is ready
   let ready = false; for (let i = 0; i < 120 && !ready; i++) { ready = await page.evaluate(() => !!window.__ready); if (!ready) await sleep(500) }
-  await sleep(1500); await page.mouse.click(640, 360); await sleep((+at || 0) * 1000) // a click on the canvas, like a player starting to look around
+  await sleep(1500); if (at !== 'early') await page.mouse.click(640, 360); await sleep((+at || 0) * 1000) // a click on the canvas, like a player starting to look around
   if (at === 'late') { // the owner's case: no E; wait for it to land by itself, then press E and see what happens
     for (let i = 0; i < 240; i++) { const st = await page.evaluate(() => window.__probes.dragon().state); if (st === 'landed') break; await sleep(500) }
     r.selfLanded = await page.evaluate(() => { const d = window.__probes.dragon(), h = window.__probes.hero(); return +Math.hypot(d.x - h.x, d.z - h.z).toFixed(1) })
     await sleep(1500)
   }
-  await page.keyboard.press('e')
+  if (at !== 'early') await page.keyboard.press('e')
   let last = ''
   for (let i = 0; i < +secs * 2; i++) {
     const s = await page.evaluate(() => { const d = window.__probes.dragon(), h = window.__probes.hero(); return { st: d.state, gap: Math.hypot(d.x - h.x, d.z - h.z), hint: [...document.querySelectorAll('div')].map(e => e.textContent).filter(t => /dragon|E —|room/.test(t) && t.length < 60).join('|') } })
@@ -34,7 +35,9 @@ try {
     if (s.st === 'landed' && (at !== 'late' || i > 6)) break
     await sleep(500)
   }
+  if (process.env.TWICE) { await page.keyboard.press('e'); await sleep(2500); r.second = await page.evaluate(() => ({ st: window.__probes.dragon().state, hint: [...document.querySelectorAll('div')].map(e => e.textContent).filter(t => /dragon|room/.test(t) && t.length < 60).join('|') })) } // a second E must not loop
   r.dragon = await page.evaluate(() => window.__probes.dragon())
+  r.angle = await page.evaluate(() => { const d = window.__probes.dragon(), h = window.__probes.hero(), [fx, fz] = window.__probes.ride().view; return Math.round(Math.abs(Math.atan2(fx * (d.z - h.z) - fz * (d.x - h.x), fx * (d.x - h.x) + fz * (d.z - h.z))) * 180 / Math.PI) }) // degrees off his view; the lens is ~±35° wide, 60° to count it in view
   await page.screenshot({ path: resolve(ROOT, out) })
   r.errors.push(...await page.evaluate(() => window.__errors || []))
 } catch (e) { r.errors.push('press: ' + e) } finally { await browser?.close().catch(() => {}); await server?.close().catch(() => {}); unlock() }

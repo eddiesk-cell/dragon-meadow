@@ -16,6 +16,7 @@
 <body>
   <div id="load">walking out into the meadow…</div>
   <div id="hint">W A S D to walk · Shift to run · Space to jump · drag to look · E calls the dragon</div>
+  <script>addEventListener('keydown', e => { if (e.key.toLowerCase() === 'e') window.__earlyE = true })</script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

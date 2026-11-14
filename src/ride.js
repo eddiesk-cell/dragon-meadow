@@ -9,7 +9,7 @@ export function createRide(ctx, d) {
   const can = !!(root && hips && d.seat && ctx.heroAct)
 
   const keys = new Set(), k = c => keys.has(c)
-  addEventListener('keydown', e => { const c = e.key.toLowerCase(); keys.add(c); if (c === 'e' && !e.repeat) pressE() })
+  addEventListener('keydown', e => { const c = e.key.toLowerCase(); keys.add(c); if (c === 'e') { window.__earlyE = false; if (!e.repeat) pressE() } })
   addEventListener('keyup', e => keys.delete(e.key.toLowerCase()))
   addEventListener('blur', () => keys.clear())
   const hint = document.createElement('div')
@@ -27,6 +27,7 @@ export function createRide(ctx, d) {
 
   const seat = () => d.seat.getWorldPosition(seatW)
   const reach = () => { seat(); return Math.hypot(heroPos.x - seatW.x, heroPos.z - seatW.z) }
+  const bodyGap = () => Math.hypot(heroPos.x - d.holder.position.x, heroPos.z - d.holder.position.z) // the landing search measures to the body
   const flank = (out, sx, sz) => { // ground 5 m out from the seat, on the side (sx, sz) points to
     seat(); v.set(1, 0, 0).applyQuaternion(d.holder.quaternion).setY(0).normalize()
     if (v.x * sx + v.z * sz < 0) v.negate()
@@ -41,9 +42,10 @@ export function createRide(ctx, d) {
 
   let msg = '', msgT = 0, pending = false // msg: a one-off line over the hint; pending: call again once it is back in the air
   const say = t => { msg = t; msgT = 3 }
+  const callAt = f => [heroPos.x + f.x * 18 - f.z * 10, heroPos.z + f.z * 18 + f.x * 10]
   const callDown = () => { // ahead-right of his view; the dragon picks the nearest clear ground round him
     const f = camera.getWorldDirection(v).setY(0).normalize()
-    return d.land(heroPos.x + f.x * 18 - f.z * 10, heroPos.z + f.z * 18 + f.x * 10, undefined, heroPos)
+    return d.land(...callAt(f), undefined, { x: heroPos.x, z: heroPos.z, fx: f.x, fz: f.z })
   }
 
   function pressE() {
@@ -59,7 +61,10 @@ export function createRide(ctx, d) {
       seat(); ctx.heroAct.face(seatW.x - from.x, seatW.z - from.z)
       ctx.heroAct.play('Mount', { lockMove: true })
     } else if (s === 'free' || s === 'rejoin') { if (callDown()) note('called'); else say('no room to land here') }
-    else if (s === 'landed' && reach() > 20) { d.takeoff(); pending = true; note('recall') } // it landed somewhere far off: up again, then called here
+    else if (s === 'landed' && bodyGap() > 20) { // landed far off: up again and called here, but only if that lands it nearer (else it would loop)
+      const f = camera.getWorldDirection(v).setY(0).normalize(), n = d.site(...callAt(f), { x: heroPos.x, z: heroPos.z, fx: f.x, fz: f.z })
+      if (n && n.r < bodyGap() - 3) { d.takeoff(); pending = true; note('recall') } else say('no room near you — walk to the dragon')
+    }
     else if (s === 'takeoff') pending = true
     else say(s === 'landed' ? 'walk to the dragon and press E' : 'the dragon is coming')
   }
@@ -100,7 +105,7 @@ export function createRide(ctx, d) {
   }
 
   let lastHint = ''
-  window.__probes.ride = () => ({ t: +ctx.time.toFixed(1), mode, auto: ap, log, track, over, wps: wps.length,
+  window.__probes.ride = () => ({ view: (f => [+f.x.toFixed(2), +f.z.toFixed(2)])(camera.getWorldDirection(v).setY(0).normalize()), t: +ctx.time.toFixed(1), mode, auto: ap, log, track, over, wps: wps.length,
     heroAlt: +(heroPos.y - ctx.heightAt(heroPos.x, heroPos.z)).toFixed(2) })
 
   return {
@@ -112,7 +117,8 @@ export function createRide(ctx, d) {
         i.speed = k('w') || k('arrowup') ? 24 : k('s') || k('arrowdown') ? 6 : 14
         i.climb = k(' ') ? 8 : k('shift') ? -8 : 0
       }
-      if ((msgT -= dt) < 0) msg = ''
+      if (window.__earlyE) { window.__earlyE = false; pressE() } // an E pressed while loading (index.html records it)
+      if ((msgT -= dt) < 0 || (d.state === 'landed' && reach() < 7)) msg = ''
       if (pending && (d.state === 'free' || d.state === 'rejoin')) { pending = false; if (!callDown()) say('no room to land here') }
       const text = mode === 'ride' ? 'W fly · A D turn · Space up · Shift down · E land' : mode !== 'foot' ? '' : msg
         || (pending || d.state === 'land' || d.state === 'touch' ? 'the dragon is coming' : d.state === 'landed' ? (reach() < 7 ? 'E — climb on the dragon' : 'walk to the dragon and press E') : '')
