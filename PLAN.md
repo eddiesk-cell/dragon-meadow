@@ -956,3 +956,5 @@ gust passes. Not the motes (those glow and rise); these tumble, catch the light 
 **Wave F — drift PASSED r3** (7b9becf; report `shots/review-waveF-drift.md`). Open lows: the peach petal reads beige on grass; no shot shows a flurry in a real gust during the ordinary walk.
 
 **Wave F — all four lanes PASSED 2026-11-14:** pondlife r2, flutter r4, drift r3, critters r4 (flutter and critters finished by the orchestrator after three failed reviews each). Reports `shots/review-waveF-*.md`. Open: critters MEDIUM — side-on, a standing hare has no snout (nose inside the chest; reviewer: line 142 `1.15` → `0.9`, not applied because it changes the passed standing pose); the demo ears-only hare loses its flick; a reviewer reports the production build bundles none of the scene systems (`src/main.js` loads them with a templated `import()`): to be checked.
+
+**Production build fixed 2026-11-14** (`src/main.js`: `import.meta.glob`): a built copy now loads all 24 systems; check with `npx vite build --outDir <dir> && node tools/shot-build.mjs <dir> shots/x.png`. "vite build succeeds" alone proved nothing for four reviews.
