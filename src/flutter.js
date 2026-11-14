@@ -111,7 +111,7 @@ export async function createFlutter(ctx) {
   })()
   fmat.colorNode = Fn(() => {
     const c = attribute('aC', 'vec4'), s = saturate(float(1).sub(length(uv().sub(0.5).mul(2))))
-    return vec4(c.rgb.mul(s.mul(s).mul(0.9).add(s.mul(0.25))), s.mul(s).mul(c.a))
+    return vec4(c.rgb.mul(s.mul(s).mul(0.5).add(s.mul(0.55))), s.mul(s).mul(c.a))
   })()
   const FATT = quad(fmat, NF, {
     geo: { position: new THREE.Float32BufferAttribute(fgeo, 3), uv: new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2) },
@@ -136,7 +136,7 @@ export async function createFlutter(ctx) {
   }
 
   let nb = 0, nf = 0
-  const tc = new THREE.Color(), gold = new THREE.Color(1.0, 0.78, 0.22), green = new THREE.Color(0.7, 1.0, 0.3)
+  const tc = new THREE.Color(), gold = new THREE.Color(1.0, 0.6, 0.06), green = new THREE.Color(0.85, 0.85, 0.1)
 
   function update(dt, t) {
     const n = night()
@@ -193,8 +193,8 @@ export async function createFlutter(ctx) {
       if (Math.hypot(f.x - heroPos.x, f.z - heroPos.z) > R + 4) spawnF(f)
       const b = Math.pow(0.5 + 0.5 * Math.sin(t * f.w + f.ph), 6) // brief glow, long dark: a blink, unlike the steady motes
       tc.copy(gold).lerp(green, 0.15 * Math.sin(f.ph) + 0.15)
-      const k = i * 4, gain = 3.2
-      FP[k] = f.x; FP[k + 1] = f.y; FP[k + 2] = f.z; FP[k + 3] = 0.16
+      const k = i * 4, gain = 1.8
+      FP[k] = f.x; FP[k + 1] = f.y; FP[k + 2] = f.z; FP[k + 3] = 0.3
       FC[k] = tc.r * gain; FC[k + 1] = tc.g * gain; FC[k + 2] = tc.b * gain; FC[k + 3] = b
     }
     FATT.arrs.aP.needsUpdate = FATT.arrs.aC.needsUpdate = true
