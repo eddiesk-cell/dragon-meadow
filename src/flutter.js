@@ -4,7 +4,7 @@
 import { Fn, attribute, uniform, uv, vec2, vec3, vec4, float, length, saturate, mix, cameraPosition, smoothstep as tsmooth, cos, sin, abs, max } from 'three/tsl'
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
-const TIP = 0.6 // shortcut: grass-tip height by eye from the plates (~0.6 m), not read from field.js; upgrade if the grass height gets published
+const TIP = 0.78 // shortcut: grass-tip height by eye from the plates (~0.75 m), not read from field.js; upgrade if the grass height gets published
 const NB = 34, NF = 70, R = 30 // butterflies, fireflies, radius round the hero (m)
 // Flower colours of refs/world/mix-day.png: lilac, blush peach, pale gold, poppy orange, soft white.
 const PAL = [[0.74, 0.58, 0.95], [0.97, 0.66, 0.82], [0.99, 0.86, 0.45], [0.98, 0.5, 0.25], [1, 0.76, 0.6], [0.7, 0.62, 1]]
@@ -61,12 +61,17 @@ export async function createFlutter(ctx) {
   })()
   bmat.colorNode = Fn(() => {
     const c = attribute('aC', 'vec4'), q = uv()
-    // Forewing and hindwing lobes; dark wing tips and rim with pale spots in them, a lighter glow near the body, a dark body strip.
-    const e1 = length(vec2(q.x.sub(0.5), q.y.sub(0.5).sub(q.x.sub(0.5).mul(0.3))).mul(vec2(2.2, 3.7))), e2 = length(vec2(q.x.sub(0.42), q.y.sub(0.3)).mul(vec2(2.5, 3.6)))
+    // Pointed forewing and a smaller hindwing with a notch between them; a dark band across the forewing, an eye spot on the hindwing.
+    const ux = q.x.sub(0.52), vsc = q.x.sub(0.4).max(0).mul(2.4).add(3.4) // forewing narrows toward its tip
+    const e1 = length(vec2(ux.mul(2.1), q.y.sub(0.64).sub(q.x.sub(0.5).mul(0.15)).mul(vsc))), e2 = length(vec2(q.x.sub(0.34).mul(3.0), q.y.sub(0.25).mul(4.2)))
     const inside = max(float(1).sub(e1), float(1).sub(e2))
     const rim = float(1).sub(tsmooth(0.15, 0.6, inside)).max(tsmooth(0.6, 0.9, q.x).mul(0.85)) // dark margin and tip
-    const spot = float(1).sub(tsmooth(0.0, 0.06, length(vec2(q.x.sub(0.84), q.y.sub(0.55)).mul(vec2(1, 1.6))).sub(0.075))).max(float(1).sub(tsmooth(0.0, 0.06, length(vec2(q.x.sub(0.74), q.y.sub(0.24)).mul(vec2(1, 1.6))).sub(0.07))))
-    const wing = mix(c.rgb.mul(c.rgb).mul(1.15), vec3(0.07, 0.05, 0.06), rim.mul(0.97)).add(spot.mul(vec3(0.7, 0.68, 0.62)))
+    const band = float(1).sub(tsmooth(0.0, 0.05, abs(q.x.sub(0.66)).sub(0.05))).mul(tsmooth(0.4, 0.5, q.y)) // across the forewing
+    const tipSpot = float(1).sub(tsmooth(0.0, 0.05, length(vec2(q.x.sub(0.8), q.y.sub(0.72)).mul(vec2(1, 1.4))).sub(0.05)))
+    const eyeD = length(vec2(q.x.sub(0.27), q.y.sub(0.26)).mul(vec2(1, 1.1)))
+    const eye = float(1).sub(tsmooth(0.05, 0.09, eyeD)), eyeDot = float(1).sub(tsmooth(0.02, 0.04, eyeD))
+    const dark = rim.max(band.mul(0.9)).max(eye)
+    const wing = mix(c.rgb.mul(c.rgb).mul(1.15), vec3(0.07, 0.05, 0.06), dark.mul(0.97)).add(tipSpot.max(eyeDot).mul(vec3(0.7, 0.68, 0.62)))
     const isBody = tsmooth(1.0, 1.5, q.x)
     return vec4(mix(wing, vec3(0.05, 0.04, 0.04), isBody), mix(tsmooth(0.0, 0.07, inside), float(1), isBody).mul(c.a))
   })()
@@ -81,7 +86,7 @@ export async function createFlutter(ctx) {
   function pick(b) {
     const demoC = demo ? camera.position : null
     if (demo) { // pinned in front of the lens, re-aimed every frame so a moving camera keeps them
-      b.o ??= rnd(-0.7, 0.7); b.f ??= rnd(1.2, 1.9); b.oy ??= rnd(-1.0, -0.5)
+      b.o ??= rnd(-0.7, 0.7); b.f ??= rnd(2.7, 3.5); b.oy ??= rnd(-1.0, -0.5)
       const w = Math.sin(performance.now() / 900 + b.ph) * 0.3
       b.tx = camera.position.x + fwd.x * b.f + fwd.z * (b.o + w); b.tz = camera.position.z + fwd.z * b.f - fwd.x * (b.o + w); b.ty = camera.position.y - gy(b.tx, b.tz) + b.oy; return
     }
@@ -103,7 +108,8 @@ export async function createFlutter(ctx) {
 
   // ---------------- fireflies ----------------
   const fgeo = [-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]
-  const fmat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })
+  // Normal blending, not additive: additive amber over the night grass's teal sums to near-white, alpha keeps it amber.
+  const fmat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, fog: false })
   const right = new THREE.Vector3(), up = new THREE.Vector3(), tmp0 = new THREE.Vector3()
   const uRight = uniform(new THREE.Vector3()), uUp = uniform(new THREE.Vector3())
   fmat.positionNode = Fn(() => {
@@ -112,8 +118,9 @@ export async function createFlutter(ctx) {
   })()
   fmat.colorNode = Fn(() => {
     const c = attribute('aC', 'vec4'), s = saturate(float(1).sub(length(uv().sub(0.5).mul(2))))
-    const near = tsmooth(3.5, 8.0, length(cameraPosition.sub(attribute('aP', 'vec4').xyz))) // fade at the lens, as motes do
-    return vec4(c.rgb.mul(s.mul(s).mul(0.5).add(s.mul(0.55))), s.mul(s).mul(c.a).mul(near))
+    // a hard small disk with a paler heart
+    const near = tsmooth(1.2, 3.0, length(cameraPosition.sub(attribute('aP', 'vec4').xyz))) // fade at the lens, as motes do
+    return vec4(mix(c.rgb, c.rgb.mul(vec3(1, 1.6, 4)), tsmooth(0.55, 0.9, s)), tsmooth(0.25, 0.45, s).mul(c.a).mul(near))
   })()
   const FATT = quad(fmat, NF, {
     geo: { position: new THREE.Float32BufferAttribute(fgeo, 3), uv: new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2) },
@@ -134,12 +141,12 @@ export async function createFlutter(ctx) {
       if (x === undefined || Math.hypot(x - heroPos.x, z - heroPos.z) > R) [x, z] = spot()
     } while (ctx.keepClear.some(c => Math.hypot(x - c.x, z - c.z) < c.r) && i++ < 6)
     if (Math.hypot(x - heroPos.x, z - heroPos.z) < 2.5) { x += 4; z += 4 }
-    f.x = x; f.z = z; f.y = Math.max(gy(x, z), ctx.pond?.level ?? -1e9) + rnd(0.3, 1.6)
-    f.ang = rnd(0, 6.28); f.sp = rnd(0.25, 0.6); f.h = f.y - gy(x, z); f.ph = rnd(0, 6.28); f.w = rnd(1.3, 2.6); f.alive = true
+    f.x = x; f.z = z; f.y = Math.max(gy(x, z), ctx.pond?.level ?? -1e9) + rnd(0.45, 1.1)
+    f.ang = rnd(0, 6.28); f.sp = rnd(0.25, 0.6); f.h = f.y - gy(x, z); f.ph = rnd(0, 6.28); f.w = rnd(1.3, 2.6); f.sz = rnd(0.2, 0.28); f.alive = true
   }
 
   let nb = 0, nf = 0
-  const tc = new THREE.Color(), gold = new THREE.Color(1.0, 0.6, 0.06), green = new THREE.Color(0.85, 0.85, 0.1)
+  const gold = new THREE.Color(1.0, 0.4, 0.0)
 
   let ms = 0, nU = 0
   function update(dt, t) {
@@ -184,7 +191,7 @@ export async function createFlutter(ctx) {
       const k = i * 4
       BP[k] = b.x; BP[k + 1] = Math.max(b.y, gnd + 0.15); BP[k + 2] = b.z; BP[k + 3] = b.size
       BA[k] = b.yaw; BA[k + 1] = flap; BA[k + 2] = 0; BA[k + 3] = 0
-      BC[k] = b.col[0]; BC[k + 1] = b.col[1]; BC[k + 2] = b.col[2]; BC[k + 3] = b.fade
+      BC[k] = b.col[0]; BC[k + 1] = b.col[1]; BC[k + 2] = b.col[2]; BC[k + 3] = b.fade * ss(1.0, 2.5, Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z)) // gone before it can fill the lens
     }
     BATT.arrs.aP.needsUpdate = BATT.arrs.aA.needsUpdate = BATT.arrs.aC.needsUpdate = true
     for (let i = top; i < NB; i++) if (B[i].alive) top = i + 1
@@ -202,14 +209,13 @@ export async function createFlutter(ctx) {
       f.ang += Math.sin(t * 0.4 + f.ph) * 0.9 * dt // a slow wandering turn
       f.x += Math.sin(f.ang) * f.sp * dt; f.z += Math.cos(f.ang) * f.sp * dt
       const gnd = gy(f.x, f.z)
-      f.y += ((Math.max(gnd, ctx.pond?.level ?? -1e9) + f.h + Math.sin(t * 0.6 + f.ph) * 0.25) - f.y) * Math.min(1, dt)
+      f.y += ((Math.max(gnd, ctx.pond?.level ?? -1e9) + f.h + Math.sin(t * 0.6 + f.ph) * 0.1) - f.y) * Math.min(1, dt)
       const fd = Math.hypot(f.x - heroPos.x, f.z - heroPos.z)
       if (fd > R + 4 || fd < 2.5) spawnF(f)
-      const b = Math.pow(0.5 + 0.5 * Math.sin(t * f.w + f.ph), 6) // brief glow, long dark: a blink, unlike the steady motes
-      tc.copy(gold).lerp(green, 0.15 * Math.sin(f.ph) + 0.15)
-      const k = i * 4, gain = 1.8
-      FP[k] = f.x; FP[k + 1] = f.y; FP[k + 2] = f.z; FP[k + 3] = 0.3
-      FC[k] = tc.r * gain; FC[k + 1] = tc.g * gain; FC[k + 2] = tc.b * gain; FC[k + 3] = b
+      const b = Math.pow(0.5 + 0.5 * Math.sin(t * f.w + f.ph), 2.5) // brief glow, long dark: a blink, unlike the steady motes
+      const k = i * 4, gain = 1.0
+      FP[k] = f.x; FP[k + 1] = f.y; FP[k + 2] = f.z; FP[k + 3] = f.sz
+      FC[k] = gold.r * gain; FC[k + 1] = gold.g * gain; FC[k + 2] = gold.b * gain; FC[k + 3] = b
     }
     FATT.arrs.aP.needsUpdate = FATT.arrs.aC.needsUpdate = true
     if (!nf) FC[3] = 0
