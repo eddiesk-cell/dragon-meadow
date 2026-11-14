@@ -194,9 +194,12 @@ export async function createBestiary(ctx) {
       if (k === r.bones.length - 1) dir.subVectors(r.pts[k], r.pts[k + 1]).normalize() // the ring: its shank runs to the crown (−Y)
       else dir.subVectors(toward, r.pts[k]).normalize()
       q.setFromUnitVectors(up, dir); b.parent.getWorldQuaternion(pq)
-      if (k === r.bones.length - 1) { // roll the anchor about its shank so the stock (local z) lies level: a stock standing up from a lying anchor reads as a stake
-        const a = new THREE.Vector3(0, 0, 1).applyQuaternion(q), h = dir.clone().cross(up)
-        if (h.lengthSq() > 1e-4) q.premultiply(new THREE.Quaternion().setFromUnitVectors(a, h.normalize().multiplyScalar(a.dot(h) < 0 ? -1 : 1)))
+      if (k === r.bones.length - 1) { // the stock (crossbar, local x) always lies level: x = shank × up; near-vertical shank keeps last frame's stock so it cannot flip
+        const prev = r.stock || (r.stock = new THREE.Vector3(1, 0, 0)), sx = dir.clone().cross(up)
+        if (sx.lengthSq() < 0.0975) sx.copy(prev).addScaledVector(dir, -dir.dot(prev))
+        sx.normalize(); if (sx.dot(prev) < 0) sx.negate()
+        r.stock.copy(sx); sx.copy(r.stock).multiplyScalar(Math.cos(0.95)).addScaledVector(dir.clone().cross(r.stock), Math.sin(0.95)) // lowest lying pose: the flukes' span is the longer one, so level-stock would stand them 1.1 m up; 0.95 rad off level (stock 0.8 m half-span, flukes 1.1 m) leaves every tip under ~0.7 m
+        q.setFromRotationMatrix(new THREE.Matrix4().makeBasis(sx, dir, sx.clone().cross(dir)))
       }
       b.quaternion.copy(pq.invert().multiply(q)); b.updateMatrixWorld(true)
     }
