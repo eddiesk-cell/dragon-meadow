@@ -232,6 +232,33 @@ export async function createHero(ctx) {
     }
   }
 
+  // He stands on what is DRAWN, not on ctx.heightAt: the ground meshes (userData.ground) are 2 m triangles and the cobbles lie
+  // 6 cm over them, so on a slope the analytic height sinks him into the road or floats him over the chord. Meshes with a
+  // grid are read by their own triangulation (PlaneGeometry: diagonal b–d); the cobbles are ray-cast. A drawn surface
+  // far below heightAt means a structure the meshes do not draw (the bridge deck): heightAt stands.
+  const gr = new THREE.Raycaster(), gDown = new THREE.Vector3(0, -1, 0), gO = new THREE.Vector3()
+  let gMeshes = [], gScan = 0, gMin = 1e9, gMax = -1e9, gNow = null, gWorst = null
+  const gridY = (g, x, z) => {
+    const q = (x - g.x0) / g.dx, r = (z - g.z0) / g.dz, i = Math.floor(q), j = Math.floor(r), u = q - i, v = r - j
+    if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return -Infinity
+    const a = g.y(i, j), b = g.y(i, j + 1), c = g.y(i + 1, j + 1), d = g.y(i + 1, j)
+    return u + v <= 1 ? a + u * (d - a) + v * (b - a) : c + (1 - u) * (b - c) + (1 - v) * (d - c)
+  }
+  const layers = (x, z, rays = false) => { // rays: proof only, the real triangles of every mesh that holds its own heights (all but field's, whose patch metres are on the GPU)
+    if (!gMeshes.length) scene.traverse(o => o.userData.ground && gMeshes.push(o))
+    let y = -Infinity
+    gr.set(gO.set(x, ctx.heightAt(x, z) + 3, z), gDown); gr.far = 6
+    for (const m of gMeshes) { const g = m.userData.ground; y = Math.max(y, g.nx && !(rays && !g.gpu) ? gridY(g, x, z) : (gr.intersectObject(m, false)[0]?.point.y ?? -Infinity)) }
+    return y
+  }
+  const groundY = (x, z) => { const h = ctx.heightAt(x, z), y = params.get('stand') === 'analytic' ? -Infinity : layers(x, z); return y > h - 0.5 ? y : h } // ?stand=analytic: the old behaviour, for the before numbers // shortcut: 0.5 m tells a deck from a coarse triangle; a bridge over a 0.5 m dip would be missed
+  window.__groundAt = (x, z) => ({ h: ctx.heightAt(x, z), drawn: layers(x, z), real: layers(x, z, true), stand: groundY(x, z) })
+  const measureGap = dt => {
+    if ((gScan -= dt) <= 0) { gScan = 2; gMeshes = []; scene.traverse(o => o.userData.ground && gMeshes.push(o)) }
+    gNow = pos.y - layers(pos.x, pos.z, true)
+    if (grounded && gNow > -1 && gNow < 1) (gNow < gMin && (gWorst = [+pos.x.toFixed(1), +pos.z.toFixed(1)])), gMin = Math.min(gMin, gNow), gMax = Math.max(gMax, gNow)
+  }
+
   const dirOf = () => {
     const f = (keys.has('w') || keys.has('arrowup')) - (keys.has('s') || keys.has('arrowdown'))
     const r = (keys.has('d') || keys.has('arrowright')) - (keys.has('a') || keys.has('arrowleft'))
@@ -239,7 +266,7 @@ export async function createHero(ctx) {
     return [-Math.sin(yaw) * f + Math.cos(yaw) * r, -Math.cos(yaw) * f - Math.sin(yaw) * r]
   }
 
-  window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), strapSkin: strap?.skin.length ?? 0, slide: slideN ? +(slide / slideN).toFixed(3) : null, slideN, strapLift: strap?.lift.map(x => +x.toFixed(3)),
+  window.__probes.hero = () => ({ clip, x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), feetGap: +(pos.y - ctx.heightAt(pos.x, pos.z)).toFixed(3), drawnGap: gNow == null ? null : { now: +gNow.toFixed(3), min: +gMin.toFixed(3), max: +gMax.toFixed(3), worstAt: gWorst, meshes: gMeshes.length }, strapSkin: strap?.skin.length ?? 0, slide: slideN ? +(slide / slideN).toFixed(3) : null, slideN, strapLift: strap?.lift.map(x => +x.toFixed(3)),
     cam: { blocks: blocks.length, trunks: trunkN, barkCells: barkCells.length, rayMs: +(rayMs / Math.max(frames, 1)).toFixed(3), rayMax: +rayMax.toFixed(2), pulled, frames, // frames: pulled in front of a block, goal behind one, camera inside one
       ...(camtest && { secs: +ctx.time.toFixed(1) }), ...(camtest && (tt ? { tree: [tt.x, tt.z].map(Math.round), trunkTris: keep.length / 3, spots: spots?.length, radii: spots && [Math.min(...spots.map(s => s[2])), Math.max(...spots.map(s => s[2]))], parked: spotI + 1, behind, inTrunk: inside } : { rocks: rocks.length, behind, inStone: inside })) },
     hold: held && { secs: +(ctx.time - held.t).toFixed(2), drift: +Math.max(...snap().map((q, i) => Math.abs(q - held.pose[i]))).toFixed(5) } })
@@ -263,11 +290,12 @@ export async function createHero(ctx) {
       }
       if (jumpQueued && grounded) { vy = 5; grounded = false; jumpT = 0.9 }
       jumpQueued = false
-      const gy = ctx.heightAt(pos.x, pos.z)
+      const gy = groundY(pos.x, pos.z)
       if (!grounded) {
         vy -= 14 * dt; pos.y += vy * dt; jumpT -= dt
         if (pos.y <= gy && vy < 0) { pos.y = gy; grounded = true; vy = 0 }
       } else pos.y = gy
+      if (auto) measureGap(dt)
 
       if (!act) play(!grounded && actions.jump ? 'Jump' : !moving ? 'Idle' : keys.has('shift') ? 'Run' : 'Walk')
       mixer.update(dt)

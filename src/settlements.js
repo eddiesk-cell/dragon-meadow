@@ -90,11 +90,12 @@ function sample(c, step) {
 const nearestS = (sm, s) => sm[Math.min(sm.length - 1, Math.max(0, Math.round(s / sm[sm.length - 1].s * (sm.length - 1))))]
 
 // A strip `hw` either side of the samples; y(x, z, p) gives each vertex's height. uv = (−1…1 across, metres along).
+const ACROSS = [-1, -0.5, 0, 0.5, 1] // verts across a strip: it follows the ground between its edges (a street's crown dips under houses' terraces)
 function strip(THREE, sm, hw, y) {
   const pos = [], uvs = [], idx = []
   sm.forEach((p, k) => {
-    for (const sd of [-1, 1]) { const x = p.x + p.tz * hw * sd, z = p.z - p.tx * hw * sd; pos.push(x, y(x, z, p), z); uvs.push(sd, p.s) }
-    if (k) { const a = 2 * k - 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) }
+    for (const sd of ACROSS) { const x = p.x + p.tz * hw * sd, z = p.z - p.tx * hw * sd; pos.push(x, y(x, z, p), z); uvs.push(sd, p.s) }
+    if (k) for (let m = 0, a = ACROSS.length * (k - 1), c = a + ACROSS.length; m < ACROSS.length - 1; m++) idx.push(a + m, c + m, a + m + 1, a + m + 1, c + m, c + m + 1)
   })
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
@@ -121,6 +122,8 @@ function tile(THREE, ctx, x0, z0, w, d, step, mat, gb = () => [1, 0], drop = () 
   g.setAttribute('aGB', new THREE.BufferAttribute(ab, 2))
   const m = new THREE.Mesh(g, mat)
   m.receiveShadow = true
+  const nx = Math.round(w / step), nz = Math.round(d / step)
+  m.userData.ground = { x0, z0, dx: w / nx, dz: d / nz, nx, nz, y: (i, j) => p.getY(j * (nx + 1) + i) } // the drawn triangles, for whoever stands on them (hero.js)
   return m
 }
 
@@ -333,12 +336,13 @@ export async function createSettlements(ctx) {
   const cobbles = [
     strip(THREE, LANE.filter(p => p.s < sB - 18.2), LW, onGround(0.06)), strip(THREE, LANE.filter(p => p.s > sB + 18.2), LW, onGround(0.06)),
     ...STREETS.map(sm => strip(THREE, sm, LW, onGround(0.06))),
-    new THREE.CircleGeometry(15, 48).rotateX(-Math.PI / 2).translate(TOWN.x, 0, TOWN.z),
+    new THREE.RingGeometry(0, 15, 96, 15).rotateX(-Math.PI / 2).translate(TOWN.x, 0, TOWN.z),
   ]
   { const p = cobbles[cobbles.length - 1].attributes.position; for (let i = 0; i < p.count; i++) p.setY(i, ctx.heightAt(p.getX(i), p.getZ(i)) + 0.06) }
   const paved = new THREE.Mesh(mergeGeometries(cobbles), cobble)
   paved.geometry.computeVertexNormals()
   paved.receiveShadow = true
+  paved.userData.ground = true // no grid: the hero ray-casts it
   scene.add(paved)
 
   // low dry-stone walls either side of the Holloway, the town kit's own masonry (uv = metres / 2.4, courses level)

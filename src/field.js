@@ -351,6 +351,8 @@ export async function createField(ctx) {
   tm.colorNode = groundColor(vertexColor().rgb, tp.y, tp.z, max(airW(positionWorld.xz), float(1).sub(smoothstep(0, 0.4, clearD(positionWorld.xz))))).mul(tp.w)
   const terrain = new THREE.Mesh(tg, tm)
   terrain.receiveShadow = true
+  // the drawn triangles, for whoever stands on them (hero.js): a vertex holds ctx.heightAt (the patch metres are added to it on the GPU)
+  terrain.userData.ground = { x0: -SIDE / 2, z0: -SIDE / 2, dx: 2, dz: 2, nx: SIDE / 2, nz: SIDE / 2, gpu: true, y: (i, j) => ctx.heightAt(i * 2 - SIDE / 2, j * 2 - SIDE / 2) }
   scene.add(terrain)
 
   // --- far land: the meadow runs on past the 800 m square into the haze in every direction (the sea fills the north), so
