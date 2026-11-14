@@ -320,10 +320,12 @@ export async function createVfx(ctx) {
       })
       smokeMat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false })
       smokeMat.rotationNode = per('rot', 0)
-      // the atlas gives the shape (alpha); Blender's headless volume lighting came out black, so the colour is set here:
-      // grey at the foot, pale where it thins out at the top; the foot fades in so the tile's cut edge never shows
-      smokeMat.colorNode = vec4(mix(vec3(0.42, 0.42, 0.46), vec3(0.9, 0.9, 0.93), uv().y).mul(lit),
-        mix(at(floor(f)), at(floor(f).add(1)), fract(f)).a.mul(smoothstep(0, 0.12, uv().y)).mul(per('alpha', 1)))
+      // the atlas gives the shape (alpha); Blender's headless volume lighting came out black, so it is shaded here: thin
+      // wisps pale, the dense core greyer (its own shadow), paler as it rises, all tinted by the scene; the foot fades in
+      // so the tile's cut edge never shows
+      const a = mix(at(floor(f)), at(floor(f).add(1)), fract(f)).a
+      smokeMat.colorNode = vec4(mix(vec3(0.95, 0.95, 0.97), vec3(0.5, 0.5, 0.54), smoothstep(0.25, 0.95, a)).add(uv().y.mul(0.15)).min(1).mul(lit),
+        a.mul(smoothstep(0, 0.12, uv().y)).mul(per('alpha', 1)))
     }
     const sp = new THREE.Sprite(smokeMat)
     sp.scale.setScalar(size); sp.position.copy(pos).y += size / 2 // pos is the foot of the column

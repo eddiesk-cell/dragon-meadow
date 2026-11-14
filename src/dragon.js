@@ -239,13 +239,13 @@ export async function createDragon(ctx) {
 
   // --- breath: the baked smoke (ctx.vfx.smoke) curling from both nostrils while it is down or hovering near, and a
   // thick plume from the jaws for 2 s after its touchdown roar and as it takes off; none while it flies far off.
-  // ?breath=off: none (A/B); ?breath=demo: landed side-on ahead of the hero, roaring every 8 s.
+  // ?breath=off: none; ?breath=demo: landed side-on ahead of the hero, roaring every 8 s; ?breath=demo-off: the same, no smoke (A/B).
   const bmode = params.get('breath'), head = model.getObjectByName('head')
-  // head-bone space, measured from the skinned mesh: its snout runs along +z to a tip at z 0.39
-  const NOSE = [new THREE.Vector3(0.025, 0.04, 0.35), new THREE.Vector3(-0.025, 0.04, 0.35)], JAWS = new THREE.Vector3(0, -0.02, 0.38)
-  const BACK = new THREE.Vector3(0, 0, 0.2)
+  // head-bone space, measured from the skinned mesh: the snout runs along +y to a tip at y 0.35, its top toward +z
+  const NOSE = [new THREE.Vector3(0.03, 0.31, 0.07), new THREE.Vector3(-0.03, 0.31, 0.07)], JAWS = new THREE.Vector3(0, 0.34, -0.01)
+  const BACK = new THREE.Vector3(0, 0.1, 0.07)
   const mk = (size, phase) => { const s = ctx.vfx.smoke(new THREE.Vector3(), size); s.visible = false; s.userData.smoke = { alpha: 0, phase, rot: 0 }; s.userData.size = size; return s }
-  const curls = bmode === 'off' || !ctx.vfx ? [] : [mk(2.6, 0), mk(2.6, 23)], plumes = curls.length ? [mk(7, 41), mk(5, 9)] : []
+  const demo = bmode?.startsWith('demo'), curls = bmode?.endsWith('off') || !ctx.vfx ? [] : [mk(3.4, 0), mk(3.4, 23)], plumes = curls.length ? [mk(7, 41), mk(5, 9)] : []
   const bp = new THREE.Vector3(), bq = new THREE.Vector3(), bf = new THREE.Vector3(), bd = new THREE.Vector3(), up2 = new THREE.Vector3(), cr = new THREE.Vector3(), cu = new THREE.Vector3()
   let bw = 0, plume = 0, bState = state, roars = 0, roarEnd = 0
   const place = (s, foot, dir, size) => { // foot at the source, the column leaning along dir as the camera sees it
@@ -260,7 +260,7 @@ export async function createDragon(ctx) {
     if (!curls.length) return
     if (state !== bState && (state === 'touch' || state === 'takeoff')) plume = 2 // the touchdown roar (audio.js), the leap
     bState = state
-    if (bmode === 'demo' && state === 'landed') {
+    if (demo && state === 'landed') {
       if (Math.floor((t - 4) / 8) >= roars) { roars++; setClip('idle_roar', true); plume = 2; roarEnd = t + acts.idle_roar.getClip().duration }
       if (roarEnd && t > roarEnd) { roarEnd = 0; setClip('idle') }
     }
@@ -270,11 +270,11 @@ export async function createDragon(ctx) {
     bw += ((on ? 1 : 0) - bw) * Math.min(1, dt * 1.5)
     head.localToWorld(bd.copy(NOSE[0]).add(NOSE[1]).multiplyScalar(0.5)).sub(head.localToWorld(bf.copy(BACK))).normalize() // the snout's heading
     const ex = Math.max(0, Math.sin(t * 1.4)) // a slow breath: out, then a pause while it breathes in
-    up2.copy(bd).add(ctx.camera.up)
+    up2.copy(bd).multiplyScalar(0.4).add(ctx.camera.up) // curls drift up, a little forward
     curls.forEach((s, i) => {
       if (!(s.visible = bw > 0.01)) return
       place(s, head.localToWorld(bf.copy(NOSE[i])), up2, s.userData.size * (0.7 + 0.3 * ex))
-      s.userData.smoke.alpha = bw * (0.35 + 0.45 * ex)
+      s.userData.smoke.alpha = bw * (0.5 + 0.45 * ex)
     })
     up2.copy(bd).addScaledVector(ctx.camera.up, 0.3)
     plumes.forEach(s => {
@@ -284,7 +284,7 @@ export async function createDragon(ctx) {
     })
   }
   window.__probes.breath = () => ({ mode: bmode, w: +bw.toFixed(2), plume: +plume.toFixed(2), t: +t.toFixed(1), clip, state, curls: curls.filter(s => s.visible).length, plumes: plumes.filter(s => s.visible).length })
-  if (bmode === 'demo') { // landed 24 m ahead of the hero's view, side-on, head to the left
+  if (demo) { // landed 24 m ahead of the hero's view, side-on, head to the left
     const f = ctx.camera.getWorldDirection(cv).setY(0).normalize(), s = site(ctx.heroPos.x + f.x * 24 - f.z * 3, ctx.heroPos.z + f.z * 24 + f.x * 3)
     P.set(s.x, ctx.heightAt(s.x, s.z), s.z); psi = Math.atan2(f.z, -f.x); go('landed'); setClip('idle')
   }
