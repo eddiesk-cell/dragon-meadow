@@ -191,7 +191,7 @@ export async function createFlutter(ctx) {
       const k = i * 4
       BP[k] = b.x; BP[k + 1] = Math.max(b.y, gnd + 0.15); BP[k + 2] = b.z; BP[k + 3] = b.size
       BA[k] = b.yaw; BA[k + 1] = flap; BA[k + 2] = 0; BA[k + 3] = 0
-      BC[k] = b.col[0]; BC[k + 1] = b.col[1]; BC[k + 2] = b.col[2]; BC[k + 3] = b.fade * ss(1.5, 3.5, Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z)) // gone before it can fill the lens
+      BC[k] = b.col[0]; BC[k + 1] = b.col[1]; BC[k + 2] = b.col[2]; BC[k + 3] = b.fade * ss(2.5, 4.5, Math.hypot(b.x - camera.position.x, b.y - camera.position.y, b.z - camera.position.z)) // gone before it can fill the lens
     }
     BATT.arrs.aP.needsUpdate = BATT.arrs.aA.needsUpdate = BATT.arrs.aC.needsUpdate = true
     for (let i = top; i < NB; i++) if (B[i].alive) top = i + 1
