@@ -895,3 +895,7 @@ A 1-px bright rim line shows under the left cloud bank (the `clouds()` rim term)
 - **CHECK:** `shots/e-sky-before.png` and `shots/e-sky-after.png` from `node tools/shot.mjs <out> "auto=walk" 5000`,
   plus 4x crops of the left cloud bank's underside: the line is in the before crop and gone in the after crop; the
   clouds are otherwise unchanged.
+
+**Lane sky-rim — parked 2026-11-14:** the rim line could not be reproduced (views tried: `auto=walk`, default,
+`auto=walk&tod=0.5`; crops in `shots/e-sky-*.png`); nothing changed. Not tried: dusk/sunset, where the rim term is
+strongest. The only thin bright lines seen are seams on the top-left sky island (skyisles geometry, not `clouds()`).
