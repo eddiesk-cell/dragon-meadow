@@ -1037,3 +1037,19 @@ paid mesh `hunyuan.glb` is on disk; never regenerate it.
   rest of the gallery and the Warden's anchor unchanged.
 
 **Wave G — status 2026-11-15:** pet-day polish PASSED (bc15d51; open lows: ears line up edge-on mid-turn, coat tan-taupe from behind). egg-dome r2 FAILED on day (veins read as dark cracks), builder turn 3 out. dragon-breath r1 FAILED on the roar plume (a flat fog band), builder turn 2 out; frame rate measured: no cost. rootbinder-rerig built (f68f5e5), review running.
+
+**Wave G — rootbinder-rerig PASSED r1** (f68f5e5; `shots/review-waveG-rerig.md`): arms +0.67 m in the rig (span 1.75x),
+hands on the stone in Idle, every clip clean, six `spring_crown<k>` chains in the glb (not yet moving). Open lows: Summon's
+arms leave the focus frame; Death's arm hangs off the plinth; the mixer writes 648 constant crown tracks each frame.
+
+### Lane crown-springs — `src/springs.js`, and the Rootbinder's hookup in `src/bestiary.js` (Opus)
+`src/springs.js` only knows the hero: a chain is `bandana*` or a cloth "hem" pulled toward the thigh, colliding with hips
+and thighs, with fixed cloth numbers, the hero's bone names and one `__probes.springs` probe. Let `createSprings` take a
+model and a per-model chain kind with its own numbers (stiffness, gravity, swing cap, colliders) and probe name, with the
+hero's behaviour byte-for-byte unchanged by default; then run the Rootbinder's six crown chains in the gallery as stiff
+roots: they hold their rest shape, trail the head's motion a little, and settle; they do not sag under gravity.
+- **CHECK:** hero unchanged: `auto=walk` and `auto=fight` shots of the hero's cloth match before/after and its springs
+  probe reads as before; `bestiary=1&focus=rootbinder`: in Idle the crown rests in its sculpted shape (no sag: compare
+  with the rig's `crown.png` rest pose), in Walk and Hit (Front) the roots trail and settle (a probe reporting each
+  chain's swing in degrees: Idle ≤ 3, Walk 3–15, never at the cap for more than a moment), never detached, mask rigid;
+  the rest of the gallery and the Warden's anchor unchanged; a built copy runs.
