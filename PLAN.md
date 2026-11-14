@@ -1014,4 +1014,4 @@ The Rootbinder's root crown is rigid and its hands stop at mid-shin in Idle. Spr
 
 **Wave G — pet-day PASSED r1** (e92c59f; `shots/review-waveG-pet.md`). A polish turn is with the builder for the two mediums (ears read as horns from behind; shaded brown face in the glance) and four lows.
 
-**Soft look approved by Eddie 2026-11-14** ("Middle is right"): `src/post.js` diffusion at `soft=1` is the default (fa35e57); `?soft=0` is the old crisp frame. If the trees and rocks still read hard-edged, the next step is smoothing their faceted shading.
+**Soft look approved by Eddie 2026-11-14** ("Middle is right"): `src/post.js` diffusion default now `soft=1.5` (Eddie later: "can we go between Middle to Softest?"); `?soft=0` is the old crisp frame. If the trees and rocks still read hard-edged, the next step is smoothing their faceted shading.
