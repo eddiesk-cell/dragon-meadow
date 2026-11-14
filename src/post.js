@@ -6,6 +6,7 @@ import {
   mix, smoothstep, length, dot, sin, fract, clamp, exp, min, max,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
+import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js'
 
 const SHAFT_STEPS = 28
 
@@ -40,10 +41,19 @@ export async function createPost(ctx) {
   })()
 
   const toned = toneMapping(renderer.toneMapping, float(renderer.toneMappingExposure), color.add(glow).add(shafts))
+  // Soft look (Eddie 2026-11-14: "the world is too crisp ... blend it a bit to make it soft"): a diffusion filter, as on a
+  // film lens. A blurred copy of the finished frame is mixed in (takes the edge off blades, facets and silhouettes) and
+  // screened on top (a gentle glow round light things). ?soft=0 is the old crisp frame, 1 the default, 2 dreamy.
+  const soft = Math.max(0, +(ctx.params.get('soft') ?? 1))
+  const haze = soft ? gaussianBlur(toned, null, 5, { resolutionScale: 0.5 }) : null
   const graded = Fn(() => {
     const c = toned.rgb.toVar()
+    if (haze) {
+      c.assign(mix(c, haze.rgb, Math.min(0.6, 0.28 * soft)))
+      c.addAssign(haze.rgb.mul(float(1).sub(c)).mul(Math.min(0.5, 0.16 * soft)))
+    }
     const lum = dot(c, vec3(0.2126, 0.7152, 0.0722))
-    c.assign(mix(vec3(lum), c, mix(1.12, 1.18, uNight)))                               // crisp, a little richer
+    c.assign(mix(vec3(lum), c, mix(1.12, 1.18, uNight)))                               // a little richer
     c.mulAssign(mix(vec3(1.02, 1.0, 0.97), vec3(0.94, 1.0, 1.08), uNight))           // warm day, cool night
     c.addAssign(vec3(0.008, 0.01, 0.03).mul(uNight))                                   // night blacks lift to indigo
     const d = length(uv().sub(0.5).mul(vec2(1.1, 1.0)))
