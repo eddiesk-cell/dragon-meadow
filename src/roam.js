@@ -173,7 +173,7 @@ export async function createRoam(ctx) {
     const feet = ['leftFoot', 'rightFoot'].map(n => it.model.getObjectByName(n)), want = it.o.v || SLOW * STRIDE * it.s, f = [new THREE.Vector3(), new THREE.Vector3()]
     if (!feet[0] || !feet[1]) return
     let best = null
-    for (const name of new Set([it.o.walk, 'Walk', 'Crouch Walk', 'Run'].filter(n => n && it.actions[n]))) {
+    for (const name of new Set([it.o.walk, 'Walk', 'Crouch Walk'].filter(n => n && it.actions[n]))) {
       const act = it.actions[name], D = act.getClip().duration, N = 32, z = [], low = []
       it.mixer.stopAllAction(); act.reset().play()
       for (let i = 0; i <= N; i++) {
@@ -188,7 +188,13 @@ export async function createRoam(ctx) {
       if (!best || err < best.err) best = { name, gs, rate, err, speed: gs * rate }
     }
     it.mixer.stopAllAction(); it.cur = null
-    if (best) { it.walkN = best.name; it.rate = best.rate; it.speed = best.speed; it.gait = { clip: best.name, footMs: +best.gs.toFixed(2), rate: +best.rate.toFixed(2), moveMs: +best.speed.toFixed(2) } }
+    if (best) { // the walk clip reaches lower than the idle pose (the Rime Warden's toes sank 0.27 m): its own ground line, a low quartile of the lowest vertex over the cycle
+      const act = it.actions[best.name], D = act.getClip().duration, lows = []
+      act.reset().play()
+      for (let i = 0; i < 8; i++) { act.time = D * i / 8; it.mixer.update(0); lows.push(extent(it.root)[0] - it.root.position.y) }
+      lows.sort((a, b) => a - b); it.footYW = lows[1]; it.mixer.stopAllAction()
+    }
+    if (best) { it.walkN = best.name; it.rate = best.rate; it.speed = best.speed; it.gait = { footY: +it.footY.toFixed(2), footYW: +it.footYW.toFixed(2), clip: best.name, footMs: +best.gs.toFixed(2), rate: +best.rate.toFixed(2), moveMs: +best.speed.toFixed(2) } }
     play(it, it.idleN); it.mixer.update(0.4)
   }
   const play = (it, n) => {
@@ -293,9 +299,9 @@ export async function createRoam(ctx) {
         it.mixer.update(dt)
         it.root.position.x = it.x; it.root.position.z = it.z
         if (it.o.water) it.root.position.y = ctx.pond.level + 0.12 - it.lampDy // Old Glim floats, her lamp line just above the water
-        else { // on the highest ground under the body, so no foot sinks on a slope (the ones downhill float a little)
+        else { // on the mean ground under the body: on a slope the uphill foot sinks and the downhill one floats by the same few cm (shortcut: no foot IK; add it if a creature lives on ground steeper than 15 degrees)
           const g = ground(it.x, it.z), q = Math.min(it.body, 1.2) * 0.8, sx = Math.sin(it.yaw) * q, sz = Math.cos(it.yaw) * q
-          const gy = Math.max(g, ground(it.x + sx, it.z + sz), ground(it.x - sx, it.z - sz), ground(it.x + sz, it.z - sx), ground(it.x - sz, it.z + sx)) - it.footY
+          const gy = (g + ground(it.x + sx, it.z + sz) + ground(it.x - sx, it.z - sz) + ground(it.x + sz, it.z - sx) + ground(it.x - sz, it.z + sx)) / 5 - (it.cur === it.actions[it.walkN] ? it.footYW ?? it.footY : it.footY)
           it.root.position.y += (gy - it.root.position.y) * Math.min(1, dt * 8)
         }
         it.root.rotation.y = it.yaw
@@ -317,6 +323,7 @@ export async function createRoam(ctx) {
           if ((it.calT -= dt) <= 0) { it.calT = 0.3; it.lift = Math.min(1.5, Math.max(0, it.lift + (0.03 - lowest(it.anchor)) * 0.7)) } // the flukes lie ON the ground: lift the floor by what is still under it
         }
         for (const m of it.lamps) m.emissiveIntensity = 0.3 + 2.7 * ctx.night
+        if (it.o.swarm) it.model.parent.traverse(m => { if (m.isMesh) m.material.emissiveIntensity = 1 - 0.8 * (ctx.night ?? 0) }) // the swarm's day glow would be the brightest thing in a night frame
         push(it)
       }
     },
