@@ -4,6 +4,7 @@
 // ?roam=<id> puts the hero 5-24 m south (and 1-5 m east) of that creature (the hero faces -z) so it can be photographed; the same spot works
 // as ?at=<x>,<z> (probe roam: view.at). Gallery table, props and the ribmites' scuttle follow src/bestiary.js.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import { createSprings } from './springs.js'
 import { scuttle, makeRope, chain } from './bestiary.js'
 
@@ -35,7 +36,7 @@ export async function createRoam(ctx) {
   const { THREE, scene, params, heroPos } = ctx
   const mode = params.get('roam')
   if (mode === 'off' || params.get('bestiary') === '1') return null
-  const loader = new GLTFLoader(), v = new THREE.Vector3()
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder), v = new THREE.Vector3()
   const url = p => import.meta.env.BASE_URL + p
   const ground = (x, z) => ctx.heightAt(x, z)
   const extent = root => { // lowest/highest vertex in the current pose, world space

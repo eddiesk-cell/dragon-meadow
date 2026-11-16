@@ -2,6 +2,7 @@
 // standing stones, telegraphed attacks, flinches and staggers, dies. Contract: PLAN.md Phase 3 (ctx.monster).
 // Design: WORLD.md "The first monster". Club + seat stone: tools/monster/club.py → public/models/club.glb.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 
 const S = 3 / 1.8                  // troll.glb is rigged at 1.80 m; the Barrow Troll stands 3 m
 const R = 1.0, WAKE = 25, LEASH = 38, STIR = 1.0
@@ -22,7 +23,7 @@ for (const a of Object.values(ATTACKS)) a.lands = a.windT + (a.h0 - a.wind) / a.
 export async function createMonster(ctx) {
   const { THREE, scene, params } = ctx
   const V3 = (x, y, z) => new THREE.Vector3(x, y, z)
-  const load = n => new GLTFLoader().loadAsync(import.meta.env.BASE_URL + `models/${n}.glb`)
+  const load = n => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(import.meta.env.BASE_URL + `models/${n}.glb`)
   const [gltf, props] = await Promise.all([load('troll'), load('club')])
   const model = gltf.scene, root = new THREE.Group()
   model.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.frustumCulled = false } })

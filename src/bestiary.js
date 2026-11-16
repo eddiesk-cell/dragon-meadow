@@ -1,6 +1,7 @@
 // Phase 4d lane bestiary — ?bestiary=1: every rigged creature on a plinth in the real world, turning and cycling its
 // clips, with a name + land label. &focus=<id> frames one large. Without the param it costs nothing. See PLAN.md.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import * as THREE from 'three/webgpu'
 import { createSprings } from './springs.js'
 import { attribute, positionLocal, modelPosition, time, vec3, sin, cos, max, mod, floor, step } from 'three/tsl'
@@ -110,7 +111,7 @@ export async function createBestiary(ctx) {
   const focus = params.get('focus')
   const A = new THREE.Vector3(0, 0, 60) // the camera's end of the arc; creatures stand R metres north of it
   const stone = new THREE.MeshStandardMaterial({ color: 0x8d8b84, roughness: 1 })
-  const loader = new GLTFLoader()
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
   const v = new THREE.Vector3()
   // lowest/highest vertex in the current pose, world space (skinned or rigid)
   const extent = root => {
