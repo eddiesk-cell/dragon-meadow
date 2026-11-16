@@ -1,5 +1,7 @@
 // Dragon Meadow — the frame every lane plugs into. Contract: PLAN.md §Contract.
 import * as THREE from 'three/webgpu'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
+MeshoptDecoder.useWorkers(2) // unpack compressed models off the main thread, so a creature loading never stalls a frame
 
 const params = new URLSearchParams(location.search)
 // ?film=secs (tools/audio/capture.mjs): the sound renders offline, stepped a frame at a time with the picture, so no
@@ -83,6 +85,9 @@ addEventListener('resize', () => {
 })
 
 let last = performance.now(), frames = 0
+// Behind the loading cover, draw EVERYTHING for the first frames, in view or not, so each material's pipeline is compiled
+// and its textures uploaded before the visitor can turn around (Eddie: "still loads when i turn around").
+const culled = []; scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
 renderer.setAnimationLoop(() => {
   const now = performance.now()
   tick(Math.min((now - last) / 1000, 0.1) * ctx.timeScale)
@@ -98,6 +103,7 @@ function tick(dt) {
   if (post) post.render()
   else renderer.render(scene, camera)
   if (++frames === 12) {
+    for (const o of culled) o.frustumCulled = true
     window.__ready = true
     document.getElementById('load').style.opacity = 0
     setTimeout(() => (document.getElementById('hint')?.style.setProperty('opacity', 0)), 9000)

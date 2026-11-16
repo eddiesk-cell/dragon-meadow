@@ -3,6 +3,7 @@
 // Both are glow-veined at night like the ring stones (same vein recipe as src/ring.js, scaled to their size).
 // Publishes ctx.landmarks { rockisle, egg, crestStone }; pushes ctx.keepClear.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import {
   vertexColor, positionLocal, uniform, vec3, vec4, float, smoothstep, abs, max, mix, sin, pow, dot, mx_noise_float, normalView,
   positionViewDirection, attribute, fract, normalize, cross, cameraPosition, uv, length, saturate,
@@ -42,7 +43,7 @@ const CREST = { x: -90, z: -205, yaw: Math.atan2(-0.92, -0.38), lean: 0.12 } // 
 export async function createLandmarks(ctx) {
   const { THREE, scene } = ctx
   if (ctx.params.get('landmarks') === '0') return null // A/B for fps and look
-  const loader = new GLTFLoader()
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
   const [isle, kit, crest] = await Promise.all(['rockisle', 'town-kit', 'stoneface'].map(n => loader.loadAsync(import.meta.env.BASE_URL + `models/world/${n}.glb`)))
   const uNight = uniform(0), uT = uniform(0)
 

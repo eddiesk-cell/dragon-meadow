@@ -46,7 +46,7 @@ export async function createHero(ctx) {
   }
   let strap = null
   try {
-    const [swordGltf, sheathGltf] = await Promise.all(['sword', 'scabbard'].map(n => new GLTFLoader().loadAsync(import.meta.env.BASE_URL + `models/${n}.glb`)))
+    const [swordGltf, sheathGltf] = await Promise.all(['sword', 'scabbard'].map(n => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(import.meta.env.BASE_URL + `models/${n}.glb`)))
     const sword = swordGltf.scene, sheath = new THREE.Group()
     sheath.add(sheathGltf.scene, sword)
     sword.rotation.z = Math.PI                    // blade down into the scabbard

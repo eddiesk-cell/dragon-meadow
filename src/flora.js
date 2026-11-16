@@ -3,6 +3,7 @@
 // as in refs/world/mix-day.png. One InstancedMesh per model; each frame the CPU keeps only the instances near and in view,
 // and feeds each a low-passed ctx.windAt so the plants lean into the same gusts the grass shows. Glow = mask² × ctx.night.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import { uniform, vec3, float, attribute, vertexColor, positionLocal, positionWorld, cameraPosition, normalize, dot, smoothstep, mix, clamp } from 'three/tsl'
 
 // glow: emissive colour at full night × power; day: the bells keep a little of it by day (they leak the light they drink);
@@ -36,7 +37,7 @@ const rnd = (s => () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296)(11)
 export async function createFlora(ctx) {
   const { THREE, scene, camera } = ctx
   if (ctx.params.get('flora') === '0') return null // A/B for fps and look
-  const loader = new GLTFLoader()
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
   const names = Object.keys(KINDS)
   const geos = Object.fromEntries((await Promise.all(names.map(n => loader.loadAsync(`${import.meta.env.BASE_URL}models/flora/${n}.glb`))))
     .map((g, i) => { let geo; g.scene.traverse(o => { if (o.isMesh) geo = o.geometry }); return [names[i], geo] }))

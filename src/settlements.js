@@ -4,6 +4,7 @@
 // chimneys smoke, footprints go into ctx.keepClear, everything stands on ctx.heightAt. The haze is the sky's own fogNode
 // on every material, so far walls fade into the same air as the land.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import { gridY } from './field.js'
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
@@ -132,7 +133,7 @@ export async function createSettlements(ctx) {
   const { THREE, scene } = ctx
   if (ctx.params.get('settlements') === '0') return null // A/B for fps and look
   const t0 = performance.now()
-  const loader = new GLTFLoader()
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
   const [townKit, castleKit] = (await Promise.all(['town-kit', 'castle-kit'].map(n => loader.loadAsync(import.meta.env.BASE_URL + `models/world/${n}.glb`)))).map(g => g.scene)
   const uNight = uniform(0), uT = uniform(0), uSky = uniform(new THREE.Color().copy(ctx.fogColor))
   const bases = [] // every building's foot { x, y, z } for the probe: it must sit on ctx.heightAt

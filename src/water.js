@@ -6,6 +6,7 @@
 // bed toward BED m, takes the grass out from under the water and darkens a damp bank; the water is a plain depth-tested
 // surface that lets the shallows show through. ctx.heightAt gets a wading floor: the hero sinks WADE m at most.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import {
   reflector, texture, uniform, vec2, vec3, vec4, float, positionWorld, positionView, cameraPosition, cameraWorldMatrix,
   cameraNear, cameraFar, viewportDepthTexture, perspectiveDepthToViewZ, mx_noise_float, normalize, length, mix, max,
@@ -151,7 +152,7 @@ export async function createWater(ctx) {
   // --- lanterns on the shore (town-kit piece; its glass carries the glow), lit by ctx.night
   const glass = new THREE.MeshStandardNodeMaterial({ color: 0xffe2b0, roughness: 0.3 })
   glass.emissiveNode = vec3(1, 0.6, 0.24).mul(uNight.mul(9).add(1.4))
-  const kit = await new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'models/world/town-kit.glb')
+  const kit = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(import.meta.env.BASE_URL + 'models/world/town-kit.glb')
   const proto = kit.scene.getObjectByName('lantern')
   const lanterns = []
   for (const a of [1.05, 1.57, 2.62, 3.4, 3.67, 5.9, 6.02]) { // world bearings from the deepest water: near shore (none on the walk north from the start), far ends

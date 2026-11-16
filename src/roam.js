@@ -124,7 +124,9 @@ export async function createRoam(ctx) {
     if (!o.water && !o.swarm) it.body = Math.max(0.35, it.size * 0.3) // a first guess for the search; the real width is measured below
     slide(it)
     const gy = ground(it.hx, it.hz)
-    root.position.set(it.hx, gy, it.hz); scene.add(root)
+    root.position.set(it.hx, gy, it.hz)
+    await ctx.renderer.compileAsync(root, ctx.camera, scene).catch(() => {}) // compile off the frame, so a creature arriving does not stall it
+    scene.add(root)
     if (o.swarm) { // ribmites: rigid beetles whose legs walk in a tripod gait in the shader (attributes _leg, _legt)
       scuttle(model)
       model.traverse(m => { if (m.isMesh) m.material.emissive = new THREE.Color(0x6a1a08) }) // a warm glow so the swarm reads against the grass at distance

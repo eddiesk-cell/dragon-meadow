@@ -2,6 +2,7 @@
 // before they land; a slow bob; vines glow by ctx.night. Contract: PLAN.md Phase 6 "Lane skyisles".
 // Models: public/models/flora/skyisle.glb (tools/flora/skyisle.py) — isle_a/b/c, each with fall_<n> lip markers.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import { uniform, vec3, float, mix, smoothstep, uv, positionLocal, positionWorld, normalWorld, vertexColor, mx_noise_float, abs, pow, max } from 'three/tsl'
 
 // [model, degrees right of the start view (−Z), distance m, width m, elevation° of its lowest point seen from the start,
@@ -25,7 +26,7 @@ const FALL_SPEED = 26 // m/s the streaks scroll down
 export async function createSkyisles(ctx) {
   if (OFF) return null
   const { THREE, scene, camera } = ctx
-  const gltf = await new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'models/flora/skyisle.glb')
+  const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(import.meta.env.BASE_URL + 'models/flora/skyisle.glb')
   const kit = Object.fromEntries(gltf.scene.children.map(o => [o.name, o]))
 
   const uNight = uniform(0), uTime = uniform(0), uTint = uniform(new THREE.Color()), uFill = uniform(new THREE.Color())
