@@ -38,6 +38,10 @@ export async function createRoam(ctx) {
   if (mode === 'off' || params.get('bestiary') === '1') return null
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder), v = new THREE.Vector3()
   const url = p => import.meta.env.BASE_URL + p
+  // Each creature's body and step, measured once at build time (tools/measure-roam.mjs → measures.json) instead of on arrival:
+  // 17 passes over its skinned vertices cost ~0.2 s of one frame per creature. ?measure=1 ignores the file and measures all of them.
+  const MEASURE = params.get('measure') === '1', made = window.__measures = {}
+  const MEAS = MEASURE ? {} : await fetch(url('models/bestiary/measures.json')).then(r => r.ok ? r.json() : {}).catch(() => ({}))
   const ground = (x, z) => ctx.heightAt(x, z)
   const extent = root => { // lowest/highest vertex in the current pose, world space
     root.updateMatrixWorld(true)
@@ -67,6 +71,7 @@ export async function createRoam(ctx) {
       loaded: false, clip: '-', obs: [] }
   })
   const find = id => its.find(i => i.id === id)
+  window.__roamCount = its.length // tools/measure-roam.mjs waits for this many
   const target = find(mode)
   // where to photograph one from: `back` m in front of it along the hero's heading (?yaw=deg, 0 faces -z; 180 puts the sun behind the camera), `side` m to his right
   const yawR = (+params.get('yaw') || 0) * Math.PI / 180
@@ -111,10 +116,10 @@ export async function createRoam(ctx) {
   const load = async it => {
     const { id, o, s } = it
     const gltf = await loader.loadAsync(url(`models/bestiary/${id}.glb`)), model = gltf.scene, root = new THREE.Group()
-    it.lamps = []
+    it.lamps = []; let nv = 0
     model.traverse(m => {
       if (!m.isMesh) return
-      m.castShadow = m.receiveShadow = true; m.frustumCulled = false
+      m.castShadow = m.receiveShadow = true; m.frustumCulled = false; nv += m.geometry.attributes.position.count
       if (m.material.name === 'glim-lamps') { it.lamps.push(m.material); it.lampMesh = m } // Old Glim's flank lamps glow at night
     })
     root.add(model); root.scale.setScalar(s)
@@ -141,7 +146,9 @@ export async function createRoam(ctx) {
     it.actions = actions; it.mixer = mixer; it.root = root; it.model = model; it.cur = null
     it.idleN = o.idle || 'Idle'; it.walkN = o.walk || 'Walk'
     play(it, it.idleN); mixer.update(0.4) // let the fade-in finish, else this measures the rest pose
-    const [lo, hi, wx, wz] = extent(root)
+    const key = `${nv}/${gltf.animations.length}/${s}`, pre = MEAS[id]?.key === key ? MEAS[id] : null // a re-exported model no longer matches its key and is measured here
+    if (MEAS[id] && !pre) console.warn(`roam: ${id} changed since measures.json was made; run tools/measure-roam.mjs`)
+    const [lo, hi, wx, wz] = pre ? [gy + pre.ext[0], gy + pre.ext[1], pre.ext[2], pre.ext[3]] : extent(root)
     if (!o.water && !o.swarm) { it.body = Math.max(0.35, 0.5 * Math.max(wx, wz)); slide(it); root.position.set(it.hx, ground(it.hx, it.hz), it.hz) } // the hero is blocked by the real body width (the warden's fists span 2.5 m); a home too close to a solid for that width moves on
     it.footY = lo - gy; it.h = hi - lo // the body's idle pose's lowest vertex above/below the ground: undone every frame so the feet stand on it
     if (it.lampMesh) { // Old Glim floats with her lamp line at the waterline: the mean height of the lamps above the ground at rest
@@ -150,7 +157,9 @@ export async function createRoam(ctx) {
       for (let i = 0, c = it.lampMesh.geometry.attributes.position.count; i < c; i += 2) { it.lampMesh.getVertexPosition(i, v).applyMatrix4(it.lampMesh.matrixWorld); sum += v.y; n++ }
       it.lampDy = sum / n - gy
     }
-    if (it.actions[it.walkN] || it.actions.Walk) this_gait(it)
+    if (pre) Object.assign(it, pre.gait)
+    else if (it.actions[it.walkN] || it.actions.Walk) this_gait(it)
+    made[id] = { key, ext: [lo - gy, hi - gy, wx, wz], gait: it.gait ? { walkN: it.walkN, rate: it.rate, speed: it.speed, lowW: it.lowW, footYW: it.footYW, gait: it.gait } : null }
     if (o.prop) { // held in the hand, its grip at the bone; slid up through the hand if it would reach under the ground (a spear's butt)
       const p = (await loader.loadAsync(url(`models/props/${o.prop[0]}.glb`))).scene, bone = model.getObjectByName(o.prop[1])
       p.traverse(m => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false } })
@@ -289,7 +298,7 @@ export async function createRoam(ctx) {
       if (ctx.roamOff) { for (const it of its) if (it.loaded) it.root.visible = false; return } // runtime off switch (set ctx.roamOff = true): same as ?roam=off, for in-page fps A/B
       const hx = heroPos.x, hz = heroPos.z
       if (!loading && ctx.time > nextLoad) {
-        let best = null, bd = LOAD
+        let best = null, bd = MEASURE ? Infinity : LOAD
         for (const it of its) if (!it.loaded && !it.failed) { const d = Math.hypot(it.hx - hx, it.hz - hz); if (d < bd || it === target) best = it, bd = it === target ? -1 : d }
         if (best) { loading = true; load(best).catch(e => { best.failed = true; window.__errors.push(`roam: ${best.id}: ${e.message || e}`) }).finally(() => { loading = false; nextLoad = ctx.time + 1.5 }) }
       }
