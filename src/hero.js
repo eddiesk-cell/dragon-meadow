@@ -1,11 +1,12 @@
 // Hero lane: the Drifter, third-person camera, WASD/Shift/Space, ?auto=walk|run for proof.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js'
 import { gridY } from './field.js'
 
 export async function createHero(ctx) {
   const { THREE, scene, camera, params, heroPos } = ctx
-  const gltf = await new GLTFLoader().loadAsync(import.meta.env.BASE_URL + 'models/hero.glb')
+  const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(import.meta.env.BASE_URL + 'models/hero.glb')
   const model = gltf.scene
   model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false } })
   const root = new THREE.Group()
